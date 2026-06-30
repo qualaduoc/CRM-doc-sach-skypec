@@ -560,6 +560,23 @@ async function syncUserClasses(username, token) {
             min_time_required = excluded.min_time_required,
             is_finish = excluded.is_finish
         `, classId, username, item.classTitle, classUserId, learningId, contentId, learnTime, minTimeRequired, isFinish);
+
+        // Tự động dừng học ngầm nếu lớp học đã hoàn thành hoặc đạt đủ số phút
+        if (isFinish === 1) {
+          const prevClass = await db.get('SELECT auto_learn FROM classes WHERE id = ? AND account_username = ?', classId, username);
+          if (prevClass && prevClass.auto_learn === 1) {
+            console.log(`[Sync] Lớp học "${item.classTitle}" của ${username} đã hoàn thành. Tự động dừng học ngầm.`);
+            await db.run('UPDATE classes SET auto_learn = 0 WHERE id = ? AND account_username = ?', classId, username);
+            stopLearning(classId);
+          }
+        } else if (minTimeRequired && learnTime >= minTimeRequired) {
+          const prevClass = await db.get('SELECT auto_learn FROM classes WHERE id = ? AND account_username = ?', classId, username);
+          if (prevClass && prevClass.auto_learn === 1) {
+            console.log(`[Sync] Lớp học "${item.classTitle}" của ${username} đã đạt đủ số phút tối thiểu. Tự động dừng học ngầm.`);
+            await db.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, username);
+            stopLearning(classId);
+          }
+        }
       }
     } catch (e) {
       console.error(`[Sync Error] Lỗi xử lý chi tiết lớp ${classId} của ${username}:`, e.message);
@@ -703,8 +720,30 @@ app.post('/api/classes/:classId/toggle-learn', authenticateToken, async (req, re
       return res.status(403).json({ success: false, error: 'Không có quyền thao tác trên lớp học này' });
     }
 
+    if (auto_learn === 1) {
+      // Đếm số lớp đang treo của tài khoản này
+      const activeCount = await db.get(
+        'SELECT COUNT(*) as count FROM classes WHERE account_username = ? AND auto_learn = 1',
+        classItem.account_username
+      );
+      
+      // Lấy giới hạn cấu hình từ bảng settings
+      let limit = 3;
+      const limitSetting = await db.get('SELECT value FROM settings WHERE key = ?', 'max_active_classes');
+      if (limitSetting) {
+        limit = parseInt(limitSetting.value, 10) || 3;
+      }
+
+      if (activeCount.count >= limit) {
+        return res.status(400).json({
+          success: false,
+          error: 'Tham vừa thôi! đọc nhiều cuốn 1 lúc để cháy máy à!'
+        });
+      }
+    }
+
     // Cập nhật trạng thái tự học
-    await db.run('UPDATE classes SET auto_learn = ? WHERE id = ?', auto_learn, classId);
+    await db.run('UPDATE classes SET auto_learn = ? WHERE id = ? AND account_username = ?', auto_learn, classId, classItem.account_username);
 
     const account = await db.get('SELECT * FROM accounts WHERE username = ?', classItem.account_username);
     const decryptedPassword = decrypt(account.password);
@@ -719,6 +758,41 @@ app.post('/api/classes/:classId/toggle-learn', authenticateToken, async (req, re
     }
 
     res.json({ success: true, isRunning: auto_learn === 1 });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy cấu hình hệ thống (Admin lấy hoặc trả về giá trị mặc định)
+app.get('/api/settings', authenticateToken, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.all('SELECT * FROM settings');
+    const settings = {};
+    rows.forEach(r => {
+      settings[r.key] = r.value;
+    });
+    // Nếu chưa có max_active_classes, trả về mặc định 3
+    if (!settings.max_active_classes) {
+      settings.max_active_classes = '3';
+    }
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Cập nhật cấu hình hệ thống (Chỉ dành cho Admin)
+app.post('/api/settings', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ success: false, error: 'Không có quyền thao tác' });
+  const { key, value } = req.body;
+  if (!key || value === undefined) {
+    return res.status(400).json({ success: false, error: 'Thiếu tham số cấu hình' });
+  }
+  try {
+    const db = await getDb();
+    await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, String(value));
+    res.json({ success: true, message: 'Cập nhật cấu hình thành công' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

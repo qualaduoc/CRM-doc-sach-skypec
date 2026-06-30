@@ -74,6 +74,9 @@ function setupEventListeners() {
   document.getElementById('btn-admin-logout').addEventListener('click', handleLogout);
   document.getElementById('btn-user-logout').addEventListener('click', handleLogout);
 
+  // Lưu cấu hình Admin
+  document.getElementById('btn-save-settings').addEventListener('click', saveSystemSettings);
+
   // Modal Thêm Tài Khoản (Admin)
   const modal = document.getElementById('add-account-modal');
   document.getElementById('btn-add-account').addEventListener('click', () => {
@@ -237,8 +240,11 @@ function handleLogout() {
 }
 
 // --- DASHBOARD ADMIN ---
-async function loadAdminDashboard() {
+async function loadAdminDashboard(isPolling = false) {
   try {
+    if (!isPolling) {
+      loadSystemSettings();
+    }
     const res = await fetch('/api/accounts', {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
@@ -497,8 +503,8 @@ async function toggleLearn(classId, isChecked) {
     });
     const data = await res.json();
     if (!data.success) {
-      showToast('Lỗi thao tác: ' + data.error, 'error', 'Thất bại');
-      // Reset lại giao diện
+      showToast(data.error || 'Lỗi thao tác', 'error', 'Thất bại');
+      // Tải lại danh sách lớp để khôi phục trạng thái checkbox
       loadUserDashboard(state.selectedUser ? state.selectedUser.username : null);
     } else {
       // Tải lại số đếm KPI
@@ -732,6 +738,51 @@ async function handleAddAccount(e) {
   } finally {
     submitBtn.disabled = false;
     submitBtn.innerHTML = originalText;
+  }
+}
+
+// --- HÀM CẤU HÌNH HỆ THỐNG (ADMIN) ---
+async function loadSystemSettings() {
+  try {
+    const res = await fetch('/api/settings', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success && data.settings) {
+      document.getElementById('setting-max-classes').value = data.settings.max_active_classes || 3;
+    }
+  } catch (err) {
+    console.error('Lỗi tải cấu hình hệ thống:', err.message);
+  }
+}
+
+async function saveSystemSettings() {
+  const value = document.getElementById('setting-max-classes').value;
+  const btn = document.getElementById('btn-save-settings');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang lưu...';
+  
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ key: 'max_active_classes', value: value })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Cập nhật giới hạn lớp treo song song thành công!', 'success', 'Thành công');
+    } else {
+      showToast(data.error || 'Lỗi lưu cấu hình', 'error', 'Thất bại');
+    }
+  } catch (err) {
+    showToast(err.message, 'error', 'Thất bại');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
   }
 }
 

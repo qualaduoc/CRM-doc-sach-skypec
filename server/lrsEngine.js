@@ -188,6 +188,14 @@ function startLearning(account, classItem) {
                 if (videoTimeSeconds % 60 === 0) {
                   const localDb = await getDb();
                   await localDb.run('UPDATE classes SET learn_time = learn_time + 1.0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', classId);
+                  
+                  // Kiểm tra xem đã đạt thời gian yêu cầu tối thiểu chưa
+                  const currentClassInfo = await localDb.get('SELECT learn_time, min_time_required, class_title FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
+                  if (currentClassInfo && currentClassInfo.min_time_required && currentClassInfo.learn_time >= currentClassInfo.min_time_required) {
+                    console.log(`[Engine] Lớp học "${currentClassInfo.class_title}" của ${account.username} đã đạt thời gian yêu cầu tối thiểu (${currentClassInfo.min_time_required} phút). Tự động dừng học ngầm.`);
+                    await localDb.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, account.username);
+                    connectionObj.stop();
+                  }
                 }
               } catch (err) {
                 console.error(`[Engine] Lỗi gửi nhịp tim lớp ${classId}:`, err.message);

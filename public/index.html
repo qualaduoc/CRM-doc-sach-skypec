@@ -73,6 +73,22 @@
         </div>
       </header>
 
+      <!-- Cấu hình giới hạn -->
+      <div class="glass-panel" style="margin-bottom: 20px; padding: 15px; display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <i class="fa-solid fa-gears" style="font-size: 1.5rem; color: var(--primary);"></i>
+          <div>
+            <h4 style="margin: 0; font-size: 1rem;">Cấu hình hệ thống</h4>
+            <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">Thiết lập giới hạn học tập cho toàn bộ học viên</p>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 0.9rem; font-weight: 500;">Giới hạn lớp treo song song:</span>
+          <input type="number" id="setting-max-classes" min="1" max="10" value="3" style="width: 70px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; text-align: center; font-weight: bold;">
+          <button id="btn-save-settings" class="btn-glow" style="margin-top: 0; padding: 8px 15px; width: auto; font-size: 0.85rem;"><i class="fa-solid fa-floppy-disk"></i> Lưu</button>
+        </div>
+      </div>
+
       <!-- KPI Grid -->
       <div class="kpi-grid">
         <div class="glass-panel kpi-card blue">

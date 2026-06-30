@@ -54,6 +54,13 @@ async function getDb() {
       PRIMARY KEY (id, account_username),
       FOREIGN KEY(account_username) REFERENCES accounts(username) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
   `);
 
   // Tạo tài khoản admin mặc định nếu chưa tồn tại
