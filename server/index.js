@@ -521,12 +521,12 @@ async function syncUserClasses(username, token) {
         const learningHistories = joinData.data.lmsClassUserLearning || [];
         
         let learningId = null;
+        // Luôn sử dụng tổng thời gian học tập (totalTime) của lớp học làm tiến độ chính xác nhất
         let learnTime = joinData.data.totalTime || 0;
         let minTimeRequired = null;
 
         if (learningHistories.length > 0) {
           learningId = learningHistories[0].id;
-          learnTime = learningHistories[0].learnTime || joinData.data.totalTime || 0;
         }
 
         // Lấy thời gian yêu cầu tối thiểu thực tế từ API GetById
