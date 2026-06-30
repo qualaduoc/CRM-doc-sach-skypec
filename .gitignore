@@ -1,4 +1,8 @@
 node_modules/
-database.db
 .env
+database.db
 .DS_Store
+*.zip
+vps_test_decrypt.js
+vps_test_login.js
+vps_find_events.js
