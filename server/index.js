@@ -328,7 +328,7 @@ async function syncUserClasses(username, token) {
         
         let learningId = null;
         let learnTime = joinData.data.totalTime || 0;
-        let minTimeRequired = 430;
+        let minTimeRequired = null;
 
         if (learningHistories.length > 0) {
           learningId = learningHistories[0].id;
@@ -339,10 +339,10 @@ async function syncUserClasses(username, token) {
         try {
           const classDetails = await fetchClassDetails(token, classId);
           if (classDetails && classDetails.status && classDetails.data) {
-            minTimeRequired = classDetails.data.minTimeRequired || 430;
+            minTimeRequired = classDetails.data.minTimeRequired || null;
           }
         } catch (e) {
-          console.warn(`[Sync Warning] Không lấy được minTimeRequired cho lớp ${classId}, dùng mặc định 430:`, e.message);
+          console.warn(`[Sync Warning] Không lấy được minTimeRequired cho lớp ${classId}:`, e.message);
         }
 
         // 2. Lấy ID bài học đầu tiên làm contentId nếu chưa có

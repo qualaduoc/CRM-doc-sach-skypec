@@ -309,8 +309,9 @@ async function loadUserDashboard(targetUsername = null) {
     }
 
     tbody.innerHTML = classes.map(c => {
-      const percent = Math.min(100, Math.max(0, (c.learn_time / c.min_time_required) * 100));
-      const isCompleted = c.is_finish === 1 || percent >= 100;
+      const hasRequiredTime = c.min_time_required && c.min_time_required > 0;
+      const percent = hasRequiredTime ? Math.min(100, Math.max(0, (c.learn_time / c.min_time_required) * 100)) : (c.is_finish === 1 ? 100 : 0);
+      const isCompleted = c.is_finish === 1 || (hasRequiredTime && percent >= 100);
       const statusText = isCompleted ? 'Hoàn thành' : 'Đang học';
       const statusClass = isCompleted ? 'finished' : 'studying';
       
@@ -327,7 +328,7 @@ async function loadUserDashboard(targetUsername = null) {
           <td>
             <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600;">
               <span style="color: var(--primary);">${c.learn_time.toFixed(1)} ph</span>
-              <span style="color: var(--text-muted);">${c.min_time_required} ph (${percent.toFixed(0)}%)</span>
+              <span style="color: var(--text-muted);">${hasRequiredTime ? c.min_time_required + ' ph (' + percent.toFixed(0) + '%)' : 'Không rõ'}</span>
             </div>
             <div class="progress-bar-container">
               <div class="progress-bar-fill ${isCompleted ? 'finished' : ''}" style="width: ${percent}%"></div>
