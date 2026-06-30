@@ -193,7 +193,15 @@ function startLearning(account, classItem) {
                   try {
                     const progress = await fetchActualProgress(token, classId);
                     if (progress && progress.status && progress.data) {
-                      const actualTime = progress.data.totalTime || 0;
+                      let actualTime = progress.data.totalTime || 0;
+                      const learningHistories = progress.data.lmsClassUserLearning || [];
+                      if (learningHistories.length > 0) {
+                        learningHistories.forEach(h => {
+                          if (h.learnTime && h.learnTime > actualTime) {
+                            actualTime = h.learnTime;
+                          }
+                        });
+                      }
                       const isFinish = (progress.data.isFinish === 1 || progress.data.isFinish === true) ? 1 : 0;
                       
                       await localDb.run('UPDATE classes SET learn_time = ?, is_finish = ? WHERE id = ? AND account_username = ?', actualTime, isFinish, classId, account.username);
