@@ -552,6 +552,13 @@ async function syncUserClasses(username, token) {
 
         const isFinish = (joinData.data.isFinish === 1 || joinData.data.isFinish === true) ? 1 : 0;
 
+        // Tránh tình trạng tụt lùi số phút trên giao diện khi đồng bộ lúc lớp học vẫn đang treo ngầm
+        const currentLocal = await db.get('SELECT learn_time, auto_learn FROM classes WHERE id = ? AND account_username = ?', classId, username);
+        if (currentLocal && currentLocal.auto_learn === 1 && learnTime < currentLocal.learn_time) {
+          // Giữ nguyên số phút tự đếm lớn hơn của hệ thống khi phiên học của Skypec chưa được đóng và ghi nhận
+          learnTime = currentLocal.learn_time;
+        }
+
         // Lưu vào DB cục bộ
         await db.run(`
           INSERT INTO classes (id, account_username, class_title, class_user_id, learning_id, content_id, learn_time, min_time_required, is_finish)
