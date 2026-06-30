@@ -232,8 +232,14 @@ async function syncUserStats(username, token) {
       classTotal = classRes.data.details.length || 0;
     }
 
+    let displayName = null;
+    if (kpiRes && kpiRes.status && kpiRes.data && kpiRes.data.displayName) {
+      displayName = kpiRes.data.displayName;
+    }
+
     await db.run(`
       UPDATE accounts SET
+        display_name = COALESCE(?, display_name),
         position_name = ?,
         kpi_percent = ?,
         kpi_total = ?,
@@ -241,7 +247,7 @@ async function syncUserStats(username, token) {
         total_certificate = ?,
         class_total = ?
       WHERE username = ?
-    `, positionName, kpiPercent, kpiTotal, kpiCurrent, totalCertificate, classTotal, username);
+    `, displayName, positionName, kpiPercent, kpiTotal, kpiCurrent, totalCertificate, classTotal, username);
 
     console.log(`[Sync] Đã cập nhật chỉ số KPI cho: ${username} (KPI: ${kpiPercent}%, Lớp: ${classTotal})`);
   } catch (err) {
@@ -400,10 +406,20 @@ app.post('/api/auth/login', async (req, res) => {
     let displayName = username;
     let department = 'Học viên Skypec';
 
+    // Giải mã JWT token của Skypec để lấy tên thật làm dự phòng
+    try {
+      const decoded = jwt.decode(accessToken);
+      if (decoded) {
+        displayName = decoded.fullname || decoded.displayname || username;
+      }
+    } catch (jwtErr) {
+      console.warn(`[Auth Warning] Lỗi giải mã token Skypec cho ${username}:`, jwtErr.message);
+    }
+
     try {
       const profileResult = await fetchSkypecProfile(accessToken, username);
       const profile = profileResult.data || {};
-      displayName = profile.fullName || profile.employeeName || profile.hoTen || username;
+      displayName = profile.fullName || profile.employeeName || profile.hoTen || displayName;
       department = profile.departmentName || 'Học viên Skypec';
     } catch (profileErr) {
       console.warn(`[Auth Warning] Không lấy được profile cho ${username}:`, profileErr.message);
