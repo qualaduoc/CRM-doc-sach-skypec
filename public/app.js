@@ -278,6 +278,22 @@ async function loadAdminDashboard(isPolling = false) {
       const statusClass = isRunning ? 'active' : 'error';
       const indicatorColor = isRunning ? 'var(--success)' : '#ef4444';
 
+      // Xử lý phân loại màu sắc KPI theo yêu cầu của Khầy Được
+      const kpi = acc.kpi_percent || 0;
+      let kpiColor = '#ef4444'; // Đỏ mặc định (< 60)
+      let kpiBg = 'rgba(239, 68, 68, 0.1)';
+      let kpiBorder = 'rgba(239, 68, 68, 0.2)';
+      
+      if (kpi >= 100) {
+        kpiColor = '#10b981'; // Xanh (>= 100)
+        kpiBg = 'rgba(16, 185, 129, 0.1)';
+        kpiBorder = 'rgba(16, 185, 129, 0.2)';
+      } else if (kpi >= 60) {
+        kpiColor = '#f59e0b'; // Cam (60 đến < 100)
+        kpiBg = 'rgba(245, 158, 11, 0.1)';
+        kpiBorder = 'rgba(245, 158, 11, 0.2)';
+      }
+
       return `
         <tr>
           <td><code style="color: var(--primary); font-weight: 600;">${acc.username}</code></td>
@@ -290,6 +306,11 @@ async function loadAdminDashboard(isPolling = false) {
           </td>
           <td style="text-align: center; font-weight: 600; color: ${isRunning ? 'var(--success)' : 'inherit'};">
             ${acc.runningCount} lớp
+          </td>
+          <td style="text-align: center;">
+            <span class="status-badge" style="color: ${kpiColor}; background: ${kpiBg}; border: 1px solid ${kpiBorder}; font-weight: 600; padding: 4px 10px; border-radius: 6px; display: inline-block;">
+              ${kpi}%
+            </span>
           </td>
           <td style="text-align: center;">
             <div style="display: flex; gap: 6px; justify-content: center;">
