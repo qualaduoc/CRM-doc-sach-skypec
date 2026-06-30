@@ -1,0 +1,23 @@
+{
+  "name": "crm-doc-sach-skypec",
+  "version": "1.0.0",
+  "description": "CRM quản lý và tự động hóa học tập Skypec chạy nền trên VPS",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "keywords": [],
+  "author": "N.T.Đ 2026",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.1",
+    "sqlite": "^5.0.1",
+    "sqlite3": "^5.1.6",
+    "ws": "^8.13.0"
+  }
+}

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM Skypec Auto Reader - Quản lý Học tập</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+  <!-- ================= MÀN HÌNH ĐĂNG NHẬP ================= -->
+  <div id="login-screen" class="screen active">
+    <div class="login-container">
+      <div class="glass-panel login-card">
+        <div class="brand-logo">
+          <i class="fa-solid fa-graduation-cap"></i>
+        </div>
+        <h2>CRM Skypec Reader</h2>
+        <p class="subtitle">Hệ thống Quản lý & Học tập chạy ngầm hàng loạt</p>
+
+        <form id="login-form">
+          <div class="input-group">
+            <i class="fa-solid fa-user"></i>
+            <input type="text" id="username" placeholder="Mã nhân viên hoặc 'admin'" required autocomplete="username">
+          </div>
+          <div class="input-group">
+            <i class="fa-solid fa-lock"></i>
+            <input type="password" id="password" placeholder="Mật khẩu" required autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn-glow">
+            <span>ĐĂNG NHẬP</span>
+            <i class="fa-solid fa-right-to-bracket"></i>
+          </button>
+        </form>
+
+        <div id="login-error" class="error-msg hidden">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          <span id="error-text">Lỗi đăng nhập</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MÀN HÌNH DASHBOARD ADMIN ================= -->
+  <div id="admin-screen" class="screen">
+    <div class="container">
+      <header class="glass-panel app-header">
+        <div class="user-info">
+          <div class="avatar">
+            <i class="fa-solid fa-user-shield"></i>
+          </div>
+          <div class="user-text">
+            <h3>Hệ thống Quản trị CRM</h3>
+            <p>Quyền hạn: Quản trị viên cao cấp</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="btn-admin-logout" class="btn-danger">
+            <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
+          </button>
+        </div>
+      </header>
+
+      <!-- KPI Grid -->
+      <div class="kpi-grid">
+        <div class="glass-panel kpi-card blue">
+          <span class="kpi-num" id="kpi-total-accounts">0</span>
+          <span class="kpi-label">Tổng số tài khoản</span>
+        </div>
+        <div class="glass-panel kpi-card green">
+          <span class="kpi-num" id="kpi-active-accounts">0</span>
+          <span class="kpi-label">Đang chạy ngầm</span>
+        </div>
+        <div class="glass-panel kpi-card purple">
+          <span class="kpi-num" id="kpi-total-classes-admin">0</span>
+          <span class="kpi-label">Tổng số lớp học quản lý</span>
+        </div>
+      </div>
+
+      <!-- Điều khiển & Danh sách -->
+      <div class="section-title">
+        <h3>Danh sách Tài khoản Học viên</h3>
+        <div style="display: flex; gap: 10px;">
+          <button id="btn-start-all" class="btn-secondary" style="color: #34d399; border-color: rgba(16, 185, 129, 0.3);">
+            <i class="fa-solid fa-play"></i> Chạy tất cả
+          </button>
+          <button id="btn-stop-all" class="btn-danger">
+            <i class="fa-solid fa-stop"></i> Dừng tất cả
+          </button>
+          <button id="btn-add-account" class="btn-glow" style="padding: 10px 16px; width: auto; font-size: 0.9rem;">
+            <i class="fa-solid fa-plus"></i> Thêm tài khoản
+          </button>
+        </div>
+      </div>
+
+      <div class="glass-panel table-container">
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th>Mã nhân viên</th>
+              <th>Họ tên</th>
+              <th>Đơn vị</th>
+              <th style="text-align: center;">Trạng thái</th>
+              <th style="text-align: center;">Số lớp đang chạy</th>
+              <th style="text-align: center;">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="accounts-table-body">
+            <!-- Render động từ JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MÀN HÌNH CHI TIẾT NHÂN VIÊN / USER PANEL ================= -->
+  <div id="user-screen" class="screen">
+    <div class="container">
+      <header class="glass-panel app-header">
+        <div class="user-info">
+          <div class="avatar">
+            <i class="fa-solid fa-user-tie"></i>
+          </div>
+          <div class="user-text">
+            <h3 id="user-title-name">Học viên</h3>
+            <p id="user-title-dept">Đơn vị</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="btn-back-to-admin" class="btn-secondary hidden">
+            <i class="fa-solid fa-arrow-left"></i> Quay lại Admin
+          </button>
+          <button id="btn-user-logout" class="btn-danger">
+            <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
+          </button>
+        </div>
+      </header>
+
+      <!-- Quay lại nếu là Admin đang xem -->
+      <div class="back-bar hidden" id="back-bar">
+        <button class="btn-secondary" onclick="showAdminDashboard()">
+          <i class="fa-solid fa-chevron-left"></i> Danh sách tài khoản quản lý
+        </button>
+      </div>
+
+      <!-- KPI cá nhân -->
+      <div class="kpi-grid">
+        <div class="glass-panel kpi-card blue">
+          <span class="kpi-num" id="kpi-user-total-classes">0</span>
+          <span class="kpi-label">Lớp học đăng ký</span>
+        </div>
+        <div class="glass-panel kpi-card green">
+          <span class="kpi-num" id="kpi-user-completed-classes">0</span>
+          <span class="kpi-label">Lớp đã hoàn thành</span>
+        </div>
+        <div class="glass-panel kpi-card purple">
+          <span class="kpi-num" id="kpi-user-running-classes">0</span>
+          <span class="kpi-label">Lớp đang học ngầm</span>
+        </div>
+      </div>
+
+      <div class="section-title">
+        <h3>Tiến độ Học tập Chi tiết</h3>
+        <button id="btn-sync-progress" class="btn-secondary">
+          <i class="fa-solid fa-rotate"></i> Đồng bộ tiến độ từ Skypec
+        </button>
+      </div>
+
+      <div class="glass-panel table-container">
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th>Lớp học</th>
+              <th style="text-align: center; width: 200px;">Tiến độ tích lũy</th>
+              <th style="text-align: center; width: 120px;">Trạng thái</th>
+              <th style="text-align: center; width: 120px;">Tự học ngầm</th>
+            </tr>
+          </thead>
+          <tbody id="classes-table-body">
+            <!-- Render động từ JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL THÊM TÀI KHOẢN (CHO ADMIN) ================= -->
+  <div id="add-account-modal" class="modal">
+    <div class="glass-panel modal-card">
+      <div class="modal-header">
+        <h3>Thêm Tài khoản Skypec Mới</h3>
+        <button class="close-btn" id="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="add-account-form">
+        <div class="input-group">
+          <i class="fa-solid fa-user"></i>
+          <input type="text" id="new-username" placeholder="Mã nhân viên Skypec" required>
+        </div>
+        <div class="input-group">
+          <i class="fa-solid fa-lock"></i>
+          <input type="password" id="new-password" placeholder="Mật khẩu tài khoản Skypec" required>
+        </div>
+        <button type="submit" class="btn-glow" style="margin-top: 10px;">
+          <span>Thêm và Đồng bộ Lớp học</span>
+          <i class="fa-solid fa-circle-plus"></i>
+        </button>
+      </form>
+      <div id="add-error" class="error-msg hidden" style="margin-top: 15px;">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span id="add-error-text">Không thể thêm tài khoản</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
