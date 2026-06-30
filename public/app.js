@@ -292,11 +292,14 @@ async function loadAdminDashboard(isPolling = false) {
             ${acc.runningCount} lớp
           </td>
           <td style="text-align: center;">
-            <div style="display: flex; gap: 8px; justify-content: center;">
-              <button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="viewStaffDetails('${acc.username}', '${acc.display_name}', '${acc.department}')">
+            <div style="display: flex; gap: 6px; justify-content: center;">
+              <button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85em;" onclick="viewStaffDetails('${acc.username}', '${acc.display_name}', '${acc.department}')">
                 <i class="fa-solid fa-eye"></i> Xem lớp
               </button>
-              <button class="btn-danger" style="padding: 6px 12px; font-size: 0.85rem;" onclick="deleteAccount('${acc.username}')">
+              <button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85em; color: #60a5fa; border-color: rgba(96, 165, 250, 0.2);" onclick="syncAccountFromRow('${acc.username}', this)">
+                <i class="fa-solid fa-rotate"></i> Đồng bộ
+              </button>
+              <button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85em; color: var(--danger); border-color: rgba(239, 68, 68, 0.2);" onclick="deleteAccount('${acc.username}')">
                 <i class="fa-solid fa-trash"></i> Xóa
               </button>
             </div>
@@ -901,5 +904,30 @@ async function handleChangePassword(e) {
   } finally {
     submitBtn.disabled = false;
     submitBtn.innerHTML = originalText;
+  }
+}
+
+async function syncAccountFromRow(username, btn) {
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
+  
+  try {
+    const res = await fetch(`/api/accounts/${username}/sync`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Đồng bộ dữ liệu tài khoản ${username} thành công!`, 'success', 'Thành công');
+      loadAdminDashboard(true);
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (err) {
+    showToast('Không thể đồng bộ: ' + err.message, 'error', 'Đồng bộ thất bại');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
   }
 }
