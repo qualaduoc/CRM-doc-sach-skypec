@@ -496,16 +496,153 @@ input:checked + .slider:before {
   display: block;
 }
 
+/* --- TỐI ƯU HÓA CHO SMARTPHONE (RESPONSIVE DESIGN) --- */
 @media (max-width: 768px) {
-  .crm-table th, .crm-table td {
-    padding: 12px 8px;
-    font-size: 0.85rem;
+  /* Container & padding chung */
+  .container {
+    padding: 12px;
   }
   
+  /* Header */
   .app-header {
     flex-direction: column;
-    gap: 15px;
+    align-items: center;
     text-align: center;
+    gap: 16px;
+    padding: 16px;
+  }
+  .user-info {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .header-actions {
+    width: 100%;
+    justify-content: center;
+    gap: 8px;
+  }
+  .header-actions button {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+
+  /* Cấu hình hệ thống */
+  .glass-panel[style*="justify-content: space-between"] {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+  .glass-panel[style*="justify-content: space-between"] > div {
+    justify-content: center;
+    width: 100%;
+  }
+
+  /* KPI Grid */
+  .kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi-card {
+    padding: 16px;
+  }
+  .kpi-num {
+    font-size: 1.6rem;
+  }
+
+  /* Section Title & Buttons */
+  .section-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .section-title div {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  /* Nút thêm tài khoản chiếm full width dòng dưới */
+  #btn-add-account {
+    grid-column: span 2;
+  }
+
+  /* Table Container & Table */
+  .table-container {
+    padding: 8px;
+    overflow-x: auto; /* Cho phép cuộn ngang mượt mà trên mobile */
+    -webkit-overflow-scrolling: touch;
+  }
+  .crm-table {
+    min-width: 600px; /* Đảm bảo bảng không bị co cụm quá mức */
+  }
+  .crm-table th, .crm-table td {
+    padding: 10px 8px;
+    font-size: 0.82rem;
+  }
+  .crm-table td div {
+    gap: 4px !important;
+  }
+  .crm-table td button {
+    padding: 4px 8px !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Modals */
+  .modal-card {
+    width: 95%;
+    padding: 20px;
+  }
+
+  /* Explore Modal */
+  .explore-modal-card {
+    width: 96vw;
+    height: 90vh;
+    padding: 16px;
+  }
+  .explore-container {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .explore-sidebar {
+    width: 100%;
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+    padding-bottom: 12px;
+    overflow-x: auto;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .category-item {
+    display: inline-flex;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+  .explore-content {
+    overflow: visible;
+  }
+  .explore-search-bar {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .explore-grid {
+    grid-template-columns: 1fr;
+    overflow-y: visible;
+  }
+}
+
+@media (max-width: 480px) {
+  h2 {
+    font-size: 1.5rem;
+  }
+  .login-card {
+    padding: 24px 16px;
+  }
+  .section-title h3 {
+    font-size: 1.2rem;
   }
 }
 
