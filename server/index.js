@@ -108,6 +108,147 @@ function fetchSkypecProfile(token, username) {
   });
 }
 
+function fetchSkypecKPI(token, year = new Date().getFullYear()) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: HOST, port: 443,
+      path: `/skypec2.lms.api/api/v1/LmsHistory/SearchKPI?year=${year}&month=0`,
+      method: 'GET',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Accept-Encoding': 'identity'
+      }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
+function fetchSkypecCertificates(token) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: HOST, port: 443,
+      path: `/skypec2.lms.api/api/v1/LmsHistory/GetTotalCertificate`,
+      method: 'GET',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Accept-Encoding': 'identity'
+      }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
+function fetchSkypecCurrentClasses(token) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: HOST, port: 443,
+      path: `/skypec2.lms.api/api/v1/LmsHistory/FeClassCurrent?order=1`,
+      method: 'GET',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Accept-Encoding': 'identity'
+      }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
+async function syncUserStats(username, token) {
+  const db = await getDb();
+  try {
+    const [kpiRes, certRes, classRes] = await Promise.all([
+      fetchSkypecKPI(token),
+      fetchSkypecCertificates(token),
+      fetchSkypecCurrentClasses(token)
+    ]);
+
+    let positionName = 'Học viên Skypec';
+    let kpiPercent = 0;
+    let kpiTotal = 0;
+    let kpiCurrent = 0;
+    let totalCertificate = 0;
+    let classTotal = 0;
+
+    if (kpiRes && kpiRes.status && kpiRes.data) {
+      positionName = kpiRes.data.positionName || 'Học viên Skypec';
+      kpiPercent = kpiRes.data.studentPercent || 0;
+      kpiTotal = kpiRes.data.studentTotal || 0;
+      kpiCurrent = kpiRes.data.studentCurrent || 0;
+    }
+
+    if (certRes && certRes.status) {
+      totalCertificate = certRes.data || 0;
+    }
+
+    if (classRes && classRes.status && classRes.data && classRes.data.details) {
+      classTotal = classRes.data.details.length || 0;
+    }
+
+    await db.run(`
+      UPDATE accounts SET
+        position_name = ?,
+        kpi_percent = ?,
+        kpi_total = ?,
+        kpi_current = ?,
+        total_certificate = ?,
+        class_total = ?
+      WHERE username = ?
+    `, positionName, kpiPercent, kpiTotal, kpiCurrent, totalCertificate, classTotal, username);
+
+    console.log(`[Sync] Đã cập nhật chỉ số KPI cho: ${username} (KPI: ${kpiPercent}%, Lớp: ${classTotal})`);
+  } catch (err) {
+    console.error(`[Sync Stats Error] Không thể cập nhật chỉ số KPI cho ${username}:`, err.message);
+  }
+}
+
 function fetchSkypecClasses(token, year) {
   return new Promise((resolve, reject) => {
     const postData = JSON.stringify({
@@ -283,6 +424,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Đồng bộ danh sách lớp học của nhân viên này (các năm gần đây)
     await syncUserClasses(username, accessToken);
+    await syncUserStats(username, accessToken);
 
     // Tạo JWT token cho phiên làm việc
     const token = jwt.sign({ role: 'user', username: username }, JWT_SECRET, { expiresIn: '7d' });
@@ -377,7 +519,28 @@ async function syncUserClasses(username, token) {
 
 // Lấy thông tin cá nhân hiện tại
 app.get('/api/me', authenticateToken, async (req, res) => {
-  res.json({ success: true, user: req.user });
+  try {
+    const db = await getDb();
+    if (req.user.role === 'admin') {
+      return res.json({ 
+        success: true, 
+        user: { 
+          role: 'admin', 
+          username: 'admin', 
+          display_name: 'Quản trị viên',
+          department: 'Quản lý hệ thống'
+        } 
+      });
+    }
+
+    const user = await db.get('SELECT username, display_name, department, email, phone, position_name, kpi_percent, kpi_total, kpi_current, total_certificate, class_total FROM accounts WHERE username = ?', req.user.username);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản nhân viên' });
+    }
+    res.json({ success: true, user: { ...user, role: 'user' } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Lấy danh sách tài khoản (Chỉ dành cho Admin)
@@ -437,6 +600,7 @@ app.post('/api/accounts/:username/sync', authenticateToken, async (req, res) => 
     
     await db.run('UPDATE accounts SET access_token = ?, status = "active" WHERE username = ?', loginResult.access_token, targetUser);
     await syncUserClasses(targetUser, loginResult.access_token);
+    await syncUserStats(targetUser, loginResult.access_token);
 
     res.json({ success: true, message: 'Đồng bộ dữ liệu lớp học thành công!' });
   } catch (err) {
@@ -548,6 +712,23 @@ app.post('/api/control/stop-all', authenticateToken, async (req, res) => {
     });
 
     res.json({ success: true, message: 'Đã dừng toàn bộ các tiến trình kết nối chạy ngầm.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy thông tin chi tiết một tài khoản (Dành cho Admin hoặc chính User đó)
+app.get('/api/accounts/:username', authenticateToken, async (req, res) => {
+  const username = req.params.username;
+  if (req.user.role !== 'admin' && req.user.username !== username) {
+    return res.status(403).json({ success: false, error: 'Không có quyền truy cập' });
+  }
+
+  try {
+    const db = await getDb();
+    const user = await db.get('SELECT username, display_name, department, email, phone, position_name, kpi_percent, kpi_total, kpi_current, total_certificate, class_total FROM accounts WHERE username = ?', username);
+    if (!user) return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản' });
+    res.json({ success: true, user });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

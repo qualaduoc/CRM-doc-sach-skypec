@@ -92,7 +92,7 @@ function startLearning(account, classItem) {
   let ws = null;
   let pingInterval = null;
   let videoInterval = null;
-  let videoTimeSeconds = 10;
+  let videoTimeSeconds = Math.round((classItem.learn_time || 0) * 60) + 10;
   let invocationId = 1;
   let reconnectTimeout = null;
   let isStoppedManually = false;

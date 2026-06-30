@@ -279,10 +279,28 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
   const username = targetUsername || state.username;
   const tbody = document.getElementById('classes-table-body');
   
-  // Nếu là tài khoản thường, cập nhật tên và phòng ban của họ
+  // Lấy thông tin chi tiết tài khoản bao gồm các chỉ số KPI từ Skypec
+  try {
+    const userRes = await fetch(`/api/accounts/${username}`, {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const userData = await userRes.json();
+    if (userData.success) {
+      const u = userData.user;
+      document.getElementById('user-title-name').textContent = u.display_name;
+      document.getElementById('user-title-dept').textContent = `${u.position_name || 'Học viên'} | ${u.department || 'Đơn vị'}`;
+      
+      // Cập nhật các thẻ KPI từ Skypec
+      document.getElementById('kpi-user-total-classes').textContent = u.class_total || 0;
+      document.getElementById('kpi-user-kpi').textContent = `${u.kpi_percent || 0}%`;
+      document.getElementById('kpi-user-kpi-detail').textContent = `KPI: ${u.kpi_current || 0}/${u.kpi_total || 0} giờ`;
+      document.getElementById('kpi-user-certificates').textContent = u.total_certificate || 0;
+    }
+  } catch (e) {
+    console.error('Lỗi khi tải thông tin KPI tài khoản:', e.message);
+  }
+
   if (!targetUsername) {
-    document.getElementById('user-title-name').textContent = state.displayName;
-    document.getElementById('user-title-dept').textContent = state.department;
     document.getElementById('btn-back-to-admin').classList.add('hidden');
     document.getElementById('back-bar').classList.add('hidden');
   }
@@ -312,12 +330,7 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
       classes = classes.filter(c => c.account_username === targetUsername);
     }
 
-    // Cập nhật KPI
-    document.getElementById('kpi-user-total-classes').textContent = classes.length;
-    
-    const completedCount = classes.reduce((acc, curr) => acc + (curr.is_finish === 1 ? 1 : 0), 0);
-    document.getElementById('kpi-user-completed-classes').textContent = completedCount;
-
+    // Cập nhật số lớp đang treo máy
     const runningCount = classes.reduce((acc, curr) => acc + (curr.isRunning ? 1 : 0), 0);
     document.getElementById('kpi-user-running-classes').textContent = runningCount;
 
