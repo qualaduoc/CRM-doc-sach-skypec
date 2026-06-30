@@ -623,7 +623,7 @@ app.get('/api/accounts', authenticateToken, async (req, res) => {
 
   try {
     const db = await getDb();
-    const rows = await db.all('SELECT username, display_name, department, status, created_at FROM accounts');
+    const rows = await db.all('SELECT username, display_name, department, status, created_at, kpi_percent FROM accounts');
     
     // Đếm số lớp học đang chạy ngầm của từng tài khoản
     const accounts = rows.map(acc => {
