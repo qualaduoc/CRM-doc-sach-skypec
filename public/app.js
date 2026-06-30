@@ -274,7 +274,7 @@ async function loadAdminDashboard(isPolling = false) {
 
     tbody.innerHTML = accounts.map(acc => {
       const isRunning = acc.runningCount > 0;
-      const statusText = isRunning ? 'Treo máy (Online)' : 'Ngoại tuyến';
+      const statusText = isRunning ? 'Treo máy (Online)' : 'Không đọc gì';
       const statusClass = isRunning ? 'active' : 'error';
       const indicatorColor = isRunning ? 'var(--success)' : '#ef4444';
 
