@@ -183,6 +183,37 @@ function fetchFirstLessonId(token, classId) {
   });
 }
 
+function fetchClassDetails(token, classId) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: HOST, port: 443,
+      path: `/skypec2.lms.api/api/v1/LmsClass/GetById?id=${classId}`,
+      method: 'GET',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Accept-Encoding': 'identity'
+      }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
 // --- MIDDLEWARE XÁC THỰC TOKEN ---
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -302,7 +333,16 @@ async function syncUserClasses(username, token) {
         if (learningHistories.length > 0) {
           learningId = learningHistories[0].id;
           learnTime = learningHistories[0].learnTime || joinData.data.totalTime || 0;
-          minTimeRequired = learningHistories[0].minTimeRequired || 430;
+        }
+
+        // Lấy thời gian yêu cầu tối thiểu thực tế từ API GetById
+        try {
+          const classDetails = await fetchClassDetails(token, classId);
+          if (classDetails && classDetails.status && classDetails.data) {
+            minTimeRequired = classDetails.data.minTimeRequired || 430;
+          }
+        } catch (e) {
+          console.warn(`[Sync Warning] Không lấy được minTimeRequired cho lớp ${classId}, dùng mặc định 430:`, e.message);
         }
 
         // 2. Lấy ID bài học đầu tiên làm contentId nếu chưa có
