@@ -357,7 +357,7 @@ async function syncUserClasses(username, token) {
         await db.run(`
           INSERT INTO classes (id, account_username, class_title, class_user_id, learning_id, content_id, learn_time, min_time_required, is_finish)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
+          ON CONFLICT(id, account_username) DO UPDATE SET
             class_title = excluded.class_title,
             class_user_id = excluded.class_user_id,
             learning_id = excluded.learning_id,

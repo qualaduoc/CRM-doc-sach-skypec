@@ -32,7 +32,7 @@ async function getDb() {
     );
 
     CREATE TABLE IF NOT EXISTS classes (
-      id TEXT PRIMARY KEY,
+      id TEXT,
       account_username TEXT,
       class_title TEXT,
       class_user_id TEXT,
@@ -43,6 +43,7 @@ async function getDb() {
       is_finish INTEGER DEFAULT 0,
       auto_learn INTEGER DEFAULT 0,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id, account_username),
       FOREIGN KEY(account_username) REFERENCES accounts(username) ON DELETE CASCADE
     );
   `);

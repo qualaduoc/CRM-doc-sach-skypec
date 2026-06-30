@@ -198,7 +198,7 @@ function startLearning(account, classItem) {
       });
 
       ws.on('message', (data) => {
-        // Nhận phản hồi từ server (nếu có)
+        console.log(`[Engine WS Message] [${account.username}]`, data.toString());
       });
 
       ws.on('close', async (code, reason) => {
