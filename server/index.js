@@ -88,7 +88,7 @@ function fetchSkypecProfile(token, username) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: HOST, port: 443,
-      path: `/skypec2.authentication.api/api/v1/HrProfile/GetByUsername?username=${encodeURIComponent(username)}`,
+      path: `/skypec2.hr.api/api/v1/HrProfile/FeGetByUserInfo/${encodeURIComponent(username)}`,
       method: 'GET',
       headers: { 
         'Authorization': `Bearer ${token}`,
@@ -225,10 +225,17 @@ app.post('/api/auth/login', async (req, res) => {
     const accessToken = loginResult.access_token;
 
     // Lấy thông tin cá nhân từ Skypec
-    const profileResult = await fetchSkypecProfile(accessToken, username);
-    const profile = profileResult.data || {};
-    const displayName = profile.fullName || profile.employeeName || profile.hoTen || username;
-    const department = profile.departmentName || 'Học viên Skypec';
+    let displayName = username;
+    let department = 'Học viên Skypec';
+
+    try {
+      const profileResult = await fetchSkypecProfile(accessToken, username);
+      const profile = profileResult.data || {};
+      displayName = profile.fullName || profile.employeeName || profile.hoTen || username;
+      department = profile.departmentName || 'Học viên Skypec';
+    } catch (profileErr) {
+      console.warn(`[Auth Warning] Không lấy được profile cho ${username}:`, profileErr.message);
+    }
 
     // Lưu/Cập nhật tài khoản vào cơ sở dữ liệu nội bộ (mã hóa mật khẩu)
     const encryptedPassword = encrypt(password);
