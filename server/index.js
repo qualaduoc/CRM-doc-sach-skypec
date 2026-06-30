@@ -74,8 +74,13 @@ function loginSkypec(username, password) {
       let body = '';
       res.on('data', (chunk) => body += chunk);
       res.on('end', () => {
-        if (res.statusCode === 200) resolve(JSON.parse(body));
-        else reject(new Error(`Đăng nhập Skypec thất bại (Mã lỗi: ${res.statusCode})`));
+        if (res.statusCode === 200) {
+          resolve(JSON.parse(body));
+        } else if (res.statusCode === 400) {
+          reject(new Error('Có vẻ anh zai sai Mật khẩu rồi! gõ chuẩn vào đê!'));
+        } else {
+          reject(new Error(`Đăng nhập Skypec thất bại (Mã lỗi: ${res.statusCode})`));
+        }
       });
     });
     req.on('error', reject);
