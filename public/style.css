@@ -56,6 +56,20 @@ body {
 }
 
 /* --- MÀN HÌNH ĐĂNG NHẬP --- */
+#login-screen {
+  position: relative;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: #020408;
+}
+#login-screen.active {
+  display: flex;
+}
+
 .login-container {
   display: flex;
   align-items: center;
