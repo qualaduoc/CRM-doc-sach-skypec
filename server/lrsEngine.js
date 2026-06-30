@@ -198,7 +198,31 @@ function startLearning(account, classItem) {
       });
 
       ws.on('message', (data) => {
-        console.log(`[Engine WS Message] [${account.username}]`, data.toString());
+        const msgStr = data.toString();
+        console.log(`[Engine WS Message] [${account.username}]`, msgStr);
+        
+        // Khi nhận được phản hồi bắt tay thành công từ SignalR ({})
+        if (msgStr.includes('{}')) {
+          console.log(`[Engine] Bắt tay thành công cho ${account.username}. Gửi sự kiện START_VIEW cho lớp ${classId}...`);
+          try {
+            const startPayload = JSON.stringify({
+              eventName: 'START_VIEW',
+              learningId: learningId,
+              id: contentId
+            });
+            const startMessage = JSON.stringify({
+              type: 1,
+              invocationId: String(invocationId),
+              target: 'Handshake',
+              arguments: [startPayload]
+            }) + RECORD_SEPARATOR;
+            
+            ws.send(startMessage);
+            invocationId++;
+          } catch (err) {
+            console.error(`[Engine] Lỗi gửi sự kiện START_VIEW cho ${account.username}:`, err.message);
+          }
+        }
       });
 
       ws.on('close', async (code, reason) => {

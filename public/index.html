@@ -13,24 +13,32 @@
   <div id="login-screen" class="screen active">
     <div class="login-container">
       <div class="glass-panel login-card">
-        <div class="brand-logo">
-          <i class="fa-solid fa-graduation-cap"></i>
+        <div class="brand-logo" style="display: flex; justify-content: center; gap: 12px;">
+          <i class="fa-solid fa-book-open-reader" style="color: var(--primary);"></i>
+          <i class="fa-solid fa-mug-hot" style="color: var(--warning); animation: bounce 2s infinite;"></i>
         </div>
-        <h2>CRM Skypec Reader</h2>
-        <p class="subtitle">Hệ thống Quản lý & Học tập chạy ngầm hàng loạt</p>
+        <h2>Phòng đọc sách tập thể 📚</h2>
+        <p class="subtitle">Cùng đọc với nhau mới vui 🤪☕</p>
 
         <form id="login-form">
           <div class="input-group">
-            <i class="fa-solid fa-user"></i>
-            <input type="text" id="username" placeholder="Mã nhân viên hoặc 'admin'" required autocomplete="username">
+            <i class="fa-solid fa-user-ninja" style="color: var(--primary);"></i>
+            <input type="text" id="username" placeholder="Mã nhân viên Skypec 🤠" required autocomplete="username">
           </div>
           <div class="input-group">
-            <i class="fa-solid fa-lock"></i>
-            <input type="password" id="password" placeholder="Mật khẩu" required autocomplete="current-password">
+            <i class="fa-solid fa-user-secret" style="color: var(--warning);"></i>
+            <input type="password" id="password" placeholder="Mật khẩu bảo mật 🤫" required autocomplete="current-password">
+          </div>
+          <div class="form-options">
+            <label class="remember-me-label">
+              <input type="checkbox" id="remember-me">
+              <span class="custom-checkbox"></span>
+              Ghi nhớ đăng nhập
+            </label>
           </div>
           <button type="submit" class="btn-glow">
-            <span>ĐĂNG NHẬP</span>
-            <i class="fa-solid fa-right-to-bracket"></i>
+            <span>ĐĂNG NHẬP NGAY THÔI 🚀</span>
+            <i class="fa-solid fa-face-laugh-beam"></i>
           </button>
         </form>
 
@@ -55,7 +63,10 @@
             <p>Quyền hạn: Quản trị viên cao cấp</p>
           </div>
         </div>
-        <div class="header-actions">
+        <div class="header-actions" style="display: flex; gap: 10px;">
+          <button id="btn-admin-change-pass" class="btn-secondary" style="border-color: rgba(245, 158, 11, 0.3); color: var(--warning);">
+            <i class="fa-solid fa-key"></i> Đổi mật khẩu
+          </button>
           <button id="btn-admin-logout" class="btn-danger">
             <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
           </button>
@@ -166,9 +177,14 @@
 
       <div class="section-title">
         <h3>Tiến độ Học tập Chi tiết</h3>
-        <button id="btn-sync-progress" class="btn-secondary">
-          <i class="fa-solid fa-rotate"></i> Đồng bộ tiến độ từ Skypec
-        </button>
+        <div style="display: flex; gap: 10px;">
+          <button id="btn-explore-classes" class="btn-glow" style="padding: 10px 16px; width: auto; font-size: 0.9rem; margin-top: 0;">
+            <i class="fa-solid fa-compass"></i> Khám phá khóa học
+          </button>
+          <button id="btn-sync-progress" class="btn-secondary">
+            <i class="fa-solid fa-rotate"></i> Đồng bộ tiến độ từ Skypec
+          </button>
+        </div>
       </div>
 
       <div class="glass-panel table-container">
@@ -213,6 +229,94 @@
       <div id="add-error" class="error-msg hidden" style="margin-top: 15px;">
         <i class="fa-solid fa-circle-exclamation"></i>
         <span id="add-error-text">Không thể thêm tài khoản</span>
+      </div>
+    </div>
+  </div>
+  <!-- ================= MODAL ĐỔI MẬT KHẨU ADMIN ================= -->
+  <div id="change-password-modal" class="modal">
+    <div class="glass-panel modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-key"></i> Đổi Mật Khẩu Admin</h3>
+        <button class="close-btn" id="btn-close-pass-modal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="change-password-form">
+        <div class="input-group">
+          <i class="fa-solid fa-lock-open"></i>
+          <input type="password" id="current-password" placeholder="Mật khẩu hiện tại" required>
+        </div>
+        <div class="input-group">
+          <i class="fa-solid fa-lock"></i>
+          <input type="password" id="new-password-input" placeholder="Mật khẩu mới" required>
+        </div>
+        <div class="input-group">
+          <i class="fa-solid fa-circle-check"></i>
+          <input type="password" id="confirm-new-password" placeholder="Xác nhận mật khẩu mới" required>
+        </div>
+        <button type="submit" class="btn-glow" style="margin-top: 10px;">
+          <span>Cập nhật mật khẩu</span>
+          <i class="fa-solid fa-floppy-disk"></i>
+        </button>
+      </form>
+      <div id="change-pass-error" class="error-msg hidden" style="margin-top: 15px;">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span id="change-pass-error-text">Lỗi đổi mật khẩu</span>
+      </div>
+    </div>
+  </div>
+  <!-- ================= MODAL KHÁM PHÁ & ĐĂNG KÝ LỚP HỌC MỚI ================= -->
+  <div id="explore-classes-modal" class="modal">
+    <div class="glass-panel modal-card explore-modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-compass"></i> Khám phá & Đăng ký Lớp học Mới</h3>
+        <button class="close-btn" id="btn-close-explore-modal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div class="explore-container">
+        <!-- Sidebar danh mục -->
+        <div class="explore-sidebar">
+          <div class="category-item active" data-cate="713056e6-8fc2-4d54-8614-0c475c0ae1a4">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>Đào tạo bắt buộc</span>
+          </div>
+          <div class="category-item" data-cate="e65286de-b97e-4395-8304-1758aac8958c">
+            <i class="fa-solid fa-chart-line"></i>
+            <span>Đào tạo phát triển</span>
+          </div>
+          <div class="category-item" data-cate="91fd169f-d92a-4992-8bee-b27383a5172d">
+            <i class="fa-solid fa-plane"></i>
+            <span>Yêu cầu Hãng HK</span>
+          </div>
+          <div class="category-item" data-cate="2d9b0a8c-6ef4-42cd-ab11-2b5e388cc22f">
+            <i class="fa-solid fa-graduation-cap"></i>
+            <span>Đào tạo tự chọn</span>
+          </div>
+        </div>
+        
+        <!-- Nội dung danh sách lớp -->
+        <div class="explore-content">
+          <div class="explore-search-bar">
+            <div class="input-group search-input-group" style="margin-bottom: 0;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="explore-search-input" placeholder="Tìm kiếm tên lớp học...">
+            </div>
+            <button id="btn-explore-search" class="btn-glow" style="width: auto; padding: 10px 20px; margin-top: 0;">Tìm kiếm</button>
+          </div>
+          
+          <div class="explore-loading id-loading" id="explore-loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Đang tải danh sách lớp học từ Skypec...</p>
+          </div>
+          
+          <div class="explore-grid" id="explore-grid">
+            <!-- Render động từ JS -->
+          </div>
+          
+          <div class="explore-pagination" id="explore-pagination">
+            <button id="btn-explore-prev" class="btn-secondary" disabled><i class="fa-solid fa-chevron-left"></i> Trang trước</button>
+            <span id="explore-page-info">Trang 1</span>
+            <button id="btn-explore-next" class="btn-secondary">Trang sau <i class="fa-solid fa-chevron-right"></i></button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

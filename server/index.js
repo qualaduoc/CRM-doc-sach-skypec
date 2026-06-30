@@ -201,6 +201,37 @@ function fetchSkypecCurrentClasses(token) {
   });
 }
 
+function registerSkypecClass(token, classId) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: HOST, port: 443,
+      path: `/skypec2.lms.api/api/v1/LmsClass/FrUserRegisterClass/${classId}`,
+      method: 'GET',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Accept-Encoding': 'identity'
+      }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            resolve({ status: false, message: 'Lỗi giải mã JSON phản hồi đăng ký' });
+          }
+        } else {
+          resolve({ status: false, message: `Lỗi máy chủ Skypec (Mã: ${res.statusCode})` });
+        }
+      });
+    });
+    req.on('error', (err) => resolve({ status: false, message: err.message }));
+    req.end();
+  });
+}
+
 async function syncUserStats(username, token) {
   const db = await getDb();
   try {
@@ -769,6 +800,142 @@ app.delete('/api/accounts/:username', authenticateToken, async (req, res) => {
     await db.run('DELETE FROM accounts WHERE username = ?', targetUser);
 
     res.json({ success: true, message: `Đã xóa tài khoản ${targetUser} và dừng toàn bộ tiến trình chạy ngầm.` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Khám phá lớp học theo danh mục từ Skypec Catalog
+app.post('/api/classes/explore', authenticateToken, async (req, res) => {
+  const { categoryId, keyword, offset, limit, username } = req.body;
+  const targetUsername = (req.user.role === 'admin' && username) ? username : req.user.username;
+
+  try {
+    const db = await getDb();
+    const account = await db.get('SELECT access_token FROM accounts WHERE username = ?', targetUsername);
+    if (!account) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản nhân viên' });
+    }
+
+    const token = account.access_token;
+    const payload = {
+      keyword: keyword || "",
+      offset: parseInt(offset) || 0,
+      limit: parseInt(limit) || 20,
+      categoryId: categoryId,
+      departmentId: "00000000-0000-0000-0000-000000000000",
+      branchId: "00000000-0000-0000-0000-000000000000",
+      trainingId: "00000000-0000-0000-0000-000000000000",
+      subjectId: "00000000-0000-0000-0000-000000000000"
+    };
+
+    const options = {
+      hostname: HOST, port: 443,
+      path: '/skypec2.lms.api/api/v1/LmsClass/frSearch',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Encoding': 'identity'
+      }
+    };
+
+    const request = https.request(options, (response) => {
+      let body = '';
+      response.on('data', (chunk) => body += chunk);
+      response.on('end', () => {
+        if (response.statusCode === 200) {
+          try {
+            res.json(JSON.parse(body));
+          } catch (e) {
+            res.status(500).json({ success: false, error: 'Lỗi giải mã JSON phản hồi từ Skypec' });
+          }
+        } else {
+          res.status(response.statusCode).json({ success: false, error: `Skypec phản hồi mã lỗi: ${response.statusCode}` });
+        }
+      });
+    });
+
+    request.on('error', (err) => {
+      res.status(500).json({ success: false, error: err.message });
+    });
+
+    request.write(JSON.stringify(payload));
+    request.end();
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Đăng ký tham gia lớp học mới
+app.post('/api/classes/register', authenticateToken, async (req, res) => {
+  const { classId, username } = req.body;
+  if (!classId) {
+    return res.status(400).json({ success: false, error: 'Thiếu mã lớp học (classId)' });
+  }
+
+  const targetUsername = (req.user.role === 'admin' && username) ? username : req.user.username;
+
+  try {
+    const db = await getDb();
+    const account = await db.get('SELECT access_token FROM accounts WHERE username = ?', targetUsername);
+    if (!account) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản nhân viên' });
+    }
+
+    const token = account.access_token;
+    
+    // 1. Gọi API đăng ký lớp học trước
+    const regRes = await registerSkypecClass(token, classId);
+    if (!regRes.status) {
+      let friendlyError = 'Không thể đăng ký lớp học này';
+      if (regRes.code === 'LMS_NOT_ALLLOW_REGISTER') {
+        friendlyError = 'Lớp học này hiện không cho phép tự đăng ký (đã đóng đăng ký hoặc giới hạn đối tượng)';
+      } else if (regRes.message) {
+        friendlyError = regRes.message;
+      }
+      return res.status(400).json({ success: false, error: friendlyError });
+    }
+
+    // 2. Gọi fetchActualProgress để kích hoạt trạng thái vào học
+    const joinRes = await fetchActualProgress(token, classId);
+    if (joinRes && joinRes.status) {
+      // Đồng bộ tức thì danh sách lớp học và các chỉ số thống kê
+      await syncUserClasses(targetUsername, token);
+      await syncUserStats(targetUsername, token);
+      res.json({ success: true, message: 'Đăng ký và tham gia lớp học thành công!' });
+    } else {
+      res.status(400).json({ success: false, error: joinRes.message || 'Đăng ký thành công nhưng không thể kích hoạt vào học' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Đổi mật khẩu Admin
+app.post('/api/admin/change-password', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ success: false, error: 'Vui lòng điền đầy đủ mật khẩu hiện tại và mật khẩu mới' });
+  }
+
+  try {
+    const db = await getDb();
+    const adminRow = await db.get('SELECT * FROM admin WHERE username = ?', 'admin');
+    
+    if (!adminRow || !bcrypt.compareSync(currentPassword, adminRow.password)) {
+      return res.status(400).json({ success: false, error: 'Mật khẩu hiện tại không chính xác' });
+    }
+
+    const hashedNewPassword = bcrypt.hashSync(newPassword, 10);
+    await db.run('UPDATE admin SET password = ? WHERE username = ?', hashedNewPassword, 'admin');
+
+    res.json({ success: true, message: 'Đổi mật khẩu admin thành công!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

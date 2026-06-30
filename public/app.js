@@ -28,6 +28,15 @@ function initApp() {
   } else {
     showScreen('login-screen');
     stopDashboardPolling();
+    
+    // Tự động điền tài khoản đã ghi nhớ
+    const rememberedUser = localStorage.getItem('crm_remembered_user');
+    const rememberedPass = localStorage.getItem('crm_remembered_pass');
+    if (rememberedUser && rememberedPass) {
+      document.getElementById('username').value = rememberedUser;
+      document.getElementById('password').value = rememberedPass;
+      document.getElementById('remember-me').checked = true;
+    }
   }
 }
 
@@ -79,6 +88,18 @@ function setupEventListeners() {
   // Xử lý form thêm tài khoản
   document.getElementById('add-account-form').addEventListener('submit', handleAddAccount);
 
+  // Modal Đổi mật khẩu Admin
+  const passModal = document.getElementById('change-password-modal');
+  document.getElementById('btn-admin-change-pass').addEventListener('click', () => {
+    passModal.classList.add('active');
+    document.getElementById('change-pass-error').classList.add('hidden');
+    document.getElementById('change-password-form').reset();
+  });
+  document.getElementById('btn-close-pass-modal').addEventListener('click', () => {
+    passModal.classList.remove('active');
+  });
+  document.getElementById('change-password-form').addEventListener('submit', handleChangePassword);
+
   // Nút điều khiển hàng loạt của Admin
   document.getElementById('btn-start-all').addEventListener('click', () => triggerBulkControl('start-all'));
   document.getElementById('btn-stop-all').addEventListener('click', () => triggerBulkControl('stop-all'));
@@ -87,6 +108,59 @@ function setupEventListeners() {
   document.getElementById('btn-sync-progress').addEventListener('click', () => {
     const userToSync = state.selectedUser ? state.selectedUser.username : state.username;
     triggerSyncProgress(userToSync);
+  });
+
+  // Modal Khám phá lớp học mới
+  const exploreModal = document.getElementById('explore-classes-modal');
+  document.getElementById('btn-explore-classes').addEventListener('click', () => {
+    exploreModal.classList.add('active');
+    exploreState.keyword = '';
+    document.getElementById('explore-search-input').value = '';
+    exploreState.page = 1;
+    loadExploreClasses();
+  });
+  document.getElementById('btn-close-explore-modal').addEventListener('click', () => {
+    exploreModal.classList.remove('active');
+  });
+
+  // Chuyển đổi danh mục khám phá
+  document.querySelectorAll('.category-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      document.querySelectorAll('.category-item').forEach(i => i.classList.remove('active'));
+      const target = e.currentTarget;
+      target.classList.add('active');
+      exploreState.activeCategory = target.getAttribute('data-cate');
+      exploreState.page = 1;
+      loadExploreClasses();
+    });
+  });
+
+  // Tìm kiếm lớp khám phá
+  document.getElementById('btn-explore-search').addEventListener('click', () => {
+    exploreState.keyword = document.getElementById('explore-search-input').value.trim();
+    exploreState.page = 1;
+    loadExploreClasses();
+  });
+  document.getElementById('explore-search-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      exploreState.keyword = document.getElementById('explore-search-input').value.trim();
+      exploreState.page = 1;
+      loadExploreClasses();
+    }
+  });
+
+  // Phân trang khám phá
+  document.getElementById('btn-explore-prev').addEventListener('click', () => {
+    if (exploreState.page > 1) {
+      exploreState.page--;
+      loadExploreClasses();
+    }
+  });
+  document.getElementById('btn-explore-next').addEventListener('click', () => {
+    if (exploreState.page < exploreState.totalPages) {
+      exploreState.page++;
+      loadExploreClasses();
+    }
   });
 }
 
@@ -125,6 +199,16 @@ async function handleLogin(e) {
       localStorage.setItem('crm_username', usernameInput);
       localStorage.setItem('crm_display_name', data.displayName);
       localStorage.setItem('crm_department', data.department);
+
+      // Lưu hoặc xóa thông tin Ghi nhớ đăng nhập
+      const rememberMe = document.getElementById('remember-me').checked;
+      if (rememberMe) {
+        localStorage.setItem('crm_remembered_user', usernameInput);
+        localStorage.setItem('crm_remembered_pass', passwordInput);
+      } else {
+        localStorage.removeItem('crm_remembered_user');
+        localStorage.removeItem('crm_remembered_pass');
+      }
 
       initApp();
     } else {
@@ -264,13 +348,13 @@ async function deleteAccount(username) {
       });
       const data = await res.json();
       if (data.success) {
-        alert('Đã xóa tài khoản thành công!');
+        showToast('Đã xóa tài khoản thành công!', 'success', 'Thành công');
         loadAdminDashboard();
       } else {
         throw new Error(data.error);
       }
     } catch (e) {
-      alert('Lỗi khi xóa tài khoản: ' + e.message);
+      showToast('Lỗi khi xóa tài khoản: ' + e.message, 'error', 'Thất bại');
     }
   }
 }
@@ -329,6 +413,9 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
     if (targetUsername) {
       classes = classes.filter(c => c.account_username === targetUsername);
     }
+
+    // Lưu trữ danh sách ID các lớp đã đăng ký
+    state.registeredClassIds = classes.map(c => c.id);
 
     // Cập nhật số lớp đang treo máy
     const runningCount = classes.reduce((acc, curr) => acc + (curr.isRunning ? 1 : 0), 0);
@@ -410,7 +497,7 @@ async function toggleLearn(classId, isChecked) {
     });
     const data = await res.json();
     if (!data.success) {
-      alert('Lỗi thao tác: ' + data.error);
+      showToast('Lỗi thao tác: ' + data.error, 'error', 'Thất bại');
       // Reset lại giao diện
       loadUserDashboard(state.selectedUser ? state.selectedUser.username : null);
     } else {
@@ -418,7 +505,7 @@ async function toggleLearn(classId, isChecked) {
       loadUserDashboard(state.selectedUser ? state.selectedUser.username : null);
     }
   } catch (e) {
-    alert('Lỗi kết nối mạng: ' + e.message);
+    showToast('Lỗi kết nối mạng: ' + e.message, 'error', 'Lỗi kết nối');
   }
 }
 
@@ -436,14 +523,153 @@ async function triggerSyncProgress(username) {
     });
     const data = await res.json();
     if (data.success) {
-      alert('Đồng bộ thành công dữ liệu học tập mới nhất từ Skypec!');
+      showToast('Đồng bộ thành công dữ liệu học tập mới nhất từ Skypec!', 'success', 'Đồng bộ thành công');
       loadUserDashboard(username === state.username ? null : username);
     } else {
       throw new Error(data.error);
     }
   } catch (err) {
-    alert('Không thể đồng bộ: ' + err.message);
+    showToast('Không thể đồng bộ: ' + err.message, 'error', 'Đồng bộ thất bại');
   } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+// --- KHÁM PHÁ & ĐĂNG KÝ LỚP HỌC MỚI ---
+let exploreState = {
+  activeCategory: '713056e6-8fc2-4d54-8614-0c475c0ae1a4',
+  keyword: '',
+  page: 1,
+  limit: 9,
+  totalPages: 1
+};
+
+async function loadExploreClasses() {
+  const grid = document.getElementById('explore-grid');
+  const loading = document.getElementById('explore-loading');
+  const pagination = document.getElementById('explore-pagination');
+  
+  grid.style.display = 'none';
+  loading.style.display = 'flex';
+  pagination.style.display = 'none';
+
+  const userToExplore = state.selectedUser ? state.selectedUser.username : state.username;
+  const offset = (exploreState.page - 1) * exploreState.limit;
+
+  try {
+    const res = await fetch('/api/classes/explore', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({
+        username: userToExplore,
+        categoryId: exploreState.activeCategory,
+        keyword: exploreState.keyword,
+        offset: offset,
+        limit: exploreState.limit
+      })
+    });
+
+    const data = await res.json();
+    loading.style.display = 'none';
+
+    if (data.status && data.data) {
+      const classes = data.data;
+      const totalRecord = data.metaData ? data.metaData.totalRecord : 0;
+      exploreState.totalPages = Math.ceil(totalRecord / exploreState.limit) || 1;
+
+      if (classes.length === 0) {
+        grid.innerHTML = `
+          <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);">
+            <i class="fa-solid fa-folder-open" style="font-size: 2.5rem; margin-bottom: 15px; display: block; color: var(--primary);"></i>
+            Không tìm thấy lớp học nào trong danh mục này.
+          </div>
+        `;
+        grid.style.display = 'grid';
+        return;
+      }
+
+      grid.innerHTML = classes.map(c => {
+        const isRegistered = state.registeredClassIds && state.registeredClassIds.includes(c.id);
+        const actionBtn = isRegistered 
+          ? `<button class="btn-secondary" style="color: var(--success); border-color: var(--success); width: 100%; cursor: not-allowed;" disabled><i class="fa-solid fa-circle-check"></i> Đã đăng ký</button>`
+          : `<button class="btn-glow" style="width: 100%; margin-top: 0;" onclick="registerExploreClass('${c.id}', this)"><i class="fa-solid fa-graduation-cap"></i> Đăng ký & Vào học</button>`;
+
+        const timeCommit = c.minTimeRequired ? `${c.minTimeRequired} phút` : 'Không rõ';
+
+        return `
+          <div class="explore-card">
+            <div class="explore-card-title" title="${c.title}">${c.title}</div>
+            <div class="explore-card-meta">
+              <span><i class="fa-solid fa-clock"></i> Yêu cầu: ${timeCommit}</span>
+              <span>ID: <code>${c.id.substring(0, 8)}...</code></span>
+            </div>
+            <div class="explore-card-action">
+              ${actionBtn}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      grid.style.display = 'grid';
+      pagination.style.display = 'flex';
+      
+      document.getElementById('explore-page-info').textContent = `Trang ${exploreState.page} / ${exploreState.totalPages} (Tổng số ${totalRecord} lớp)`;
+      document.getElementById('btn-explore-prev').disabled = exploreState.page === 1;
+      document.getElementById('btn-explore-next').disabled = exploreState.page >= exploreState.totalPages;
+
+    } else {
+      throw new Error(data.error || 'Lỗi tải danh mục từ Skypec');
+    }
+  } catch (err) {
+    loading.style.display = 'none';
+    grid.innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--danger);">
+        <i class="fa-solid fa-circle-exclamation" style="font-size: 2.5rem; margin-bottom: 15px; display: block;"></i>
+        Lỗi tải danh sách lớp: ${err.message}
+      </div>
+    `;
+    grid.style.display = 'grid';
+  }
+}
+
+async function registerExploreClass(classId, btn) {
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang đăng ký...';
+
+  const userToRegister = state.selectedUser ? state.selectedUser.username : state.username;
+
+  try {
+    const res = await fetch('/api/classes/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({
+        username: userToRegister,
+        classId: classId
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast('Đăng ký lớp học thành công! Hệ thống đã đồng bộ lớp mới vào bảng điều khiển.', 'success', 'Đăng ký thành công');
+      if (!state.registeredClassIds) state.registeredClassIds = [];
+      state.registeredClassIds.push(classId);
+      
+      btn.outerHTML = `<button class="btn-secondary" style="color: var(--success); border-color: var(--success); width: 100%; cursor: not-allowed;" disabled><i class="fa-solid fa-circle-check"></i> Đã đăng ký</button>`;
+      
+      loadUserDashboard(userToRegister === state.username ? null : userToRegister);
+    } else {
+      throw new Error(data.error || 'Đăng ký thất bại');
+    }
+  } catch (err) {
+    showToast('Không thể đăng ký lớp học: ' + err.message, 'error', 'Đăng ký thất bại');
     btn.disabled = false;
     btn.innerHTML = originalHtml;
   }
@@ -459,13 +685,13 @@ async function triggerBulkControl(action) {
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message);
+        showToast(data.message, 'info');
         loadAdminDashboard();
       } else {
         throw new Error(data.error);
       }
     } catch (e) {
-      alert('Lỗi: ' + e.message);
+      showToast('Lỗi: ' + e.message, 'info');
     }
   }
 }
@@ -494,11 +720,129 @@ async function handleAddAccount(e) {
 
     const data = await res.json();
     if (data.success) {
-      alert(`Đã liên kết và đồng bộ thành công tài khoản: ${data.displayName}`);
+      showToast(`Đã liên kết và đồng bộ thành công tài khoản: ${data.displayName}`, 'info');
       document.getElementById('add-account-modal').classList.remove('active');
       loadAdminDashboard();
     } else {
       throw new Error(data.error || 'Lỗi thêm tài khoản');
+    }
+  } catch (err) {
+    errorTextEl.textContent = err.message;
+    errorEl.classList.remove('hidden');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalText;
+  }
+}
+
+// --- HỆ THỐNG THÔNG BÁO TOAST TỰ CHỈNH (CUSTOM TOAST NOTIFICATION) ---
+function showToast(message, type = 'info', title = null) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+
+  let iconHtml = '<i class="fa-solid fa-circle-info"></i>';
+  let defaultTitle = 'Thông báo';
+  if (type === 'success') {
+    iconHtml = '<i class="fa-solid fa-circle-check"></i>';
+    defaultTitle = 'Thành công';
+  } else if (type === 'error') {
+    iconHtml = '<i class="fa-solid fa-circle-xmark"></i>';
+    defaultTitle = 'Lỗi';
+  } else if (type === 'warning') {
+    iconHtml = '<i class="fa-solid fa-triangle-exclamation"></i>';
+    defaultTitle = 'Cảnh báo';
+  }
+
+  toast.innerHTML = `
+    <div class="toast-icon">${iconHtml}</div>
+    <div class="toast-content">
+      <div class="toast-title">${title || defaultTitle}</div>
+      <div class="toast-message">${message}</div>
+    </div>
+    <button class="toast-close"><i class="fa-solid fa-xmark"></i></button>
+    <div class="toast-progress">
+      <div class="toast-progress-fill"></div>
+    </div>
+  `;
+
+  container.appendChild(toast);
+
+  // Kích hoạt hiệu ứng xuất hiện
+  setTimeout(() => {
+    toast.classList.add('active');
+  }, 10);
+
+  // Chạy thanh thời gian co lại
+  const progressFill = toast.querySelector('.toast-progress-fill');
+  setTimeout(() => {
+    if (progressFill) progressFill.style.width = '0%';
+  }, 50);
+
+  // Tự động đóng sau 4 giây
+  const autoCloseTimeout = setTimeout(() => {
+    closeToast(toast);
+  }, 4000);
+
+  // Đóng thủ công bằng nút X
+  toast.querySelector('.toast-close').addEventListener('click', () => {
+    clearTimeout(autoCloseTimeout);
+    closeToast(toast);
+  });
+}
+
+function closeToast(toast) {
+  toast.classList.remove('active');
+  toast.classList.add('fade-out');
+  toast.addEventListener('transitionend', () => {
+    toast.remove();
+  });
+}
+
+// --- ĐỔI MẬT KHẨU ADMIN ---
+async function handleChangePassword(e) {
+  e.preventDefault();
+  const currentPassword = document.getElementById('current-password').value;
+  const newPassword = document.getElementById('new-password-input').value;
+  const confirmNewPassword = document.getElementById('confirm-new-password').value;
+  const errorEl = document.getElementById('change-pass-error');
+  const errorTextEl = document.getElementById('change-pass-error-text');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+
+  if (newPassword !== confirmNewPassword) {
+    errorTextEl.textContent = 'Mật khẩu mới và xác nhận mật khẩu không khớp!';
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  errorEl.classList.add('hidden');
+  submitBtn.disabled = true;
+  const originalText = submitBtn.innerHTML;
+  submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang cập nhật...';
+
+  try {
+    const res = await fetch('/api/admin/change-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast('Cập nhật mật khẩu admin thành công!', 'success', 'Thành công');
+      document.getElementById('change-password-modal').classList.remove('active');
+    } else {
+      throw new Error(data.error || 'Đổi mật khẩu thất bại');
     }
   } catch (err) {
     errorTextEl.textContent = err.message;
