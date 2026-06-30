@@ -7,6 +7,8 @@ const state = {
   selectedUser: null // Dành cho Admin khi click xem chi tiết một nhân viên
 };
 
+let dashboardInterval = null;
+
 // --- KHỞI CHẠY KHI ĐÃ TẢI XONG TRANG ---
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
@@ -22,8 +24,29 @@ function initApp() {
       showScreen('user-screen');
       loadUserDashboard();
     }
+    startDashboardPolling();
   } else {
     showScreen('login-screen');
+    stopDashboardPolling();
+  }
+}
+
+function startDashboardPolling() {
+  if (dashboardInterval) clearInterval(dashboardInterval);
+  dashboardInterval = setInterval(() => {
+    const activeScreen = document.querySelector('.screen.active');
+    if (activeScreen && activeScreen.id === 'user-screen') {
+      loadUserDashboard(state.selectedUser ? state.selectedUser.username : null, true);
+    } else if (activeScreen && activeScreen.id === 'admin-screen') {
+      loadAdminDashboard(true);
+    }
+  }, 10000); // 10 giây một lần
+}
+
+function stopDashboardPolling() {
+  if (dashboardInterval) {
+    clearInterval(dashboardInterval);
+    dashboardInterval = null;
   }
 }
 
@@ -252,8 +275,7 @@ async function deleteAccount(username) {
   }
 }
 
-// --- DASHBOARD USER (NHÂN VIÊN) ---
-async function loadUserDashboard(targetUsername = null) {
+async function loadUserDashboard(targetUsername = null, isSilent = false) {
   const username = targetUsername || state.username;
   const tbody = document.getElementById('classes-table-body');
   
@@ -265,15 +287,17 @@ async function loadUserDashboard(targetUsername = null) {
     document.getElementById('back-bar').classList.add('hidden');
   }
 
-  tbody.innerHTML = `
-    <tr>
-      <td colspan="4" style="text-align: center; padding: 30px;">
-        <div class="loading-spinner">
-          <i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải dữ liệu lớp học...
-        </div>
-      </td>
-    </tr>
-  `;
+  if (!isSilent) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" style="text-align: center; padding: 30px;">
+          <div class="loading-spinner">
+            <i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải dữ liệu lớp học...
+          </div>
+        </td>
+      </tr>
+    `;
+  }
 
   try {
     const res = await fetch('/api/classes', {
