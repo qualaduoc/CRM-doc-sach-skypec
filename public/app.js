@@ -13,6 +13,7 @@ let dashboardInterval = null;
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
   setupEventListeners();
+  initSpaceBackground();
 });
 
 function initApp() {
@@ -38,6 +39,76 @@ function initApp() {
       document.getElementById('remember-me').checked = true;
     }
   }
+}
+
+// Hiệu ứng nền vũ trụ động lấp lánh (Twinkling space background) cho màn hình đăng nhập
+function initSpaceBackground() {
+  const canvas = document.getElementById('space-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  
+  let width = canvas.width = window.innerWidth;
+  let height = canvas.height = window.innerHeight;
+  
+  window.addEventListener('resize', () => {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+  });
+  
+  const numStars = 120;
+  const stars = [];
+  
+  for (let i = 0; i < numStars; i++) {
+    stars.push({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      radius: Math.random() * 1.2 + 0.4,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: (Math.random() - 0.5) * 0.15,
+      alpha: Math.random() * 0.8 + 0.2,
+      alphaSpeed: Math.random() * 0.015 + 0.005
+    });
+  }
+  
+  function animate() {
+    // Vẽ nền không gian sâu thẳm
+    const gradient = ctx.createRadialGradient(width / 2, height / 2, 10, width / 2, height / 2, Math.max(width, height) * 0.8);
+    gradient.addColorStop(0, '#0c1020');
+    gradient.addColorStop(0.5, '#070a14');
+    gradient.addColorStop(1, '#020408');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Vẽ các vì sao trôi nổi
+    for (let i = 0; i < numStars; i++) {
+      const s = stars[i];
+      
+      // Cập nhật vị trí trôi
+      s.x += s.vx;
+      s.y += s.vy;
+      
+      // Độ sáng lấp lánh
+      s.alpha += s.alphaSpeed;
+      if (s.alpha > 1 || s.alpha < 0.2) {
+        s.alphaSpeed = -s.alphaSpeed;
+      }
+      
+      // Tràn viền màn hình thì quay lại ở phía đối diện
+      if (s.x < 0) s.x = width;
+      if (s.x > width) s.x = 0;
+      if (s.y < 0) s.y = height;
+      if (s.y > height) s.y = 0;
+      
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${s.alpha})`;
+      ctx.fill();
+    }
+    
+    requestAnimationFrame(animate);
+  }
+  
+  animate();
 }
 
 function startDashboardPolling() {
