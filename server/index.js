@@ -422,7 +422,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const db = await getDb();
 
-    // 1. Kiểm tra nếu là Admin đăng nhập hệ thống CRM
+    // 1. Kiểm tra nếu là Admin đăng nhập hệ thống LMS
     if (username.trim() === 'admin') {
       const adminRow = await db.get('SELECT * FROM admin WHERE username = ?', 'admin');
       if (adminRow && bcrypt.compareSync(password, adminRow.password)) {
@@ -872,7 +872,7 @@ app.get('/api/accounts/:username', authenticateToken, async (req, res) => {
   }
 });
 
-// Xóa tài khoản nhân viên ra khỏi CRM (Chỉ dành cho Admin)
+// Xóa tài khoản nhân viên ra khỏi LMS (Chỉ dành cho Admin)
 app.delete('/api/accounts/:username', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ success: false, error: 'Không có quyền thao tác' });
 
@@ -1034,7 +1034,7 @@ app.post('/api/admin/change-password', authenticateToken, async (req, res) => {
 
 // --- KHỞI ĐỘNG HỆ THỐNG ---
 app.listen(PORT, async () => {
-  console.log(`[CRM] Máy chủ đang chạy tại: http://localhost:${PORT}`);
+  console.log(`[LMS] Máy chủ đang chạy tại: http://localhost:${PORT}`);
   
   // Khởi chạy bộ máy học tập chạy ngầm cho các tài khoản đang bật sẵn
   await initEngine();

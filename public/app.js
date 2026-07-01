@@ -298,7 +298,7 @@ async function handleLogin(e) {
 }
 
 function handleLogout() {
-  if (confirm('Khầy có chắc chắn muốn đăng xuất khỏi hệ thống CRM không?')) {
+  if (confirm('Khầy có chắc chắn muốn đăng xuất khỏi hệ thống LMS không?')) {
     localStorage.clear();
     state.token = null;
     state.role = null;
