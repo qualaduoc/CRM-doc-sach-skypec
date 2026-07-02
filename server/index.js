@@ -48,6 +48,8 @@ function decrypt(text) {
   }
 }
 
+const surveyStatuses = new Map();
+
 // --- CÁC HÀM GỌI API SKYPEC ---
 function loginSkypec(username, password) {
   return new Promise((resolve, reject) => {
@@ -515,6 +517,7 @@ async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, di
 
       for (const surveyItem of surveys) {
         const classContentId = surveyItem.id;
+        const connectionKey = `${username}_${classId}`;
         
         // Kiểm tra xem học viên đã làm bài khảo sát này chưa
         const isCompleted = learningHistories.some(h => h.classContentId === classContentId && (h.isFinish === true || h.isFinish === 1));
@@ -523,17 +526,20 @@ async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, di
         }
 
         console.log(`[Survey] Học viên ${username}: Phát hiện khảo sát chưa làm "${surveyItem.title}". Đang tiến hành làm tự động...`);
+        surveyStatuses.set(connectionKey, 'Đang khảo sát thay bạn...');
 
         // A. Lấy chi tiết để có surveyId (contentOpenId)
         const detailJson = await fetchClassContentDetail(token, classContentId);
         if (!detailJson || !detailJson.status || !detailJson.data) {
           console.warn(`[Survey] Học viên ${username}: Không lấy được chi tiết bài khảo sát.`);
+          surveyStatuses.delete(connectionKey);
           continue;
         }
 
         const surveyId = detailJson.data.contentOpenId;
         if (!surveyId) {
           console.warn(`[Survey] Học viên ${username}: Bài khảo sát không liên kết surveyId.`);
+          surveyStatuses.delete(connectionKey);
           continue;
         }
 
@@ -557,12 +563,14 @@ async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, di
         const initRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUser', saveUserPayload);
         if (initRes.statusCode !== 200) {
           console.warn(`[Survey] Học viên ${username}: Khởi tạo khảo sát thất bại (Status ${initRes.statusCode}).`);
+          surveyStatuses.delete(connectionKey);
           continue;
         }
         
         const initData = JSON.parse(initRes.body);
         if (!initData.status || !initData.data) {
           console.warn(`[Survey] Học viên ${username}: Khởi tạo khảo sát thất bại (Skypec báo lỗi).`);
+          surveyStatuses.delete(connectionKey);
           continue;
         }
 
@@ -572,6 +580,7 @@ async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, di
         const qRes = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsSurveyQuestion?surveyId=${surveyId}&pageSize=100&currentPage=1`);
         if (qRes.statusCode !== 200) {
           console.warn(`[Survey] Học viên ${username}: Lấy danh sách câu hỏi thất bại (Status ${qRes.statusCode}).`);
+          surveyStatuses.delete(connectionKey);
           continue;
         }
 
@@ -638,8 +647,15 @@ async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, di
         const learnRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', learningPayload);
         if (learnRes.statusCode === 200) {
           console.log(`[Survey] Học viên ${username}: Đã tự động hoàn thành khảo sát "${surveyItem.title}" THÀNH CÔNG!`);
+          surveyStatuses.set(connectionKey, 'Đã khảo sát xong..chuyển sang treo đọc...');
+          setTimeout(() => {
+            if (surveyStatuses.get(connectionKey) === 'Đã khảo sát xong..chuyển sang treo đọc...') {
+              surveyStatuses.delete(connectionKey);
+            }
+          }, 10000);
         } else {
           console.warn(`[Survey] Học viên ${username}: Lỗi ghi nhận hoàn thành khảo sát (Status ${learnRes.statusCode}).`);
+          surveyStatuses.delete(connectionKey);
         }
       }
       resolve();
@@ -997,12 +1013,13 @@ app.get('/api/classes', authenticateToken, async (req, res) => {
       rows = await db.all('SELECT * FROM classes WHERE account_username = ?', req.user.username);
     }
 
-    // Gắn thêm trạng thái kết nối WebSocket thực tế từ bộ máy Engine
+    // Gắn thêm trạng thái kết nối WebSocket thực tế từ bộ máy Engine và tiến trình khảo sát
     const result = rows.map(c => {
       const connectionKey = `${c.account_username}_${c.id}`;
       return {
         ...c,
-        isRunning: activeConnections.has(connectionKey)
+        isRunning: activeConnections.has(connectionKey),
+        surveyStatus: surveyStatuses.get(connectionKey) || null
       };
     });
 

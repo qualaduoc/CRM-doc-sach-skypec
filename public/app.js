@@ -549,6 +549,12 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
             <div style="margin-top: 4px; font-size: 0.8rem; color: var(--text-muted);">
               ID Lớp: <code>${c.id}</code>
             </div>
+            ${c.surveyStatus ? `
+            <div class="survey-status-indicator" style="margin-top: 6px; font-size: 0.82rem; font-weight: 600; color: #f97316; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-circle-notch fa-spin"></i>
+              <span>${c.surveyStatus}</span>
+            </div>
+            ` : ''}
           </td>
           <td>
             <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600;">
