@@ -588,22 +588,26 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
 // Bật/Tắt học ngầm cho một lớp
 async function toggleLearn(classId, isChecked) {
   try {
+    const targetUser = state.selectedUser ? state.selectedUser.username : state.username;
     const res = await fetch(`/api/classes/${classId}/toggle-learn`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.token}`
       },
-      body: JSON.stringify({ auto_learn: isChecked ? 1 : 0 })
+      body: JSON.stringify({ 
+        auto_learn: isChecked ? 1 : 0,
+        username: targetUser 
+      })
     });
     const data = await res.json();
     if (!data.success) {
       showToast(data.error || 'Lỗi thao tác', 'error', 'Thất bại');
       // Tải lại danh sách lớp để khôi phục trạng thái checkbox
-      loadUserDashboard(state.selectedUser ? state.selectedUser.username : null);
+      loadUserDashboard(targetUser);
     } else {
       // Tải lại số đếm KPI
-      loadUserDashboard(state.selectedUser ? state.selectedUser.username : null);
+      loadUserDashboard(targetUser);
     }
   } catch (e) {
     showToast('Lỗi kết nối mạng: ' + e.message, 'error', 'Lỗi kết nối');

@@ -579,14 +579,14 @@ async function syncUserClasses(username, token) {
           if (prevClass && prevClass.auto_learn === 1) {
             console.log(`[Sync] Lớp học "${item.classTitle}" của ${username} đã hoàn thành. Tự động dừng học ngầm.`);
             await db.run('UPDATE classes SET auto_learn = 0 WHERE id = ? AND account_username = ?', classId, username);
-            stopLearning(classId);
+            stopLearning(username, classId);
           }
         } else if (minTimeRequired && learnTime >= minTimeRequired) {
           const prevClass = await db.get('SELECT auto_learn FROM classes WHERE id = ? AND account_username = ?', classId, username);
           if (prevClass && prevClass.auto_learn === 1) {
             console.log(`[Sync] Lớp học "${item.classTitle}" của ${username} đã đạt đủ số phút tối thiểu. Tự động dừng học ngầm.`);
             await db.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, username);
-            stopLearning(classId);
+            stopLearning(username, classId);
           }
         }
       }
@@ -646,7 +646,8 @@ app.get('/api/accounts', authenticateToken, async (req, res) => {
     const dbClasses = await db.all('SELECT id, account_username FROM classes WHERE auto_learn = 1');
     const runningMap = {};
     dbClasses.forEach(c => {
-      if (activeConnections.has(c.id)) {
+      const connectionKey = `${c.account_username}_${c.id}`;
+      if (activeConnections.has(connectionKey)) {
         runningMap[c.account_username] = (runningMap[c.account_username] || 0) + 1;
       }
     });
@@ -706,10 +707,13 @@ app.get('/api/classes', authenticateToken, async (req, res) => {
     }
 
     // Gắn thêm trạng thái kết nối WebSocket thực tế từ bộ máy Engine
-    const result = rows.map(c => ({
-      ...c,
-      isRunning: activeConnections.has(c.id)
-    }));
+    const result = rows.map(c => {
+      const connectionKey = `${c.account_username}_${c.id}`;
+      return {
+        ...c,
+        isRunning: activeConnections.has(connectionKey)
+      };
+    });
 
     res.json({ success: true, classes: result });
   } catch (err) {
@@ -720,14 +724,18 @@ app.get('/api/classes', authenticateToken, async (req, res) => {
 // Bật/Tắt chế độ tự động chạy ngầm cho lớp học
 app.post('/api/classes/:classId/toggle-learn', authenticateToken, async (req, res) => {
   const classId = req.params.classId;
-  const { auto_learn } = req.body; // 0 hoặc 1
+  const { auto_learn, username } = req.body; // 0 hoặc 1, nhận thêm username từ frontend
 
   try {
     const db = await getDb();
-    const classItem = await db.get('SELECT * FROM classes WHERE id = ?', classId);
-    if (!classItem) return res.status(404).json({ success: false, error: 'Không tìm thấy lớp học' });
+    
+    // Xác định đối tượng tài khoản học viên cần thao tác
+    const targetUsername = (req.user.role === 'admin' && username) ? username : req.user.username;
+    
+    const classItem = await db.get('SELECT * FROM classes WHERE id = ? AND account_username = ?', classId, targetUsername);
+    if (!classItem) return res.status(404).json({ success: false, error: 'Không tìm thấy lớp học của nhân viên này' });
 
-    // Kiểm tra quyền sở hữu
+    // Kiểm tra quyền sở hữu (nếu không phải admin và username không khớp)
     if (req.user.role !== 'admin' && classItem.account_username !== req.user.username) {
       return res.status(403).json({ success: false, error: 'Không có quyền thao tác trên lớp học này' });
     }
@@ -736,7 +744,7 @@ app.post('/api/classes/:classId/toggle-learn', authenticateToken, async (req, re
       // Đếm số lớp đang treo của tài khoản này
       const activeCount = await db.get(
         'SELECT COUNT(*) as count FROM classes WHERE account_username = ? AND auto_learn = 1',
-        classItem.account_username
+        targetUsername
       );
       
       // Lấy giới hạn cấu hình từ bảng settings
@@ -755,9 +763,9 @@ app.post('/api/classes/:classId/toggle-learn', authenticateToken, async (req, re
     }
 
     // Cập nhật trạng thái tự học
-    await db.run('UPDATE classes SET auto_learn = ? WHERE id = ? AND account_username = ?', auto_learn, classId, classItem.account_username);
+    await db.run('UPDATE classes SET auto_learn = ? WHERE id = ? AND account_username = ?', auto_learn, classId, targetUsername);
 
-    const account = await db.get('SELECT * FROM accounts WHERE username = ?', classItem.account_username);
+    const account = await db.get('SELECT * FROM accounts WHERE username = ?', targetUsername);
     const decryptedPassword = decrypt(account.password);
     const accWithPlainPass = { ...account, password: decryptedPassword };
 
@@ -766,7 +774,7 @@ app.post('/api/classes/:classId/toggle-learn', authenticateToken, async (req, re
       startLearning(accWithPlainPass, classItem);
     } else {
       // Dừng chạy ngầm
-      stopLearning(classId);
+      stopLearning(targetUsername, classId);
     }
 
     res.json({ success: true, isRunning: auto_learn === 1 });

@@ -82,8 +82,9 @@ function fetchActualProgress(token, classId) {
 // Hàm khởi chạy một kết nối học tập chạy ngầm
 function startLearning(account, classItem) {
   const classId = classItem.id;
-  if (activeConnections.has(classId)) {
-    console.log(`[Engine] Lớp học ${classId} đã đang chạy.`);
+  const connectionKey = `${account.username}_${classId}`;
+  if (activeConnections.has(connectionKey)) {
+    console.log(`[Engine] Lớp học ${classId} của tài khoản ${account.username} đã đang chạy.`);
     return;
   }
 
@@ -103,12 +104,12 @@ function startLearning(account, classItem) {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       stopTimers();
       if (ws) ws.close(1000, 'Stopped by user');
-      activeConnections.delete(classId);
-      console.log(`[Engine] Đã dừng chạy ngầm lớp ${classId}`);
+      activeConnections.delete(connectionKey);
+      console.log(`[Engine] Đã dừng chạy ngầm lớp ${classId} của tài khoản ${account.username}`);
     }
   };
 
-  activeConnections.set(classId, connectionObj);
+  activeConnections.set(connectionKey, connectionObj);
 
   function stopTimers() {
     if (pingInterval) clearInterval(pingInterval);
@@ -294,8 +295,9 @@ function startLearning(account, classItem) {
 }
 
 // Dừng một lớp học cụ thể
-function stopLearning(classId) {
-  const conn = activeConnections.get(classId);
+function stopLearning(username, classId) {
+  const connectionKey = `${username}_${classId}`;
+  const conn = activeConnections.get(connectionKey);
   if (conn) {
     conn.stop();
   }
