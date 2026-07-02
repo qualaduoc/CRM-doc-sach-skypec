@@ -123,7 +123,7 @@ function startLearning(account, classItem) {
       const db = await getDb();
       // Lấy thông tin mới nhất từ DB
       const currentAcc = await db.get('SELECT * FROM accounts WHERE username = ?', account.username);
-      const currentClass = await db.get('SELECT * FROM classes WHERE id = ?', classId);
+      const currentClass = await db.get('SELECT * FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
       
       if (!currentAcc || !currentClass || currentClass.auto_learn === 0) {
         connectionObj.stop();
