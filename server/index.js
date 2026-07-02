@@ -349,7 +349,26 @@ function fetchFirstLessonId(token, classId) {
           try {
             const json = JSON.parse(body);
             if (json.status && json.data && json.data.length > 0) {
-              resolve(json.data[0].id);
+              // Tìm bài học tính phút học đầu tiên (không phải khảo sát, không phải bài thi/kiểm tra)
+              const validLesson = json.data.find(item => {
+                const typeTitle = (item.type && item.type.title) ? item.type.title.toLowerCase() : '';
+                const itemTitle = item.title ? item.title.toLowerCase() : '';
+                
+                // Loại trừ khảo sát và bài thi/kiểm tra
+                const isSurvey = typeTitle.includes('khảo sát') || typeTitle.includes('survey') || itemTitle.includes('khảo sát');
+                const isTest = typeTitle.includes('test') || typeTitle.includes('thi') || typeTitle.includes('kiểm tra') || itemTitle.includes('kiểm tra') || itemTitle.includes('bài thi');
+                
+                return !isSurvey && !isTest;
+              });
+
+              if (validLesson) {
+                console.log(`[Sync] Lớp ${classId}: Chọn bài giảng hợp lệ "${validLesson.title}" (ID: ${validLesson.id}) để treo máy.`);
+                resolve(validLesson.id);
+              } else {
+                // Fallback: nếu không tìm thấy bài nào thỏa mãn, chọn bài đầu tiên
+                console.log(`[Sync] Lớp ${classId}: Không tìm thấy bài giảng, fallback chọn bài đầu tiên "${json.data[0].title}" (ID: ${json.data[0].id}).`);
+                resolve(json.data[0].id);
+              }
             } else {
               resolve(null);
             }
