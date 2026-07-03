@@ -4,6 +4,7 @@ const https = require('https');
 const querystring = require('querystring');
 
 const activeConnections = new Map(); // key: classId, value: connection object
+const surveyStatuses = new Map();
 const RECORD_SEPARATOR = '\u001e';
 const HOST = 'elearning.skypec.com.vn';
 
@@ -138,6 +139,27 @@ function startLearning(account, classItem) {
         console.log(`[Engine] Lớp ${classId} không có learningId. Không thể kết nối WebSocket.`);
         connectionObj.stop();
         return;
+      }
+
+      // Tự động kiểm tra và hoàn thành các khảo sát chưa làm trước khi kết nối WebSocket treo đọc sách
+      try {
+        const progressRes = await fetchActualProgress(token, classId);
+        if (progressRes && progressRes.status && progressRes.data) {
+          const classUserId = progressRes.data.id;
+          const learningHistories = progressRes.data.lmsClassUserLearning || [];
+          
+          await checkAndAutoSubmitSurveys(
+            token,
+            classId,
+            classUserId,
+            progressRes.data.userId,
+            progressRes.data.displayName,
+            account.username,
+            learningHistories
+          );
+        }
+      } catch (err) {
+        console.error(`[Engine] Lỗi tự động nộp khảo sát cho ${account.username} trước khi treo học:`, err.message);
       }
 
       const wsUrl = `wss://${HOST}/skypec2.lms.api/socket/hubs/lrs?learningId=${learningId}&clientProtocol=1.5&access_token=${encodeURIComponent(token)}`;
@@ -326,10 +348,291 @@ async function initEngine() {
   }
 }
 
+function callSkypecGet(token, path) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: HOST, port: 443,
+      path: path,
+      method: 'GET',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'X-Authorize': token,
+        'Accept': 'application/json',
+        'Accept-Encoding': 'identity'
+      }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        resolve({ statusCode: res.statusCode, body });
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function callSkypecPost(token, path, bodyObj) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify(bodyObj);
+    const options = {
+      hostname: HOST, port: 443,
+      path: path,
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'X-Authorize': token,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'Accept': 'application/json',
+        'Accept-Encoding': 'identity'
+      }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        resolve({ statusCode: res.statusCode, body });
+      });
+    });
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+function fetchClassContentDetail(token, classContentId) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: HOST, port: 443,
+      path: `/skypec2.lms.api/api/v1/LmsClassContent/${classContentId}`,
+      method: 'GET',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Accept-Encoding': 'identity'
+      }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
+async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, displayName, username, learningHistories) {
+  return new Promise(async (resolve) => {
+    try {
+      // 1. Tải danh sách bài học của lớp học
+      const listOptions = {
+        hostname: HOST, port: 443,
+        path: `/skypec2.lms.api/api/v1/LmsClassContent/frGetByClassId/${classId}`,
+        method: 'GET',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept-Encoding': 'identity'
+        }
+      };
+      
+      const contentsList = await new Promise((resList) => {
+        const req = https.request(listOptions, (res) => {
+          let body = '';
+          res.on('data', (chunk) => body += chunk);
+          res.on('end', () => {
+            if (res.statusCode === 200) {
+              try {
+                const json = JSON.parse(body);
+                resList(json.data || []);
+              } catch (e) { resList([]); }
+            } else { resList([]); }
+          });
+        });
+        req.on('error', () => resList([]));
+        req.end();
+      });
+
+      // Lọc ra các bài học là khảo sát
+      const surveys = contentsList.filter(item => {
+        const typeTitle = (item.type && item.type.title) ? item.type.title.toLowerCase() : '';
+        const itemTitle = item.title ? item.title.toLowerCase() : '';
+        return typeTitle.includes('khảo sát') || itemTitle.includes('khảo sát') || item.typeId === '7bd609d4-33bb-43e2-8c1d-c5bf008780bf';
+      });
+
+      if (surveys.length === 0) {
+        resolve();
+        return;
+      }
+
+      for (const surveyItem of surveys) {
+        const classContentId = surveyItem.id;
+        const connectionKey = `${username}_${classId}`;
+        
+        // Kiểm tra xem học viên đã làm bài khảo sát này chưa
+        const isCompleted = learningHistories.some(h => h.classContentId === classContentId && (h.isFinish === true || h.isFinish === 1));
+        if (isCompleted) {
+          continue;
+        }
+
+        console.log(`[Survey] Học viên ${username}: Phát hiện khảo sát chưa làm "${surveyItem.title}". Đang tiến hành làm tự động...`);
+        surveyStatuses.set(connectionKey, 'Đang khảo sát thay bạn...');
+
+        // A. Lấy chi tiết để có surveyId (contentOpenId)
+        const detailJson = await fetchClassContentDetail(token, classContentId);
+        if (!detailJson || !detailJson.status || !detailJson.data) {
+          console.warn(`[Survey] Học viên ${username}: Không lấy được chi tiết bài khảo sát.`);
+          surveyStatuses.delete(connectionKey);
+          continue;
+        }
+
+        const surveyId = detailJson.data.contentOpenId;
+        if (!surveyId) {
+          console.warn(`[Survey] Học viên ${username}: Bài khảo sát không liên kết surveyId.`);
+          surveyStatuses.delete(connectionKey);
+          continue;
+        }
+
+        // B. Khởi tạo phiên khảo sát (SaveUser - completeStatus: 2)
+        const saveUserPayload = {
+          classId: classId,
+          completeStatus: 2,
+          createdDate: new Date().toISOString(),
+          displayName: displayName || username,
+          ownerId: "00000000-0000-0000-0000-000000000000",
+          ownerType: 1,
+          surveyId: surveyId,
+          targetId: classId,
+          targetName: detailJson.data.classTitle || "Khảo sát tự động",
+          userId: userId,
+          userName: username,
+          verifyResultType: null,
+          verifyUserType: 1
+        };
+
+        const initRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUser', saveUserPayload);
+        if (initRes.statusCode !== 200) {
+          console.warn(`[Survey] Học viên ${username}: Khởi tạo khảo sát thất bại (Status ${initRes.statusCode}).`);
+          surveyStatuses.delete(connectionKey);
+          continue;
+        }
+        
+        const initData = JSON.parse(initRes.body);
+        if (!initData.status || !initData.data) {
+          console.warn(`[Survey] Học viên ${username}: Khởi tạo khảo sát thất bại (Skypec báo lỗi).`);
+          surveyStatuses.delete(connectionKey);
+          continue;
+        }
+
+        const surveyUserId = initData.data.id;
+
+        // C. Tải danh sách câu hỏi khảo sát kèm phân trang
+        const qRes = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsSurveyQuestion?surveyId=${surveyId}&pageSize=100&currentPage=1`);
+        if (qRes.statusCode !== 200) {
+          console.warn(`[Survey] Học viên ${username}: Lấy danh sách câu hỏi thất bại (Status ${qRes.statusCode}).`);
+          surveyStatuses.delete(connectionKey);
+          continue;
+        }
+
+        const qDataJson = JSON.parse(qRes.body);
+        const questionsList = qDataJson.data || [];
+
+        // D. Trả lời tích tất cả cột lớn nhất cho từng nhóm câu hỏi
+        for (const group of questionsList) {
+          const surveyQuestionId = group.id;
+          let answersList = [];
+
+          if (group.type === 5) { // Dạng ma trận đánh giá
+            let maxRow = 15;
+            let targetCol = 6;
+            try {
+              const rows = JSON.parse(group.subContent || '[]');
+              if (rows.length > 0) maxRow = rows.length;
+              const cols = JSON.parse(group.answer || '[]');
+              if (cols.length > 0) targetCol = cols.length;
+            } catch (e) {}
+
+            for (let r = 1; r <= maxRow; r++) {
+              answersList.push({ row: r, col: targetCol, mark: 1 });
+            }
+          } else { // Dạng câu hỏi lựa chọn đơn
+            let targetCol = 1;
+            answersList.push({ row: 1, col: targetCol, mark: 1 });
+          }
+
+          const saveQPayload = {
+            surveyUserId: surveyUserId,
+            surveyQuestionId: surveyQuestionId,
+            surveyId: surveyId,
+            ownerId: "00000000-0000-0000-0000-000000000000",
+            ownerType: 1,
+            answer: JSON.stringify(answersList)
+          };
+
+          await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUserQuestion', saveQPayload);
+        }
+
+        // E. Nộp và chốt hoàn thành phiên (SaveUser completeStatus: 2 kèm id)
+        saveUserPayload.id = surveyUserId;
+        await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUser', saveUserPayload);
+
+        // F. Ghi nhận hoàn thành bài học khảo sát lên cây tiến độ (LmsClassUserLearning)
+        const oldLearning = learningHistories.find(l => l.classContentId === classContentId);
+        const learningPayload = {
+          id: oldLearning ? oldLearning.id : "00000000-0000-0000-0000-000000000000",
+          classUserId: classUserId,
+          classContentId: classContentId,
+          isFinish: true,
+          isPassed: true,
+          learnTime: 0,
+          times: oldLearning ? (oldLearning.times + 1) : 1,
+          lastUpdatedDate: new Date().toISOString(),
+          lastUpdatedUserId: userId,
+          classContent: {
+            id: classContentId,
+            classId: classId
+          }
+        };
+
+        const learnRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', learningPayload);
+        if (learnRes.statusCode === 200) {
+          console.log(`[Survey] Học viên ${username}: Đã tự động hoàn thành khảo sát "${surveyItem.title}" THÀNH CÔNG!`);
+          surveyStatuses.set(connectionKey, 'Đã khảo sát xong..chuyển sang treo đọc...');
+          setTimeout(() => {
+            if (surveyStatuses.get(connectionKey) === 'Đã khảo sát xong..chuyển sang treo đọc...') {
+              surveyStatuses.delete(connectionKey);
+            }
+          }, 10000);
+        } else {
+          console.warn(`[Survey] Học viên ${username}: Lỗi ghi nhận hoàn thành khảo sát (Status ${learnRes.statusCode}).`);
+          surveyStatuses.delete(connectionKey);
+        }
+      }
+      resolve();
+    } catch (err) {
+      console.error(`[Survey Error] Lỗi luồng tự động khảo sát:`, err.message);
+      resolve();
+    }
+  });
+}
+
 module.exports = {
   startLearning,
   stopLearning,
   initEngine,
   activeConnections,
-  fetchActualProgress
+  fetchActualProgress,
+  checkAndAutoSubmitSurveys,
+  surveyStatuses
 };
