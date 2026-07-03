@@ -236,6 +236,38 @@ function setupEventListeners() {
       loadExploreClasses();
     }
   });
+
+  // --- SỰ KIỆN TAB ADMIN & QUẢN LÝ FMS ---
+  document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.admin-tab-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.color = 'var(--text-muted)';
+        b.style.borderBottom = '2px solid transparent';
+      });
+      
+      const targetBtn = e.currentTarget;
+      targetBtn.classList.add('active');
+      targetBtn.style.color = 'var(--primary)';
+      targetBtn.style.borderBottom = '2px solid var(--primary)';
+
+      const tabId = targetBtn.getAttribute('data-tab');
+      document.querySelectorAll('.admin-tab-content').forEach(content => {
+        content.style.display = 'none';
+      });
+      document.getElementById(tabId).style.display = tabId === 'tab-fms' ? 'grid' : 'block';
+
+      if (tabId === 'tab-fms') {
+        loadFmsSchedules();
+      }
+    });
+  });
+
+  // Lưu lịch trực FMS
+  document.getElementById('btn-fms-save-schedule').addEventListener('click', handleSaveFmsSchedule);
+
+  // Quét FMS ngay lập tức
+  document.getElementById('btn-fms-sync-now').addEventListener('click', handleSyncFmsNow);
 }
 
 // --- XỬ LÝ ĐĂNG NHẬP / ĐĂNG XUẤT ---
@@ -1031,6 +1063,157 @@ async function syncAccountFromRow(username, btn) {
     }
   } catch (err) {
     showToast('Không thể đồng bộ: ' + err.message, 'error', 'Đồng bộ thất bại');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+// --- LOGIC QUẢN LÝ FMS VIETNAM AIRLINES ---
+let fmsInterval = null;
+
+async function loadFmsSchedules(isSilent = false) {
+  try {
+    const res = await fetch('/api/fms/schedules', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error);
+    }
+
+    const rows = data.data || [];
+    const tbody = document.getElementById('fms-table-body');
+    
+    if (rows.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">
+            Chưa có lịch bay được phân công cho ngày hôm nay.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    // Đổ dữ liệu lịch bay vào textarea nếu textarea đang trống hoặc không được focus
+    const textarea = document.getElementById('fms-schedule-input');
+    if (textarea && textarea !== document.activeElement && (!textarea.value.trim())) {
+      const scheduleLines = rows.map(r => `${r.flight_no}: ${r.crew_info}`);
+      textarea.value = scheduleLines.join('\n');
+    }
+
+    // Render bảng tải dầu
+    tbody.innerHTML = rows.map(r => {
+      const hasData = r.status === 'Đã có số liệu';
+      const statusClass = hasData ? 'review-finished' : 'review-pending';
+      const statusText = r.status;
+      
+      const standbyVal = parseInt(r.standby_fuel) > 0 ? `${parseInt(r.standby_fuel).toLocaleString()} kg` : '-';
+      const orderVal = parseInt(r.fuel_order) > 0 ? `${parseInt(r.fuel_order).toLocaleString()} kg` : '-';
+      const tripVal = parseInt(r.trip_fuel) > 0 ? `${parseInt(r.trip_fuel).toLocaleString()} kg` : '-';
+      
+      return `
+        <tr>
+          <td style="font-weight: 700; color: var(--primary);">${r.flight_no}</td>
+          <td style="font-weight: 500;">${r.crew_info || '-'}</td>
+          <td style="text-align: center;">
+            ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">${r.ac_reg}</span>` : '-'}
+            ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 5px;">(${r.ac_type})</span>` : ''}
+          </td>
+          <td style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">${r.dep_arr || '-'}</td>
+          <td style="text-align: center; font-weight: 600; color: #a3e635;">${standbyVal}</td>
+          <td style="text-align: center; font-weight: 700; color: #f97316;">${orderVal}</td>
+          <td style="text-align: center; font-weight: 600; color: #60a5fa;">${tripVal}</td>
+          <td style="text-align: center;">
+            <span class="status-tag ${statusClass}">
+              ${statusText}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Khởi động vòng lặp tự động cập nhật số liệu tải dầu mỗi 10 giây khi đang ở tab FMS
+    if (!fmsInterval) {
+      fmsInterval = setInterval(() => {
+        const activeTabBtn = document.querySelector('.admin-tab-btn.active');
+        if (activeTabBtn && activeTabBtn.getAttribute('data-tab') === 'tab-fms') {
+          loadFmsSchedules(true);
+        }
+      }, 10000);
+    }
+
+  } catch (err) {
+    if (!isSilent) {
+      showToast('Không thể tải lịch FMS: ' + err.message, 'error', 'Lỗi kết nối');
+    }
+  }
+}
+
+async function handleSaveFmsSchedule() {
+  const textarea = document.getElementById('fms-schedule-input');
+  const btn = document.getElementById('btn-fms-save-schedule');
+  const scheduleText = textarea.value.trim();
+
+  if (!scheduleText) {
+    showToast('Vui lòng nhập nội dung lịch bay!', 'error', 'Lưu thất bại');
+    return;
+  }
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang lưu...';
+
+  try {
+    const res = await fetch('/api/fms/schedule', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ scheduleText })
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success', 'Thành công');
+      loadFmsSchedules();
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (err) {
+    showToast(err.message, 'error', 'Lỗi lưu lịch');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+async function handleSyncFmsNow() {
+  const btn = document.getElementById('btn-fms-sync-now');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang gửi yêu cầu...';
+
+  try {
+    const res = await fetch('/api/fms/sync', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Đang yêu cầu VPS quét dữ liệu FMS, bảng số liệu sẽ tự động cập nhật sau ít phút!', 'success', 'Yêu cầu thành công');
+      
+      // Đợi 4 giây rồi cập nhật lại bảng
+      setTimeout(() => {
+        loadFmsSchedules(true);
+      }, 4000);
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (err) {
+    showToast(err.message, 'error', 'Yêu cầu thất bại');
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;

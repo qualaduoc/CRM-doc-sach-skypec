@@ -62,6 +62,29 @@ async function getDb() {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS fms_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      flight_no TEXT NOT NULL,
+      crew_info TEXT,
+      date TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS fms_fuel_orders (
+      flight_no TEXT PRIMARY KEY,
+      ac_reg TEXT,
+      ac_type TEXT,
+      dep_arr TEXT,
+      standby_fuel TEXT,
+      fuel_order TEXT,
+      trip_fuel TEXT,
+      trip_time TEXT,
+      taxi_fuel TEXT,
+      alternate TEXT,
+      status TEXT DEFAULT 'Chờ cập nhật',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
   `);
 

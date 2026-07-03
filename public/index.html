@@ -112,39 +112,111 @@
         </div>
       </div>
 
-      <!-- Điều khiển & Danh sách -->
-      <div class="section-title">
-        <h3>Danh sách Tài khoản Học viên</h3>
-        <div style="display: flex; gap: 10px;">
-          <button id="btn-start-all" class="btn-secondary" style="color: #34d399; border-color: rgba(16, 185, 129, 0.3);">
-            <i class="fa-solid fa-play"></i> Chạy tất cả
-          </button>
-          <button id="btn-stop-all" class="btn-danger">
-            <i class="fa-solid fa-stop"></i> Dừng tất cả
-          </button>
-          <button id="btn-add-account" class="btn-glow" style="padding: 10px 16px; width: auto; font-size: 0.9rem;">
-            <i class="fa-solid fa-plus"></i> Thêm tài khoản
-          </button>
+      <!-- Tab điều hướng Admin -->
+      <div class="admin-tabs" style="display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+        <button class="admin-tab-btn active" data-tab="tab-accounts" style="background: none; border: none; color: var(--primary); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid var(--primary); transition: all 0.3s;">
+          <i class="fa-solid fa-users"></i> Quản lý Học viên
+        </button>
+        <button class="admin-tab-btn" data-tab="tab-fms" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
+          <i class="fa-solid fa-gas-pump"></i> Theo dõi Tải dầu FMS
+        </button>
+      </div>
+
+      <!-- TAB CONTENT 1: QUẢN LÝ HỌC VIÊN -->
+      <div id="tab-accounts" class="admin-tab-content active-content">
+        <div class="section-title">
+          <h3>Danh sách Tài khoản Học viên</h3>
+          <div style="display: flex; gap: 10px;">
+            <button id="btn-start-all" class="btn-secondary" style="color: #34d399; border-color: rgba(16, 185, 129, 0.3);">
+              <i class="fa-solid fa-play"></i> Chạy tất cả
+            </button>
+            <button id="btn-stop-all" class="btn-danger">
+              <i class="fa-solid fa-stop"></i> Dừng tất cả
+            </button>
+            <button id="btn-add-account" class="btn-glow" style="padding: 10px 16px; width: auto; font-size: 0.9rem;">
+              <i class="fa-solid fa-plus"></i> Thêm tài khoản
+            </button>
+          </div>
+        </div>
+
+        <div class="glass-panel table-container">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Mã nhân viên</th>
+                <th>Họ tên</th>
+                <th>Đơn vị</th>
+                <th style="text-align: center;">Trạng thái</th>
+                <th style="text-align: center;">Số lớp đang chạy</th>
+                <th style="text-align: center;">Tiến độ KPI</th>
+                <th style="text-align: center;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="accounts-table-body">
+              <!-- Render động từ JS -->
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div class="glass-panel table-container">
-        <table class="crm-table">
-          <thead>
-            <tr>
-              <th>Mã nhân viên</th>
-              <th>Họ tên</th>
-              <th>Đơn vị</th>
-              <th style="text-align: center;">Trạng thái</th>
-              <th style="text-align: center;">Số lớp đang chạy</th>
-              <th style="text-align: center;">Tiến độ KPI</th>
-              <th style="text-align: center;">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody id="accounts-table-body">
-            <!-- Render động từ JS -->
-          </tbody>
-        </table>
+      <!-- TAB CONTENT 2: THEO DÕI TẢI DẦU FMS -->
+      <div id="tab-fms" class="admin-tab-content" style="display: none;">
+        <div class="fms-layout" style="display: grid; grid-template-columns: 350px 1fr; gap: 20px;">
+          
+          <!-- Bên trái: Nhập lịch bay -->
+          <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; height: fit-content;">
+            <h4 style="margin: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-file-import"></i> Nhập Lịch Bay Trực Ca
+            </h4>
+            <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+              Copy-paste lịch trực của lái xe - thợ bơm hôm nay.<br>
+              <strong>Định dạng chuẩn:</strong><br>
+              <code>VN343: Đạt - Hưng</code><br>
+              <code>VN1603: Thùy - Được</code>
+            </p>
+            <textarea id="fms-schedule-input" placeholder="VN343: Đạt - Hưng&#10;VN1603: Thùy - Được" style="width: 100%; height: 200px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; font-family: monospace; font-size: 0.9rem; line-height: 1.5; resize: none;"></textarea>
+            <button id="btn-fms-save-schedule" class="btn-glow" style="margin-top: 0; width: 100%;">
+              <i class="fa-solid fa-floppy-disk"></i> Cập Nhật Lịch Trực
+            </button>
+          </div>
+
+          <!-- Bên phải: Bảng theo dõi tải dầu -->
+          <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
+              </h4>
+              <button id="btn-fms-sync-now" class="btn-secondary" style="border-color: rgba(52, 211, 153, 0.3); color: #34d399; padding: 6px 12px; font-size: 0.85rem;">
+                <i class="fa-solid fa-rotate"></i> Quét FMS Ngay
+              </button>
+            </div>
+            
+            <div class="table-container" style="margin-top: 5px;">
+              <table class="crm-table">
+                <thead>
+                  <tr>
+                    <th>Chuyến bay</th>
+                    <th>Tổ nhân viên</th>
+                    <th style="text-align: center;">Tàu bay / Loại</th>
+                    <th style="text-align: center;">Chặng</th>
+                    <th style="text-align: center;">Standby Fuel</th>
+                    <th style="text-align: center;">Fuel Order</th>
+                    <th style="text-align: center;">Trip Fuel</th>
+                    <th style="text-align: center;">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody id="fms-table-body">
+                  <!-- Render động từ JS -->
+                  <tr>
+                    <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                      Chưa có lịch bay được phân công cho ngày hôm nay.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

@@ -9,6 +9,7 @@ const querystring = require('querystring');
 const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
+const { syncFMSData, startFmsWorker, getVietnamDbDateStr } = require('./fmsService');
 
 const app = express();
 const PORT = process.env.PORT || 3005; // Chạy ở cổng 3005 để tránh xung đột
@@ -1126,10 +1127,126 @@ app.post('/api/admin/change-password', authenticateToken, async (req, res) => {
   }
 });
 
+// --- API QUẢN LÝ TẢI DẦU FMS VIETNAM AIRLINES ---
+// Cập nhật lịch bay trực ca (chỉ Admin)
+app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { scheduleText } = req.body;
+  if (!scheduleText) {
+    return res.status(400).json({ success: false, error: 'Vui lòng nhập nội dung lịch bay' });
+  }
+
+  try {
+    const db = await getDb();
+    const todayDb = getVietnamDbDateStr();
+    
+    // Phân tích lịch bay
+    const lines = scheduleText.split('\n');
+    const schedules = [];
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      
+      const parts = line.split(':');
+      if (parts.length >= 2) {
+        const flightNo = parts[0].trim().toUpperCase().replace(/\s+/g, '');
+        const crewInfo = parts.slice(1).join(':').trim();
+        
+        if (flightNo) {
+          schedules.push({ flightNo, crewInfo });
+        }
+      }
+    }
+
+    if (schedules.length === 0) {
+      return res.status(400).json({ success: false, error: 'Không tìm thấy chuyến bay hợp lệ trong lịch bay (Định dạng chuẩn: VN343: Đạt - Hưng)' });
+    }
+
+    // Xóa lịch cũ của ngày hôm nay
+    await db.run('DELETE FROM fms_schedules WHERE date = ?', todayDb);
+
+    // Thêm lịch mới
+    for (const item of schedules) {
+      await db.run(
+        'INSERT INTO fms_schedules (flight_no, crew_info, date) VALUES (?, ?, ?)',
+        item.flightNo,
+        item.crewInfo,
+        todayDb
+      );
+    }
+
+    // Trích xuất bất đồng bộ để quét dữ liệu FMS ngay lập tức
+    syncFMSData().catch(err => console.error('[FMS] Lỗi quét nhanh sau khi cập nhật lịch:', err.message));
+
+    res.json({ success: true, message: `Đã cập nhật lịch bay thành công cho ngày hôm nay (${schedules.length} chuyến)!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy danh sách lịch bay và dữ liệu tải dầu tương ứng (chỉ Admin)
+app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  try {
+    const db = await getDb();
+    const todayDb = getVietnamDbDateStr();
+
+    const rows = await db.all(`
+      SELECT 
+        s.id,
+        s.flight_no,
+        s.crew_info,
+        s.date,
+        fo.ac_reg,
+        fo.ac_type,
+        fo.dep_arr,
+        fo.standby_fuel,
+        fo.fuel_order,
+        fo.trip_fuel,
+        fo.trip_time,
+        fo.taxi_fuel,
+        fo.alternate,
+        COALESCE(fo.status, 'Chờ cập nhật') as status,
+        fo.updated_at
+      FROM fms_schedules s
+      LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no) = UPPER(fo.flight_no)
+      WHERE s.date = ?
+      ORDER BY s.id ASC
+    `, todayDb);
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Yêu cầu quét FMS thủ công tức thì (chỉ Admin)
+app.post('/api/fms/sync', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  try {
+    syncFMSData().catch(err => console.error('[FMS] Lỗi quét thủ công:', err.message));
+    res.json({ success: true, message: 'Đã bắt đầu tiến trình quét tải dầu FMS chạy ngầm...' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // --- KHỞI ĐỘNG HỆ THỐNG ---
 app.listen(PORT, async () => {
   console.log(`[LMS] Máy chủ đang chạy tại: http://localhost:${PORT}`);
   
   // Khởi chạy bộ máy học tập chạy ngầm cho các tài khoản đang bật sẵn
   await initEngine();
+
+  // Khởi chạy tiến trình quét ngầm FMS (3 phút một lần)
+  startFmsWorker(3 * 60 * 1000);
 });
