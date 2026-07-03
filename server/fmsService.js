@@ -242,6 +242,7 @@ async function syncFMSData() {
   log('Bắt đầu chu kỳ quét tải dầu FMS...');
   try {
     const db = await getDb();
+    const todayDb = getVietnamDbDateStr();
     // 1. Quét dải 3 ngày liên tiếp: Hôm trước, Hôm nay, Hôm sau để tránh lệch múi giờ và bắt chuyến rạng sáng (00h00 - 07h00)
     const todayDate = new Date();
     // Chuyển múi giờ Việt Nam GMT+7
