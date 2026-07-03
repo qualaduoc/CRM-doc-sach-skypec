@@ -384,6 +384,7 @@ async function syncFMSData() {
 
     // Chờ tất cả các luồng quét chi tiết hoàn tất
     await Promise.all(promises);
+    }
     log('Hoàn thành chu kỳ quét tải dầu FMS!');
   } catch (err) {
     console.error('[FMS Service] Lỗi đồng bộ FMS:', err.message);
