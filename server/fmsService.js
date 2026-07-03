@@ -14,7 +14,11 @@ async function sendZaloNotification(message) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
       name: "FMS Bot",
-      message: message
+      phone: "0987654321",
+      message: message,
+      content: message,
+      note: message,
+      text: message
     });
 
     const options = {
