@@ -18,18 +18,24 @@ async function sendZaloNotification(message) {
       message: message,
       content: message,
       note: message,
-      text: message
+      text: message,
+      product: message,
+      products: message,
+      address: message,
+      order_id: "FMS-" + Date.now(),
+      total: "0",
+      status: "Success"
     });
 
     const options = {
       hostname: 'zl2.aiphocap.vn',
       port: 443,
-      path: '/api/public/webhook/order',
+      path: '/api/public/webhook/order?key=whk_c51b17c25d3529584f9ee6f26ac7424909968546b31f9437',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
-        'x-api-key': 'whk_c51b17c25d3529584f9ee6f26ac7424909968546b31f9437'
+        'X-API-Key': 'whk_c51b17c25d3529584f9ee6f26ac7424909968546b31f9437'
       }
     };
 
