@@ -522,70 +522,81 @@ async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, di
         };
 
         const initRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUser', saveUserPayload);
-        if (initRes.statusCode !== 200) {
+        let surveyUserId = null;
+
+        if (initRes.statusCode === 403) {
+          console.log(`[Survey] Học viên ${username}: Khảo sát báo 403 cho "${surveyItem.title}" (Có thể đã nộp trước đó). Ép nộp hoàn thành tiến độ...`);
+        } else if (initRes.statusCode !== 200) {
           console.warn(`[Survey] Học viên ${username}: Khởi tạo khảo sát thất bại (Status ${initRes.statusCode}).`);
           surveyStatuses.delete(connectionKey);
           continue;
-        }
-        
-        const initData = JSON.parse(initRes.body);
-        if (!initData.status || !initData.data) {
-          console.warn(`[Survey] Học viên ${username}: Khởi tạo khảo sát thất bại (Skypec báo lỗi).`);
-          surveyStatuses.delete(connectionKey);
-          continue;
-        }
-
-        const surveyUserId = initData.data.id;
-
-        // C. Tải danh sách câu hỏi khảo sát kèm phân trang
-        const qRes = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsSurveyQuestion?surveyId=${surveyId}&pageSize=100&currentPage=1`);
-        if (qRes.statusCode !== 200) {
-          console.warn(`[Survey] Học viên ${username}: Lấy danh sách câu hỏi thất bại (Status ${qRes.statusCode}).`);
-          surveyStatuses.delete(connectionKey);
-          continue;
-        }
-
-        const qDataJson = JSON.parse(qRes.body);
-        const questionsList = qDataJson.data || [];
-
-        // D. Trả lời tích tất cả cột lớn nhất cho từng nhóm câu hỏi
-        for (const group of questionsList) {
-          const surveyQuestionId = group.id;
-          let answersList = [];
-
-          if (group.type === 5) { // Dạng ma trận đánh giá
-            let maxRow = 15;
-            let targetCol = 6;
-            try {
-              const rows = JSON.parse(group.subContent || '[]');
-              if (rows.length > 0) maxRow = rows.length;
-              const cols = JSON.parse(group.answer || '[]');
-              if (cols.length > 0) targetCol = cols.length;
-            } catch (e) {}
-
-            for (let r = 1; r <= maxRow; r++) {
-              answersList.push({ row: r, col: targetCol, mark: 1 });
+        } else {
+          try {
+            const initData = JSON.parse(initRes.body);
+            if (!initData.status || !initData.data) {
+              console.warn(`[Survey] Học viên ${username}: Khởi tạo khảo sát thất bại (Skypec báo lỗi).`);
+              surveyStatuses.delete(connectionKey);
+              continue;
             }
-          } else { // Dạng câu hỏi lựa chọn đơn
-            let targetCol = 1;
-            answersList.push({ row: 1, col: targetCol, mark: 1 });
+            surveyUserId = initData.data.id;
+          } catch (jsonErr) {
+            console.warn(`[Survey] Học viên ${username}: Phản hồi khởi tạo không phải JSON hợp lệ.`);
+            surveyStatuses.delete(connectionKey);
+            continue;
+          }
+        }
+
+        if (surveyUserId) {
+          // C. Tải danh sách câu hỏi khảo sát kèm phân trang
+          const qRes = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsSurveyQuestion?surveyId=${surveyId}&pageSize=100&currentPage=1`);
+          if (qRes.statusCode === 200) {
+            try {
+              const qDataJson = JSON.parse(qRes.body);
+              const questionsList = qDataJson.data || [];
+
+              // D. Trả lời tích tất cả cột lớn nhất cho từng nhóm câu hỏi
+              for (const group of questionsList) {
+                const surveyQuestionId = group.id;
+                let answersList = [];
+
+                if (group.type === 5) { // Dạng ma trận đánh giá
+                  let maxRow = 15;
+                  let targetCol = 6;
+                  try {
+                    const rows = JSON.parse(group.subContent || '[]');
+                    if (rows.length > 0) maxRow = rows.length;
+                    const cols = JSON.parse(group.answer || '[]');
+                    if (cols.length > 0) targetCol = cols.length;
+                  } catch (e) {}
+
+                  for (let r = 1; r <= maxRow; r++) {
+                    answersList.push({ row: r, col: targetCol, mark: 1 });
+                  }
+                } else { // Dạng câu hỏi lựa chọn đơn
+                  let targetCol = 1;
+                  answersList.push({ row: 1, col: targetCol, mark: 1 });
+                }
+
+                const saveQPayload = {
+                  surveyUserId: surveyUserId,
+                  surveyQuestionId: surveyQuestionId,
+                  surveyId: surveyId,
+                  ownerId: "00000000-0000-0000-0000-000000000000",
+                  ownerType: 1,
+                  answer: JSON.stringify(answersList)
+                };
+
+                await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUserQuestion', saveQPayload);
+              }
+            } catch (qErr) {
+              console.warn(`[Survey] Học viên ${username}: Lỗi xử lý câu hỏi khảo sát:`, qErr.message);
+            }
           }
 
-          const saveQPayload = {
-            surveyUserId: surveyUserId,
-            surveyQuestionId: surveyQuestionId,
-            surveyId: surveyId,
-            ownerId: "00000000-0000-0000-0000-000000000000",
-            ownerType: 1,
-            answer: JSON.stringify(answersList)
-          };
-
-          await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUserQuestion', saveQPayload);
+          // E. Nộp và chốt hoàn thành phiên (SaveUser completeStatus: 2 kèm id)
+          saveUserPayload.id = surveyUserId;
+          await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUser', saveUserPayload);
         }
-
-        // E. Nộp và chốt hoàn thành phiên (SaveUser completeStatus: 2 kèm id)
-        saveUserPayload.id = surveyUserId;
-        await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsSurveyUser', saveUserPayload);
 
         // F. Ghi nhận hoàn thành bài học khảo sát lên cây tiến độ (LmsClassUserLearning)
         const oldLearning = learningHistories.find(l => l.classContentId === classContentId);
