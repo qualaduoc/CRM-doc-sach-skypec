@@ -1134,35 +1134,73 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
-  const { scheduleText } = req.body;
-  if (!scheduleText) {
-    return res.status(400).json({ success: false, error: 'Vui lòng nhập nội dung lịch bay' });
+  const { scheduleText, flights } = req.body;
+  if (!scheduleText && (!flights || flights.length === 0)) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp lịch bay hoặc danh sách chuyến bay' });
   }
 
   try {
     const db = await getDb();
     const todayDb = getVietnamDbDateStr();
-    
-    // Phân tích lịch bay
-    const lines = scheduleText.split('\n');
     const schedules = [];
 
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      
-      const parts = line.split(':');
-      if (parts.length >= 2) {
-        const flightNo = parts[0].trim().toUpperCase().replace(/\s+/g, '');
-        const crewInfo = parts.slice(1).join(':').trim();
+    if (flights && flights.length > 0) {
+      // 1. Phân tích lịch bay dạng JSON mảng (từ file Excel)
+      for (const f of flights) {
+        if (!f.flight_no) continue;
+        const flightNo = f.flight_no.trim().toUpperCase().replace(/\s+/g, '');
+        const driverName = f.driver_name ? f.driver_name.trim() : '';
+        const operatorName = f.operator_name ? f.operator_name.trim() : '';
+        const crewInfo = driverName && operatorName ? `${driverName} - ${operatorName}` : (driverName || operatorName);
+
+        schedules.push({
+          flight_no: flightNo,
+          ac_type: f.ac_type ? f.ac_type.trim() : '',
+          ac_reg: f.ac_reg ? f.ac_reg.trim() : '',
+          route: f.route ? f.route.trim() : '',
+          time_arr: f.time_arr ? f.time_arr.trim() : '',
+          time_dep: f.time_dep ? f.time_dep.trim() : '',
+          time_fuel: f.time_fuel ? f.time_fuel.trim() : '',
+          gate: f.gate ? f.gate.trim() : '',
+          truck_no: f.truck_no ? f.truck_no.trim() : '',
+          driver_name: driverName,
+          operator_name: operatorName,
+          crew_info: crewInfo
+        });
+      }
+    } else if (scheduleText) {
+      // 2. Phân tích lịch bay dạng Text dán thủ công (tương thích ngược)
+      const lines = scheduleText.split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
         
-        if (flightNo) {
-          schedules.push({ flightNo, crewInfo });
+        const parts = line.split(':');
+        if (parts.length >= 2) {
+          const flightNo = parts[0].trim().toUpperCase().replace(/\s+/g, '');
+          const crewInfo = parts.slice(1).join(':').trim();
+          
+          if (flightNo) {
+            schedules.push({
+              flight_no: flightNo,
+              ac_type: '',
+              ac_reg: '',
+              route: '',
+              time_arr: '',
+              time_dep: '',
+              time_fuel: '',
+              gate: '',
+              truck_no: '',
+              driver_name: crewInfo.split('-')[0] ? crewInfo.split('-')[0].trim() : '',
+              operator_name: crewInfo.split('-')[1] ? crewInfo.split('-')[1].trim() : '',
+              crew_info: crewInfo
+            });
+          }
         }
       }
     }
 
     if (schedules.length === 0) {
-      return res.status(400).json({ success: false, error: 'Không tìm thấy chuyến bay hợp lệ trong lịch bay (Định dạng chuẩn: VN343: Đạt - Hưng)' });
+      return res.status(400).json({ success: false, error: 'Không tìm thấy chuyến bay hợp lệ trong dữ liệu gửi lên' });
     }
 
     // Xóa lịch cũ của ngày hôm nay
@@ -1170,10 +1208,24 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 
     // Thêm lịch mới
     for (const item of schedules) {
-      await db.run(
-        'INSERT INTO fms_schedules (flight_no, crew_info, date) VALUES (?, ?, ?)',
-        item.flightNo,
-        item.crewInfo,
+      await db.run(`
+        INSERT INTO fms_schedules (
+          flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel, 
+          gate, truck_no, driver_name, operator_name, crew_info, date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        item.flight_no,
+        item.ac_type,
+        item.ac_reg,
+        item.route,
+        item.time_arr,
+        item.time_dep,
+        item.time_fuel,
+        item.gate,
+        item.truck_no,
+        item.driver_name,
+        item.operator_name,
+        item.crew_info,
         todayDb
       );
     }
@@ -1181,7 +1233,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     // Trích xuất bất đồng bộ để quét dữ liệu FMS ngay lập tức
     syncFMSData().catch(err => console.error('[FMS] Lỗi quét nhanh sau khi cập nhật lịch:', err.message));
 
-    res.json({ success: true, message: `Đã cập nhật lịch bay thành công cho ngày hôm nay (${schedules.length} chuyến)!` });
+    res.json({ success: true, message: `Đã cập nhật lịch trực ca thành công (${schedules.length} chuyến)!` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1201,10 +1253,18 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
       SELECT 
         s.id,
         s.flight_no,
+        COALESCE(NULLIF(fo.ac_type, ''), s.ac_type) as ac_type,
+        COALESCE(NULLIF(fo.ac_reg, ''), s.ac_reg) as ac_reg,
+        s.route,
+        s.time_arr,
+        s.time_dep,
+        s.time_fuel,
+        s.gate,
+        s.truck_no,
+        s.driver_name,
+        s.operator_name,
         s.crew_info,
         s.date,
-        fo.ac_reg,
-        fo.ac_type,
         fo.dep_arr,
         fo.standby_fuel,
         fo.fuel_order,

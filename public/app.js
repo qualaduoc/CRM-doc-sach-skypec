@@ -268,6 +268,26 @@ function setupEventListeners() {
 
   // Quét FMS ngay lập tức
   document.getElementById('btn-fms-sync-now').addEventListener('click', handleSyncFmsNow);
+
+  // Trigger chọn file Excel FMS
+  document.getElementById('btn-fms-upload-excel').addEventListener('click', () => {
+    document.getElementById('fms-file-input').value = ''; // Reset file input
+    document.getElementById('fms-file-input').click();
+  });
+
+  // Đọc file Excel FMS
+  document.getElementById('fms-file-input').addEventListener('change', handleExcelFileSelect);
+
+  // Đóng Modal Preview FMS
+  document.getElementById('btn-close-fms-preview-modal').addEventListener('click', () => {
+    document.getElementById('fms-preview-modal').classList.remove('active');
+  });
+  document.getElementById('btn-fms-cancel-preview').addEventListener('click', () => {
+    document.getElementById('fms-preview-modal').classList.remove('active');
+  });
+
+  // Xác nhận lưu lịch trực FMS từ preview
+  document.getElementById('btn-fms-confirm-preview').addEventListener('click', handleConfirmFmsPreview);
 }
 
 // --- XỬ LÝ ĐĂNG NHẬP / ĐĂNG XUẤT ---
@@ -1088,7 +1108,7 @@ async function loadFmsSchedules(isSilent = false) {
     if (rows.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">
+          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
             Chưa có lịch bay được phân công cho ngày hôm nay.
           </td>
         </tr>
@@ -1103,7 +1123,7 @@ async function loadFmsSchedules(isSilent = false) {
       textarea.value = scheduleLines.join('\n');
     }
 
-    // Render bảng tải dầu
+    // Render bảng tải dầu FMS chi tiết (9 cột)
     tbody.innerHTML = rows.map(r => {
       const hasData = r.status === 'Đã có số liệu';
       const statusClass = hasData ? 'review-finished' : 'review-pending';
@@ -1113,15 +1133,30 @@ async function loadFmsSchedules(isSilent = false) {
       const orderVal = parseInt(r.fuel_order) > 0 ? `${parseInt(r.fuel_order).toLocaleString()} kg` : '-';
       const tripVal = parseInt(r.trip_fuel) > 0 ? `${parseInt(r.trip_fuel).toLocaleString()} kg` : '-';
       
+      const crewText = r.crew_info || '-';
+      const truckText = r.truck_no ? `<br><span style="color: var(--primary); font-size: 0.8rem; font-weight: bold;"><i class="fa-solid fa-truck-field"></i> Xe: ${r.truck_no}</span>` : '';
+      
+      const planeInfo = `
+        ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">${r.ac_reg}</span>` : '-'}
+        ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
+        ${r.route ? `<span style="color: #60a5fa; font-size: 0.8rem; display: block; margin-top: 3px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
+      `;
+      
+      const timesHtml = `
+        <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
+          ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
+          ${r.time_dep ? `<div>Cất: <span>${r.time_dep}</span></div>` : ''}
+          ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+        </div>
+      `;
+      
       return `
         <tr>
-          <td style="font-weight: 700; color: var(--primary);">${r.flight_no}</td>
-          <td style="font-weight: 500;">${r.crew_info || '-'}</td>
-          <td style="text-align: center;">
-            ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">${r.ac_reg}</span>` : '-'}
-            ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 5px;">(${r.ac_type})</span>` : ''}
-          </td>
-          <td style="text-align: center; color: var(--text-muted); font-size: 0.85rem;">${r.dep_arr || '-'}</td>
+          <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
+          <td>${crewText}${truckText}</td>
+          <td style="text-align: center;">${planeInfo}</td>
+          <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
+          <td>${timesHtml}</td>
           <td style="text-align: center; font-weight: 600; color: #a3e635;">${standbyVal}</td>
           <td style="text-align: center; font-weight: 700; color: #f97316;">${orderVal}</td>
           <td style="text-align: center; font-weight: 600; color: #60a5fa;">${tripVal}</td>
@@ -1214,6 +1249,123 @@ async function handleSyncFmsNow() {
     }
   } catch (err) {
     showToast(err.message, 'error', 'Yêu cầu thất bại');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+// Xử lý chọn và đọc file Excel
+function handleExcelFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      parseFmsExcel(json);
+    } catch (err) {
+      showToast('Không thể đọc file Excel: ' + err.message, 'error', 'Lỗi định dạng');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Phân tích và bóc tách các dòng từ file Excel lịch trực (13 cột)
+function parseFmsExcel(rows) {
+  const flights = [];
+  
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length < 13) continue;
+
+    // Cột 1 (index 0) phải là STT (số thứ tự)
+    const stt = parseInt(r[0]);
+    // Cột 4 (index 3) là Flight No (Số hiệu chuyến bay)
+    const flightNo = r[3] ? String(r[3]).trim().toUpperCase().replace(/\s+/g, '') : '';
+
+    if (!isNaN(stt) && flightNo) {
+      flights.push({
+        ac_type: r[1] ? String(r[1]).trim() : '',
+        ac_reg: r[2] ? String(r[2]).trim() : '',
+        flight_no: flightNo,
+        route: r[4] ? String(r[4]).trim() : '',
+        time_arr: r[6] ? String(r[6]).trim() : '',
+        time_dep: r[7] ? String(r[7]).trim() : '',
+        time_fuel: r[8] ? String(r[8]).trim() : '',
+        gate: r[9] ? String(r[9]).trim() : '',
+        truck_no: r[10] ? String(r[10]).trim() : '',
+        driver_name: r[11] ? String(r[11]).trim() : '',
+        operator_name: r[12] ? String(r[12]).trim() : ''
+      });
+    }
+  }
+
+  if (flights.length === 0) {
+    showToast('Không tìm thấy dữ liệu chuyến bay hợp lệ trong file Excel. Vui lòng kiểm tra lại cấu trúc cột!', 'error', 'Không có dữ liệu');
+    return;
+  }
+
+  // Lưu lịch bay bóc tách tạm thời vào state để xác nhận sau
+  state.fmsPreviewFlights = flights;
+
+  // Hiển thị bảng xem trước (Preview) lên modal
+  const tbody = document.getElementById('fms-preview-table-body');
+  tbody.innerHTML = flights.map(f => `
+    <tr>
+      <td style="font-weight: 700; color: var(--primary);">${f.flight_no}</td>
+      <td style="color: var(--text-muted);">${f.ac_type || '-'}</td>
+      <td>${f.ac_reg || '-'}</td>
+      <td style="color: #60a5fa;">${f.route || '-'}</td>
+      <td style="text-align: center;">${f.time_arr || '-'}</td>
+      <td style="text-align: center;">${f.time_dep || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: #fb923c;">${f.time_fuel || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: #f59e0b;">${f.gate || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: var(--primary);">${f.truck_no || '-'}</td>
+      <td>${f.driver_name || '-'}</td>
+      <td>${f.operator_name || '-'}</td>
+    </tr>
+  `).join('');
+
+  // Hiện Modal Xem trước
+  document.getElementById('fms-preview-modal').classList.add('active');
+}
+
+// Gửi xác nhận lưu lịch trực bay từ Modal Preview
+async function handleConfirmFmsPreview() {
+  const btn = document.getElementById('btn-fms-confirm-preview');
+  if (!state.fmsPreviewFlights || state.fmsPreviewFlights.length === 0) return;
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang lưu...';
+
+  try {
+    const res = await fetch('/api/fms/schedule', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ flights: state.fmsPreviewFlights })
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success', 'Thành công');
+      document.getElementById('fms-preview-modal').classList.remove('active');
+      loadFmsSchedules();
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (err) {
+    showToast('Lỗi lưu lịch trực Excel: ' + err.message, 'error', 'Thất bại');
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;

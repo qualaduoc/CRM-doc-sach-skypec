@@ -65,6 +65,16 @@ async function getDb() {
     CREATE TABLE IF NOT EXISTS fms_schedules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       flight_no TEXT NOT NULL,
+      ac_type TEXT,
+      ac_reg TEXT,
+      route TEXT,
+      time_arr TEXT,
+      time_dep TEXT,
+      time_fuel TEXT,
+      gate TEXT,
+      truck_no TEXT,
+      driver_name TEXT,
+      operator_name TEXT,
       crew_info TEXT,
       date TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -95,6 +105,18 @@ async function getDb() {
   try {
     await dbInstance.exec(`ALTER TABLE classes ADD COLUMN is_exercise_finished INTEGER DEFAULT 0;`);
   } catch (e) {}
+
+  // Thêm các cột cho fms_schedules của database cũ
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN ac_type TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN ac_reg TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN route TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN time_arr TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN time_dep TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN time_fuel TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN gate TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN truck_no TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN driver_name TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN operator_name TEXT;`); } catch(e) {}
 
   // Tạo tài khoản admin mặc định nếu chưa tồn tại
   const adminRow = await dbInstance.get('SELECT * FROM admin WHERE username = ?', 'admin');

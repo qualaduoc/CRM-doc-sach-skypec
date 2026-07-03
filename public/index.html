@@ -6,6 +6,7 @@
   <title>LMS Skypec Auto Reader - Quản lý Học tập</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
 </head>
 <body>
 
@@ -168,15 +169,22 @@
             <h4 style="margin: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 10px;">
               <i class="fa-solid fa-file-import"></i> Nhập Lịch Bay Trực Ca
             </h4>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button id="btn-fms-upload-excel" class="btn-glow" style="margin-top: 0; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; width: 100%; font-size: 0.9rem;">
+                <i class="fa-solid fa-file-excel"></i> Tải Lên File Excel Lịch Trực
+              </button>
+              <input type="file" id="fms-file-input" accept=".xlsx, .xls, .csv" style="display: none;">
+            </div>
+            <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; font-weight: bold; margin: 2px 0; border-top: 1px dashed var(--border); padding-top: 8px;">
+              HOẶC DÁN TEXT THỦ CÔNG
+            </div>
             <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
-              Copy-paste lịch trực của lái xe - thợ bơm hôm nay.<br>
-              <strong>Định dạng chuẩn:</strong><br>
-              <code>VN343: Đạt - Hưng</code><br>
-              <code>VN1603: Thùy - Được</code>
+              Copy-paste lịch trực hôm nay.<br>
+              <strong>Định dạng:</strong> <code>VN343: Đạt - Hưng</code>
             </p>
-            <textarea id="fms-schedule-input" placeholder="VN343: Đạt - Hưng&#10;VN1603: Thùy - Được" style="width: 100%; height: 200px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; font-family: monospace; font-size: 0.9rem; line-height: 1.5; resize: none;"></textarea>
+            <textarea id="fms-schedule-input" placeholder="VN343: Đạt - Hưng&#10;VN1603: Thùy - Được" style="width: 100%; height: 160px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; font-family: monospace; font-size: 0.9rem; line-height: 1.5; resize: none;"></textarea>
             <button id="btn-fms-save-schedule" class="btn-glow" style="margin-top: 0; width: 100%;">
-              <i class="fa-solid fa-floppy-disk"></i> Cập Nhật Lịch Trực
+              <i class="fa-solid fa-floppy-disk"></i> Lưu Lịch Dán Thủ Công
             </button>
           </div>
 
@@ -196,9 +204,10 @@
                 <thead>
                   <tr>
                     <th>Chuyến bay</th>
-                    <th>Tổ nhân viên</th>
-                    <th style="text-align: center;">Tàu bay / Loại</th>
-                    <th style="text-align: center;">Chặng</th>
+                    <th>Nhân viên / Xe trực</th>
+                    <th style="text-align: center;">Tàu / Loại / Đường bay</th>
+                    <th style="text-align: center;">Vị trí đỗ</th>
+                    <th style="text-align: center;">Hạ / Cất / Tra nạp</th>
                     <th style="text-align: center;">Standby Fuel</th>
                     <th style="text-align: center;">Fuel Order</th>
                     <th style="text-align: center;">Trip Fuel</th>
@@ -422,6 +431,50 @@
             <button id="btn-explore-next" class="btn-secondary">Trang sau <i class="fa-solid fa-chevron-right"></i></button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL XEM TRƯỚC LỊCH BAY EXCEL (FMS) ================= -->
+  <div id="fms-preview-modal" class="modal">
+    <div class="glass-panel modal-card" style="max-width: 95%; width: 1200px;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-file-invoice"></i> Xác nhận lịch trực bóc tách từ Excel</h3>
+        <button class="close-btn" id="btn-close-fms-preview-modal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div style="margin-bottom: 15px; color: var(--text-muted); font-size: 0.9rem;">
+        Hệ thống tự động phát hiện danh sách chuyến bay bên dưới. Vui lòng kiểm tra kỹ trước khi bấm lưu.
+      </div>
+      
+      <div class="table-container" style="max-height: 450px; overflow-y: auto; margin-bottom: 20px;">
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th>Chuyến bay</th>
+              <th>Loại tàu</th>
+              <th>Số hiệu máy bay</th>
+              <th>Đường bay</th>
+              <th style="text-align: center;">Giờ hạ cánh</th>
+              <th style="text-align: center;">Giờ cất cánh</th>
+              <th style="text-align: center;">Giờ tra nạp</th>
+              <th style="text-align: center;">Vị trí đỗ</th>
+              <th style="text-align: center;">Số xe</th>
+              <th>Lái xe</th>
+              <th>Thợ bơm</th>
+            </tr>
+          </thead>
+          <tbody id="fms-preview-table-body">
+            <!-- Render động từ JS -->
+          </tbody>
+        </table>
+      </div>
+      
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button id="btn-fms-cancel-preview" class="btn-danger" style="width: auto; padding: 10px 20px; margin-top: 0;">Hủy bỏ</button>
+        <button id="btn-fms-confirm-preview" class="btn-glow" style="width: auto; padding: 10px 25px; margin-top: 0;">
+          <i class="fa-solid fa-floppy-disk"></i> Xác Nhận Lưu Lịch Trực
+        </button>
       </div>
     </div>
   </div>
