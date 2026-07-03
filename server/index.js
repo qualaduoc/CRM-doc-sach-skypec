@@ -10,6 +10,7 @@ const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
 const { syncFMSData, startFmsWorker, getVietnamDbDateStr } = require('./fmsService');
+const { performImageOCR } = require('./ocrService');
 
 const app = express();
 const PORT = process.env.PORT || 3005; // Chạy ở cổng 3005 để tránh xung đột
@@ -19,7 +20,8 @@ const IV_LENGTH = 16;
 const HOST = 'elearning.skypec.com.vn';
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
 // --- CÁC HÀM HELPER MÃ HÓA MẬT KHẨU ---
@@ -1295,6 +1297,65 @@ app.post('/api/fms/sync', authenticateToken, async (req, res) => {
   try {
     syncFMSData().catch(err => console.error('[FMS] Lỗi quét thủ công:', err.message));
     res.json({ success: true, message: 'Đã bắt đầu tiến trình quét tải dầu FMS chạy ngầm...' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Nhận diện ảnh lịch bay trực ca qua Gemini Vision API (chỉ Admin)
+app.post('/api/fms/ocr-image', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { mimeType, base64Data } = req.body;
+  if (!mimeType || !base64Data) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp đầy đủ dữ liệu ảnh và định dạng!' });
+  }
+
+  try {
+    // Làm sạch chuỗi Base64
+    const cleanBase64 = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
+    
+    // Gọi OCR xoay vòng key
+    const flights = await performImageOCR(mimeType, cleanBase64);
+    
+    res.json({ success: true, flights });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy danh sách API Keys Gemini đã lưu (chỉ Admin)
+app.get('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  try {
+    const db = await getDb();
+    const setting = await db.get("SELECT value FROM settings WHERE key = 'gemini_api_keys'");
+    res.json({ success: true, keys: setting ? setting.value : '' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lưu danh sách API Keys Gemini (chỉ Admin)
+app.post('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { keys } = req.body;
+  
+  try {
+    const db = await getDb();
+    await db.run(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('gemini_api_keys', ?)",
+      keys ? keys.trim() : ''
+    );
+    res.json({ success: true, message: 'Đã lưu danh sách API Key Gemini thành công!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

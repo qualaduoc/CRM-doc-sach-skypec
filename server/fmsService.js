@@ -26,9 +26,13 @@ function getVietnamDbDateStr() {
   return `${year}-${month}-${day}`;
 }
 
+// Biến lưu cookie đăng nhập FMS trong bộ nhớ cache
+let cachedFmsCookie = null;
+
 // Thực hiện đăng nhập FMS bằng HTTP
 async function loginFMS() {
   return new Promise((resolve, reject) => {
+    log('Đang gửi yêu cầu đăng nhập FMS mới...');
     // 1. GET login page lấy CSRF Token & Cookie ban đầu
     http.get(`http://${HOST}/account/login`, (res) => {
       let body = '';
@@ -73,6 +77,7 @@ async function loginFMS() {
             if (postCookies.length > 0) {
               authCookieStr = postCookies.map(c => c.split(';')[0]).join('; ');
             }
+            cachedFmsCookie = authCookieStr; // Lưu vào cache
             resolve(authCookieStr);
           });
         });
@@ -107,7 +112,7 @@ async function fetchFMSData(dateStr, authCookie) {
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
         if (res.statusCode !== 200) {
-          return reject(new Error(`Tải danh sách chuyến bay thất bại, HTTP Code: ${res.statusCode}`));
+          return reject({ statusCode: res.statusCode, message: `HTTP Code: ${res.statusCode}` });
         }
         try {
           const json = JSON.parse(body);
@@ -180,13 +185,27 @@ async function syncFMSData() {
     const flightNumbers = schedules.map(s => s.flight_no.toUpperCase().replace(/\s+/g, ''));
     log(`Danh sách chuyến bay cần theo dõi (${flightNumbers.length} chuyến): ${flightNumbers.join(', ')}`);
 
-    // 2. Đăng nhập FMS
-    const authCookie = await loginFMS();
-    log('Đăng nhập FMS thành công!');
+    // 2. Sử dụng cookie đã được lưu cache hoặc tiến hành đăng nhập mới
+    let activeCookie = cachedFmsCookie;
+    if (!activeCookie) {
+      log('Chưa có cookie cache. Tiến hành đăng nhập FMS...');
+      activeCookie = await loginFMS();
+    } else {
+      log('Sử dụng cookie FMS từ cache bộ nhớ.');
+    }
 
-    // 3. Tải danh sách chuyến bay từ FMS
+    // 3. Tải danh sách chuyến bay từ FMS (Có cơ chế tự động đăng nhập lại nếu cookie hết hạn)
     const todayFmsStr = getVietnamDateStr();
-    const fmsFlights = await fetchFMSData(todayFmsStr, authCookie);
+    let fmsFlights = [];
+    try {
+      fmsFlights = await fetchFMSData(todayFmsStr, activeCookie);
+    } catch (err) {
+      // Nếu lỗi HTTP 302, 401 hoặc lỗi cookie hết hạn, tiến hành đăng nhập lại
+      log(`Cookie FMS bị lỗi hoặc hết hạn. Đang tiến hành đăng nhập lại... Chi tiết lỗi: ${err.message || JSON.stringify(err)}`);
+      activeCookie = await loginFMS();
+      fmsFlights = await fetchFMSData(todayFmsStr, activeCookie);
+    }
+    
     log(`Đã tải danh sách chuyến bay ngày hôm nay từ FMS, tổng cộng ${fmsFlights.length} chuyến.`);
 
     // 4. Lọc các chuyến bay khớp với lịch trực
@@ -197,22 +216,26 @@ async function syncFMSData() {
     });
 
     log(`Tìm thấy ${matchedFlights.length} chuyến bay khớp trên FMS.`);
+    if (matchedFlights.length === 0) {
+      log('Không có chuyến bay nào trùng khớp để quét chi tiết.');
+      return;
+    }
 
-    // 5. Quét chi tiết tải dầu cho từng chuyến bay khớp
-    for (const flt of matchedFlights) {
+    // 5. TỐI ƯU HÓA: Quét chi tiết tải dầu SONG SONG (Promise.all) cho các chuyến bay trùng khớp
+    log('Bắt đầu quét song song chi tiết tải dầu cho các chuyến bay...');
+    const promises = matchedFlights.map(async (flt) => {
       const cleanFltNo = flt.FLIGHTNO.toUpperCase().replace(/\s+/g, '');
       const legNo = flt.LEG_NO;
 
       try {
-        log(`Đang quét chi tiết chuyến bay: ${cleanFltNo} (LEG_NO: ${legNo})...`);
-        const detail = await fetchFlightDetail(legNo, authCookie);
+        log(`[Bắt đầu quét] Chuyến bay: ${cleanFltNo} (LEG_NO: ${legNo})`);
+        const detail = await fetchFlightDetail(legNo, activeCookie);
 
         // Xác định trạng thái tải dầu
-        // Nếu có số liệu Pilot Request hoặc Block Fuel > 0
         const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
         const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-        // Lưu hoặc cập nhật vào database
+        // Lưu hoặc cập nhật vào database SQLite
         await db.run(`
           INSERT INTO fms_fuel_orders (
             flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
@@ -243,12 +266,14 @@ async function syncFMSData() {
           detail.alternate,
           status
         );
-        log(`Cập nhật thành công chuyến bay ${cleanFltNo}: Fuel Order = ${detail.fuel_order} kg, Trạng thái = ${status}`);
+        log(`[Hoàn tất quét] Chuyến bay ${cleanFltNo}: Fuel Order = ${detail.fuel_order} kg, Trạng thái = ${status}`);
       } catch (fltErr) {
-        console.error(`[FMS Service] Lỗi khi quét chi tiết chuyến bay ${cleanFltNo}:`, fltErr.message);
+        console.error(`[Lỗi quét] Chuyến bay ${cleanFltNo} thất bại:`, fltErr.message);
       }
-    }
+    });
 
+    // Chờ tất cả các luồng quét chi tiết hoàn tất
+    await Promise.all(promises);
     log('Hoàn thành chu kỳ quét tải dầu FMS!');
   } catch (err) {
     console.error('[FMS Service] Lỗi đồng bộ FMS:', err.message);

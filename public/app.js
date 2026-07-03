@@ -259,6 +259,7 @@ function setupEventListeners() {
 
       if (tabId === 'tab-fms') {
         loadFmsSchedules();
+        loadGeminiKeys();
       }
     });
   });
@@ -277,6 +278,18 @@ function setupEventListeners() {
 
   // Đọc file Excel FMS
   document.getElementById('fms-file-input').addEventListener('change', handleExcelFileSelect);
+
+  // Trigger chọn ảnh FMS
+  document.getElementById('btn-fms-upload-image').addEventListener('click', () => {
+    document.getElementById('fms-image-input').value = ''; // Reset file input
+    document.getElementById('fms-image-input').click();
+  });
+
+  // Đọc và OCR ảnh FMS
+  document.getElementById('fms-image-input').addEventListener('change', handleImageFileSelect);
+
+  // Lưu danh sách Gemini API Keys
+  document.getElementById('btn-save-gemini-keys').addEventListener('click', handleSaveGeminiKeys);
 
   // Đóng Modal Preview FMS
   document.getElementById('btn-close-fms-preview-modal').addEventListener('click', () => {
@@ -1365,9 +1378,122 @@ async function handleConfirmFmsPreview() {
       throw new Error(data.error);
     }
   } catch (err) {
-    showToast('Lỗi lưu lịch trực Excel: ' + err.message, 'error', 'Thất bại');
+    showToast('Lỗi lưu lịch trực FMS: ' + err.message, 'error', 'Thất bại');
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
   }
+}
+
+// Lấy danh sách API Keys Gemini từ settings
+async function loadGeminiKeys() {
+  try {
+    const res = await fetch('/api/fms/settings/gemini-keys', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('gemini-keys-input').value = data.keys || '';
+    }
+  } catch (err) {
+    console.error('Không thể lấy API Keys Gemini:', err.message);
+  }
+}
+
+// Lưu danh sách API Keys Gemini
+async function handleSaveGeminiKeys() {
+  const btn = document.getElementById('btn-save-gemini-keys');
+  const keysInput = document.getElementById('gemini-keys-input').value;
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang lưu...';
+
+  try {
+    const res = await fetch('/api/fms/settings/gemini-keys', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ keys: keysInput })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success', 'Thành công');
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (err) {
+    showToast(err.message, 'error', 'Lưu thất bại');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+// Xử lý gửi ảnh FMS để OCR
+async function handleImageFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const btn = document.getElementById('btn-fms-upload-image');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang nhận diện ảnh...';
+
+  const reader = new FileReader();
+  reader.onload = async function(evt) {
+    const base64Data = evt.target.result;
+    try {
+      const res = await fetch('/api/fms/ocr-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        },
+        body: JSON.stringify({
+          mimeType: file.type,
+          base64Data: base64Data
+        })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        showToast('Bóc tách ảnh lịch trực thành công! Vui lòng duyệt xem trước.', 'success', 'Nhận diện thành công');
+        renderOcrPreview(data.flights);
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      showToast(err.message, 'error', 'Nhận diện ảnh thất bại');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// Render dữ liệu nhận diện ảnh lên preview modal giống Excel
+function renderOcrPreview(flights) {
+  state.fmsPreviewFlights = flights;
+  const tbody = document.getElementById('fms-preview-table-body');
+  
+  tbody.innerHTML = flights.map(f => `
+    <tr>
+      <td style="font-weight: 700; color: var(--primary);">${f.flight_no}</td>
+      <td style="color: var(--text-muted);">${f.ac_type || '-'}</td>
+      <td>${f.ac_reg || '-'}</td>
+      <td style="color: #60a5fa;">${f.route || '-'}</td>
+      <td style="text-align: center;">${f.time_arr || '-'}</td>
+      <td style="text-align: center;">${f.time_dep || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: #fb923c;">${f.time_fuel || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: #f59e0b;">${f.gate || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: var(--primary);">${f.truck_no || '-'}</td>
+      <td>${f.driver_name || '-'}</td>
+      <td>${f.operator_name || '-'}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('fms-preview-modal').classList.add('active');
 }
