@@ -242,11 +242,21 @@ async function syncFMSData() {
   log('Bắt đầu chu kỳ quét tải dầu FMS...');
   try {
     const db = await getDb();
-    const todayDb = getVietnamDbDateStr();
-    
-    // 1. Lấy danh sách các ngày có lịch trực từ hôm nay trở đi (tối đa 2 ngày)
-    const datesObj = await db.all('SELECT DISTINCT date FROM fms_schedules WHERE date >= ? ORDER BY date ASC LIMIT 2', todayDb);
-    const targetDates = datesObj.length > 0 ? datesObj.map(d => d.date) : [todayDb];
+    // 1. Quét dải 3 ngày liên tiếp: Hôm trước, Hôm nay, Hôm sau để tránh lệch múi giờ và bắt chuyến rạng sáng (00h00 - 07h00)
+    const todayDate = new Date();
+    // Chuyển múi giờ Việt Nam GMT+7
+    const utc = todayDate.getTime() + (todayDate.getTimezoneOffset() * 60000);
+    const vnTime = new Date(utc + (3600000 * 7));
+
+    // Ngày hôm trước
+    const yesterdayDate = new Date(vnTime.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayDb = yesterdayDate.toISOString().split('T')[0];
+
+    // Ngày hôm sau
+    const tomorrowDate = new Date(vnTime.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrowDb = tomorrowDate.toISOString().split('T')[0];
+
+    const targetDates = [yesterdayDb, todayDb, tomorrowDb];
     
     log(`Các ngày sẽ thực hiện quét FMS: ${targetDates.join(', ')}`);
 
