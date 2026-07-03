@@ -224,6 +224,13 @@ async function fetchFlightDetail(legNo, authCookie) {
   });
 }
 
+// Chuyển đổi ngày từ YYYY-MM-DD sang DD/MM/YYYY
+function convertDbDateToFmsDate(dbDateStr) {
+  const parts = dbDateStr.split('-');
+  if (parts.length !== 3) return dbDateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
 // Thực hiện đồng bộ hóa toàn bộ chuyến bay trong lịch trực từ FMS
 async function syncFMSData() {
   log('Bắt đầu chu kỳ quét tải dầu FMS...');
@@ -231,15 +238,11 @@ async function syncFMSData() {
     const db = await getDb();
     const todayDb = getVietnamDbDateStr();
     
-    // 1. Lấy danh sách các chuyến bay cần theo dõi của ngày hôm nay
-    const schedules = await db.all('SELECT DISTINCT flight_no FROM fms_schedules WHERE date = ?', todayDb);
-    if (schedules.length === 0) {
-      log('Hôm nay không có chuyến bay nào trong lịch trực được phân công.');
-      return;
-    }
-
-    const flightNumbers = schedules.map(s => s.flight_no.toUpperCase().replace(/\s+/g, ''));
-    log(`Danh sách chuyến bay cần theo dõi (${flightNumbers.length} chuyến): ${flightNumbers.join(', ')}`);
+    // 1. Lấy danh sách các ngày có lịch trực từ hôm nay trở đi (tối đa 2 ngày)
+    const datesObj = await db.all('SELECT DISTINCT date FROM fms_schedules WHERE date >= ? ORDER BY date ASC LIMIT 2', todayDb);
+    const targetDates = datesObj.length > 0 ? datesObj.map(d => d.date) : [todayDb];
+    
+    log(`Các ngày sẽ thực hiện quét FMS: ${targetDates.join(', ')}`);
 
     // 2. Sử dụng cookie đã được lưu cache hoặc tiến hành đăng nhập mới
     let activeCookie = cachedFmsCookie;
@@ -250,60 +253,64 @@ async function syncFMSData() {
       log('Sử dụng cookie FMS từ cache bộ nhớ.');
     }
 
-    // 3. Tải danh sách chuyến bay từ FMS (Có cơ chế tự động đăng nhập lại nếu cookie hết hạn)
-    const todayFmsStr = getVietnamDateStr();
-    let fmsFlights = [];
-    try {
-      fmsFlights = await fetchFMSData(todayFmsStr, activeCookie);
-    } catch (err) {
-      // Nếu lỗi HTTP 302, 401 hoặc lỗi cookie hết hạn, tiến hành đăng nhập lại
-      log(`Cookie FMS bị lỗi hoặc hết hạn. Đang tiến hành đăng nhập lại... Chi tiết lỗi: ${err.message || JSON.stringify(err)}`);
-      activeCookie = await loginFMS();
-      fmsFlights = await fetchFMSData(todayFmsStr, activeCookie);
-    }
-    
-    log(`Đã tải danh sách chuyến bay ngày hôm nay từ FMS, tổng cộng ${fmsFlights.length} chuyến.`);
+    for (const targetDate of targetDates) {
+      // Lấy danh sách các chuyến bay cần theo dõi của ngày đang xét
+      const schedules = await db.all('SELECT DISTINCT flight_no FROM fms_schedules WHERE date = ?', targetDate);
+      if (schedules.length === 0) continue;
 
-    // 4. Lọc các chuyến bay khớp với lịch trực
-    const matchedFlights = fmsFlights.filter(f => {
-      if (!f.FLIGHTNO) return false;
-      const cleanFltNo = f.FLIGHTNO.toUpperCase().replace(/\s+/g, '');
-      return flightNumbers.includes(cleanFltNo);
-    });
+      const flightNumbers = schedules.map(s => s.flight_no.toUpperCase().replace(/\s+/g, ''));
+      log(`[Ngày ${targetDate}] Danh sách chuyến bay cần theo dõi (${flightNumbers.length} chuyến): ${flightNumbers.join(', ')}`);
 
-    log(`Tìm thấy ${matchedFlights.length} chuyến bay khớp trên FMS.`);
-    if (matchedFlights.length === 0) {
-      log('Không có chuyến bay nào trùng khớp để quét chi tiết.');
-      return;
-    }
-
-    // 5. TỐI ƯU HÓA: Quét chi tiết tải dầu SONG SONG (Promise.all) cho các chuyến bay trùng khớp
-    log('Bắt đầu quét song song chi tiết tải dầu cho các chuyến bay...');
-    const promises = matchedFlights.map(async (flt) => {
-      const cleanFltNo = flt.FLIGHTNO.toUpperCase().replace(/\s+/g, '');
-      const legNo = flt.LEG_NO;
-
+      // Tải danh sách chuyến bay từ FMS cho ngày này
+      const targetFmsDateStr = convertDbDateToFmsDate(targetDate);
+      let fmsFlights = [];
       try {
-        log(`[Bắt đầu quét] Chuyến bay: ${cleanFltNo} (LEG_NO: ${legNo})`);
-        const detail = await fetchFlightDetail(legNo, activeCookie);
+        fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
+      } catch (err) {
+        log(`Cookie FMS bị lỗi hoặc hết hạn. Đang tiến hành đăng nhập lại... Chi tiết lỗi: ${err.message || JSON.stringify(err)}`);
+        activeCookie = await loginFMS();
+        fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
+      }
+      
+      log(`[Ngày ${targetDate}] Đã tải danh sách chuyến bay từ FMS, tổng cộng ${fmsFlights.length} chuyến.`);
 
-        // Xác định trạng thái tải dầu
-        const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
-        const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
+      // Lọc các chuyến bay khớp với lịch trực của ngày này
+      const matchedFlights = fmsFlights.filter(f => {
+        if (!f.FLIGHTNO) return false;
+        const cleanFltNo = f.FLIGHTNO.toUpperCase().replace(/\s+/g, '');
+        return flightNumbers.includes(cleanFltNo);
+      });
 
-        // Lấy dữ liệu cũ để so sánh trạng thái và số liệu tải dầu
-        const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
+      log(`[Ngày ${targetDate}] Tìm thấy ${matchedFlights.length} chuyến bay khớp trên FMS.`);
+      if (matchedFlights.length === 0) continue;
 
-        const isFirstTimeFuel = (!oldOrder || oldOrder.status === 'Chờ cập nhật') && hasOrder;
-        const isFuelUpdated = oldOrder && oldOrder.status === 'Đã có số liệu' && 
-                              (String(oldOrder.fuel_order) !== String(detail.fuel_order) || String(oldOrder.standby_fuel) !== String(detail.standby_fuel));
+      // Quét chi tiết tải dầu SONG SONG (Promise.all) cho các chuyến bay trùng khớp của ngày này
+      log(`[Ngày ${targetDate}] Bắt đầu quét song song chi tiết tải dầu cho các chuyến bay...`);
+      const promises = matchedFlights.map(async (flt) => {
+        const cleanFltNo = flt.FLIGHTNO.toUpperCase().replace(/\s+/g, '');
+        const legNo = flt.LEG_NO;
 
-        if (isFirstTimeFuel || isFuelUpdated) {
-          // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ)
-          const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel FROM fms_schedules WHERE flight_no = ? AND date = ?', cleanFltNo, todayDb);
-          
-          const title = isFirstTimeFuel ? '🔔 [FMS BÁO TẢI DẦU MỚI]' : '🔄 [FMS CẬP NHẬT TẢI DẦU]';
-          const msg = `${title}
+        try {
+          log(`[Bắt đầu quét] Chuyến bay: ${cleanFltNo} (LEG_NO: ${legNo})`);
+          const detail = await fetchFlightDetail(legNo, activeCookie);
+
+          // Xác định trạng thái tải dầu
+          const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
+          const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
+
+          // Lấy dữ liệu cũ để so sánh trạng thái và số liệu tải dầu
+          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
+
+          const isFirstTimeFuel = (!oldOrder || oldOrder.status === 'Chờ cập nhật') && hasOrder;
+          const isFuelUpdated = oldOrder && oldOrder.status === 'Đã có số liệu' && 
+                                (String(oldOrder.fuel_order) !== String(detail.fuel_order) || String(oldOrder.standby_fuel) !== String(detail.standby_fuel));
+
+          if (isFirstTimeFuel || isFuelUpdated) {
+            // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày
+            const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel FROM fms_schedules WHERE flight_no = ? AND date = ?', cleanFltNo, targetDate);
+            
+            const title = isFirstTimeFuel ? '🔔 [FMS BÁO TẢI DẦU MỚI]' : '🔄 [FMS CẬP NHẬT TẢI DẦU]';
+            const msg = `${title}
 ✈️ Chuyến bay: ${cleanFltNo}
 🛩️ Loại tàu: ${flt.ACTYPE ? flt.ACTYPE.trim() : '-'} | Số hiệu: ${flt.ACREG ? flt.ACREG.trim() : '-'}
 🗺️ Đường bay: ${flt.DEP_AP_SCHED || ''}-${flt.ARR_AP_SCHED || ''}
@@ -319,39 +326,39 @@ async function syncFMSData() {
 ⏰ Giờ Hạ/Cất: Hạ: ${sched && sched.time_arr ? sched.time_arr : '-'} | Cất: ${sched && sched.time_dep ? sched.time_dep : '-'}`;
 
           sendZaloNotification(msg).catch(err => console.error('[Zalo Bot] Lỗi gửi thông báo:', err.message));
-        }
+          }
 
-        // Lưu hoặc cập nhật vào database SQLite
-        await db.run(`
-          INSERT INTO fms_fuel_orders (
-            flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
-            trip_fuel, trip_time, taxi_fuel, alternate, status, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          ON CONFLICT(flight_no) DO UPDATE SET
-            ac_reg = excluded.ac_reg,
-            ac_type = excluded.ac_type,
-            dep_arr = excluded.dep_arr,
-            standby_fuel = excluded.standby_fuel,
-            fuel_order = excluded.fuel_order,
-            trip_fuel = excluded.trip_fuel,
-            trip_time = excluded.trip_time,
-            taxi_fuel = excluded.taxi_fuel,
-            alternate = excluded.alternate,
-            status = excluded.status,
-            updated_at = CURRENT_TIMESTAMP
-        `, 
-          cleanFltNo,
-          flt.ACREG ? flt.ACREG.trim() : '',
-          flt.ACTYPE ? flt.ACTYPE.trim() : '',
-          `${flt.DEP_AP_SCHED || ''} - ${flt.ARR_AP_SCHED || ''}`,
-          detail.standby_fuel,
-          detail.fuel_order,
-          detail.trip_fuel,
-          detail.trip_time,
-          detail.taxi_fuel,
-          detail.alternate,
-          status
-        );
+          // Lưu hoặc cập nhật vào database SQLite
+          await db.run(`
+            INSERT INTO fms_fuel_orders (
+              flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
+              trip_fuel, trip_time, taxi_fuel, alternate, status, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(flight_no) DO UPDATE SET
+              ac_reg = excluded.ac_reg,
+              ac_type = excluded.ac_type,
+              dep_arr = excluded.dep_arr,
+              standby_fuel = excluded.standby_fuel,
+              fuel_order = excluded.fuel_order,
+              trip_fuel = excluded.trip_fuel,
+              trip_time = excluded.trip_time,
+              taxi_fuel = excluded.taxi_fuel,
+              alternate = excluded.alternate,
+              status = excluded.status,
+              updated_at = CURRENT_TIMESTAMP
+          `, 
+            cleanFltNo,
+            flt.ACREG ? flt.ACREG.trim() : '',
+            flt.ACTYPE ? flt.ACTYPE.trim() : '',
+            `${flt.DEP_AP_SCHED || ''} - ${flt.ARR_AP_SCHED || ''}`,
+            detail.standby_fuel,
+            detail.fuel_order,
+            detail.trip_fuel,
+            detail.trip_time,
+            detail.taxi_fuel,
+            detail.alternate,
+            status
+          );
         log(`[Hoàn tất quét] Chuyến bay ${cleanFltNo}: Fuel Order = ${detail.fuel_order} kg, Trạng thái = ${status}`);
       } catch (fltErr) {
         console.error(`[Lỗi quét] Chuyến bay ${cleanFltNo} thất bại:`, fltErr.message);
