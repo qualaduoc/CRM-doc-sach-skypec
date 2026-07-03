@@ -10,7 +10,7 @@ const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
 const { syncFMSData, startFmsWorker, getVietnamDbDateStr } = require('./fmsService');
-const { performImageOCR } = require('./ocrService');
+const { performImageOCR, testSingleGeminiKey } = require('./ocrService');
 
 const app = express();
 const PORT = process.env.PORT || 3005; // Chạy ở cổng 3005 để tránh xung đột
@@ -1356,6 +1356,47 @@ app.post('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) =>
       keys ? keys.trim() : ''
     );
     res.json({ success: true, message: 'Đã lưu danh sách API Key Gemini thành công!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Kiểm thử danh sách API Keys Gemini (chỉ Admin)
+app.post('/api/fms/settings/test-keys', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { keys } = req.body;
+  if (!keys) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp danh sách keys để test!' });
+  }
+
+  const apiKeys = keys
+    .split(/[\n,;]/)
+    .map(k => k.trim())
+    .filter(k => k.length > 0);
+
+  if (apiKeys.length === 0) {
+    return res.json({ success: true, results: [] });
+  }
+
+  try {
+    const promises = apiKeys.map(async (key) => {
+      const maskedKey = key.length > 10
+        ? key.substring(0, 6) + '...' + key.substring(key.length - 4)
+        : 'Key ngắn';
+      
+      const testResult = await testSingleGeminiKey(key);
+      return {
+        key: maskedKey,
+        success: testResult.success,
+        message: testResult.success ? 'Hoạt động tốt (OK)' : `Lỗi: ${testResult.error}`
+      };
+    });
+
+    const results = await Promise.all(promises);
+    res.json({ success: true, results });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

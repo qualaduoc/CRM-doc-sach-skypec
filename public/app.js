@@ -291,6 +291,9 @@ function setupEventListeners() {
   // Lưu danh sách Gemini API Keys
   document.getElementById('btn-save-gemini-keys').addEventListener('click', handleSaveGeminiKeys);
 
+  // Kiểm tra danh sách Gemini API Keys
+  document.getElementById('btn-test-gemini-keys').addEventListener('click', handleTestGeminiKeys);
+
   // Đóng Modal Preview FMS
   document.getElementById('btn-close-fms-preview-modal').addEventListener('click', () => {
     document.getElementById('fms-preview-modal').classList.remove('active');
@@ -1496,4 +1499,65 @@ function renderOcrPreview(flights) {
   `).join('');
 
   document.getElementById('fms-preview-modal').classList.add('active');
+}
+
+// Kiểm thử đồng thời danh sách API Keys Gemini
+async function handleTestGeminiKeys() {
+  const btn = document.getElementById('btn-test-gemini-keys');
+  const keysInput = document.getElementById('gemini-keys-input').value.trim();
+  const resultsDiv = document.getElementById('gemini-keys-test-results');
+
+  if (!keysInput) {
+    showToast('Vui lòng nhập API Keys để kiểm tra!', 'error', 'Lỗi kiểm tra');
+    return;
+  }
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang test...';
+  
+  resultsDiv.style.display = 'flex';
+  resultsDiv.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 5px;"><i class="fa-solid fa-circle-notch fa-spin"></i> Đang kiểm tra danh sách keys...</div>';
+
+  try {
+    const res = await fetch('/api/fms/settings/test-keys', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ keys: keysInput })
+    });
+    const data = await res.json();
+    if (data.success) {
+      const results = data.results || [];
+      if (results.length === 0) {
+        resultsDiv.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 5px;">Không có key nào để kiểm tra.</div>';
+        return;
+      }
+      
+      resultsDiv.innerHTML = results.map(r => {
+        const icon = r.success ? '<i class="fa-solid fa-circle-check" style="color: #10b981;"></i>' : '<i class="fa-solid fa-circle-xmark" style="color: #ef4444;"></i>';
+        const color = r.success ? '#10b981' : '#ef4444';
+        return `
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed rgba(255,255,255,0.05); padding-bottom: 4px; margin-bottom: 4px; font-size: 0.78rem;">
+            <span style="font-family: monospace; font-weight: bold; color: var(--text-muted);">${r.key}</span>
+            <span style="color: ${color}; font-weight: 600; display: flex; align-items: center; gap: 5px; font-size: 0.78rem;">
+              ${icon} ${r.message}
+            </span>
+          </div>
+        `;
+      }).join('');
+      
+      showToast('Đã hoàn thành kiểm tra danh sách API Keys!', 'success', 'Hoàn tất kiểm tra');
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (err) {
+    showToast(err.message, 'error', 'Kiểm tra thất bại');
+    resultsDiv.innerHTML = `<div style="color: #ef4444; text-align: center; padding: 5px;">Lỗi: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
 }

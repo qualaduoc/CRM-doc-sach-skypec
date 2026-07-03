@@ -206,9 +206,15 @@
                 Mỗi dòng một Key API. Hệ thống sẽ tự động thử Key tiếp theo nếu Key trước bị lỗi.
               </p>
               <textarea id="gemini-keys-input" placeholder="Nhập các API Keys Gemini tại đây, mỗi dòng một key..." style="width: 100%; height: 60px; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: #fff; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: none;"></textarea>
-              <button id="btn-save-gemini-keys" class="btn-secondary" style="margin-top: 0; width: 100%; font-size: 0.8rem; padding: 6px 12px;">
-                <i class="fa-solid fa-floppy-disk"></i> Lưu Danh Sách Keys
-              </button>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px;">
+                <button id="btn-save-gemini-keys" class="btn-glow" style="margin-top: 0; width: 100%; font-size: 0.8rem; padding: 8px 12px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
+                  <i class="fa-solid fa-floppy-disk"></i> Lưu Keys
+                </button>
+                <button id="btn-test-gemini-keys" class="btn-secondary" style="margin-top: 0; width: 100%; font-size: 0.8rem; padding: 8px 12px; border-color: rgba(96, 165, 250, 0.3); color: #60a5fa;">
+                  <i class="fa-solid fa-vial"></i> Kiểm Tra Keys
+                </button>
+              </div>
+              <div id="gemini-keys-test-results" style="margin-top: 10px; font-size: 0.8rem; max-height: 150px; overflow-y: auto; display: none; flex-direction: column; gap: 6px; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid var(--border);"></div>
             </div>
           </div>
 
