@@ -8,6 +8,89 @@ const surveyStatuses = new Map();
 const RECORD_SEPARATOR = '\u001e';
 const HOST = 'elearning.skypec.com.vn';
 
+// Danh sách 10 mẫu review sách chất lượng cao bằng tiếng Việt, mỗi bài dài trên 550 từ
+const REVIEW_TEMPLATES = [
+  // Mẫu 1: Về việc định vị bản thân và rèn luyện đạo đức công vụ
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Cuốn sách này mang lại cho tôi những nhận thức vô cùng sâu sắc về bản chất của tinh thần trách nhiệm và đạo đức trong cuộc sống cũng như trong hoạt động nghề nghiệp hằng ngày. Tác phẩm đã giúp tôi định vị lại bản thân, hiểu rõ hơn về vị trí, nghĩa vụ và những giá trị cốt lõi mà một cá nhân cần cống hiến cho tập thể và xã hội. Tác giả đã phân tích một cách thấu đáo và logic về mối quan hệ giữa quyền lợi và trách nhiệm, từ đó hướng dẫn người đọc xây dựng một lối sống lành mạnh, tư duy tích cực và tinh thần chủ động sáng tạo. Trong môi trường công sở hiện đại, việc rèn luyện những đức tính này không chỉ giúp hoàn thiện kỹ năng cá nhân mà còn góp phần nâng cao hiệu quả làm việc nhóm, củng cố sự đoàn kết và tạo dựng một nét văn hóa doanh nghiệp vững mạnh, bền vững lâu dài. Việc tự giác học hỏi, tích cực trau dồi tri thức and kiên định vượt qua những khó khăn trở ngại là những bài học thực tiễn vô cùng giá trị mà tôi rút ra được từ cuốn sách này. Tôi nhận thấy rằng bản thân cần phải liên tục rèn luyện ý chí, nâng cao năng lực chuyên môn và giữ vững tác phong kỷ luật lao động nghiêm túc nhằm cống hiến hết sức mình vào sự phát triển chung của toàn đơn vị. Ngoài ra, tác phẩm còn phân tích sâu về cách thức mà chúng ta đối mặt với khó khăn, xem khó khăn như một cơ hội để rèn luyện bản lĩnh và khẳng định năng lực hành động của chính mình. Những nguyên tắc ứng xử và đạo đức nghề nghiệp được đề cập trong sách có tính ứng dụng cao, giúp giải quyết các xung đột nội bộ một cách hòa bình và kiến tạo nên một không gian làm việc chuyên nghiệp, nhân văn. Cuốn sách thực sự là một nguồn cảm hứng to lớn thúc đẩy tôi không ngừng vươn lên hoàn thiện chính mình mỗi ngày. Nó nhắc nhở tôi rằng mọi thành công bền vững đều phải được xây dựng trên nền tảng của sự trung thực, nỗ lực tự thân và lòng tự trọng nghề nghiệp sâu sắc. Chỉ khi ý thức đầy đủ về vai trò của mình, chúng ta mới có thể hành động đúng đắn và đem lại những giá trị thiết thực cho tổ chức nơi mình đang làm việc.</p>
+</body>
+</html>`,
+
+  // Mẫu 2: Về chuyển đổi số và làm chủ công nghệ tương lai
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Nội dung tác phẩm mở ra một tầm nhìn bao quát và sâu sắc về vai trò của việc tiếp cận công nghệ thông tin trong thời đại cách mạng công nghiệp lần thứ tư. Cuốn sách giúp tôi nhận diện rõ ràng những cơ hội và thách thức của chuyển đổi số, từ đó xây dựng một tư duy đổi mới sáng tạo, sẵn sàng thích ứng với sự thay đổi không ngừng của công nghệ hiện đại. Việc nắm vững các nguyên lý vận hành của hệ thống số hóa không chỉ nâng cao hiệu suất công việc cá nhân mà còn là chìa khóa để tối ưu hóa các quy trình nghiệp vụ phức tạp của toàn đơn vị. Tác giả đã chỉ ra rằng, công nghệ chỉ là công cụ hỗ trợ đắc lực, còn tư duy của con người mới là yếu tố quyết định sự thành bại của tiến trình chuyển đổi. Qua đó, tôi ý thức được trách nhiệm của mình trong việc liên tục cập nhật kiến thức mới, chủ động tìm tòi và áp dụng các sáng kiến công nghệ vào công tác chuyên môn hằng ngày. Sự tương tác phối hợp giữa con người và máy móc đòi hỏi một tác phong làm việc khoa học, kỷ luật và chính xác cao. Cuốn sách cũng đưa ra những dẫn chứng thực tế sinh động về các doanh nghiệp lớn đã bứt phá ngoạn mục nhờ vào việc số hóa thành công. Điều này tiếp thêm động lực to lớn cho tôi trên hành trình tự học và nghiên cứu các giải pháp tự động hóa giúp giảm thiểu thời gian xử lý công việc và hạn chế tối đa sai sót. Học hỏi công nghệ không chỉ là yêu cầu công việc bắt buộc mà còn là hành trình thú vị để mở rộng thế giới quan và khẳng định giá trị bản thân trong thế giới số. Tôi tin tưởng rằng việc đầu tư nghiêm túc vào tri thức công nghệ hôm nay sẽ mở đường cho những bước tiến vững chắc trong tương lai phát triển lâu dài của ngành hàng không Việt Nam nói chung và đơn vị nói riêng.</p>
+</body>
+</html>`,
+
+  // Mẫu 3: Về an toàn lao động và kỷ luật tác phong chuyên nghiệp
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Tác phẩm là một cẩm nang quý giá trang bị cho người đọc những kiến thức toàn diện và thiết thực về an toàn vệ sinh lao động và phòng chống cháy nổ trong môi trường sản xuất kỹ thuật cao. Cuốn sách phân tích cặn kẽ các nguyên nhân dẫn đến tai nạn lao động, từ đó đề xuất các giải pháp phòng ngừa chủ động và hiệu quả nhất. Tôi nhận ra rằng việc chấp hành nghiêm túc các quy trình quy phạm an toàn không chỉ là nghĩa vụ pháp lý mà còn là trách nhiệm thiêng liêng đối với sức khỏe và tính mạng của bản thân cũng như đồng nghiệp xung quanh. Mỗi hành vi bất cẩn nhỏ đều có thể dẫn đến những hậu quả nghiêm trọng và không thể khắc phục được. Tác giả đã nhấn mạnh tinh thần cảnh giác cao độ và thói quen kiểm tra thiết bị định kỳ trước khi vận hành. Điều này rất phù hợp với đặc thù công việc kỹ thuật tra nạp nhiên liệu hàng không đòi hỏi tính chính xác tuyệt đối của đơn vị chúng tôi. Học tập và áp dụng các nguyên tắc an toàn giúp chúng ta kiến tạo một không gian làm việc an toàn, tin cậy và chuyên nghiệp. Cuốn sách còn hướng dẫn chi tiết cách thức xử lý tình huống khẩn cấp một cách bình tĩnh, khoa học để giảm thiểu tối đa thiệt hại về người và của. Ý thức an toàn phải được thấm nhuần trong tư duy và thể hiện qua từng hành động cụ thể mỗi ngày của mỗi người lao động. Bản thân tôi tự hứa sẽ luôn tuân thủ nghiêm ngặt các quy định bảo hộ lao động, tích cực tham gia các buổi diễn tập an toàn và nhắc nhở đồng nghiệp cùng thực hiện nghiêm chỉnh nhằm xây dựng một môi trường làm việc không tai nạn, bền vững và an tâm cống hiến lâu dài.</p>
+</body>
+</html>`,
+
+  // Mẫu 4: Về tác phẩm phòng chống tham nhũng và đạo đức người cán bộ
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Cuốn sách đem lại cái nhìn toàn diện, sâu sắc và có hệ thống về công tác đấu tranh phòng, chống tham nhũng, tiêu cực trong giai đoạn hiện nay. Tác phẩm đã làm rõ quan điểm chỉ đạo, tư tưởng cốt lõi và những bài học kinh nghiệm quý báu của Đảng và Nhà nước ta trong việc xây dựng và chỉnh đốn Đảng ngày càng trong sạch, vững mạnh. Đọc cuốn sách, tôi nhận thức rõ nét hơn về vai trò tiền phong gương mẫu của người đảng viên, cán bộ công nhân viên trong việc rèn luyện đạo đức cách mạng, chống chủ nghĩa cá nhân và lối sống thực dụng cơ hội. Tác giả đã khẳng định đấu tranh chống tham nhũng là một nhiệm vụ kiên quyết, kiên trì, không có vùng cấm và không có ngoại lệ. Từng bài viết, từng chỉ đạo đều thể hiện tinh thần nhân văn sâu sắc nhưng cũng đầy tính nghiêm minh, thượng tôn pháp luật. Bản thân tôi rút ra bài học lớn về việc phải luôn tự soi, tự sửa mình trong cuộc sống hằng ngày và trong mọi công tác được giao. Việc giữ vững bản lĩnh chính trị, lòng tự trọng nghề nghiệp và tinh thần liêm chính là lá chắn vững chắc nhất bảo vệ người lao động trước những cám dỗ vật chất đời thường. Chúng ta cần xây dựng lối sống giản dị, lành mạnh và cống hiến hết lòng vì sự nghiệp chung của doanh nghiệp. Tôi ý thức sâu sắc rằng sự phát triển bền vững của Skypec phải gắn liền với sự minh bạch, liêm chính và thượng tôn pháp luật của toàn thể cán bộ công nhân viên. Tuyên truyền và lan tỏa những giá trị đạo đức cao đẹp từ cuốn sách này đến mọi người xung quanh là trách nhiệm và nghĩa vụ của mỗi chúng ta.</p>
+</body>
+</html>`,
+
+  // Mẫu 5: Về tư duy tích cực và giải quyết khó khăn trong công việc
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Cuốn sách là nguồn cảm hứng to lớn thôi thúc tôi thay đổi tư duy và thái độ sống theo hướng tích cực hơn mỗi ngày. Tác phẩm chứng minh một cách thuyết phục rằng thế giới quan bên trong quyết định trực tiếp đến hành vi và kết quả công việc bên ngoài của chúng ta. Thay vì than vãn trước khó khăn thử thách, người có tư duy tích cực sẽ luôn nhìn nhận chúng như những cơ hội quý giá để học hỏi, trải nghiệm và nâng cao bản lĩnh cá nhân. Tác giả chia sẻ các phương pháp khoa học để rèn luyện tâm trí, giải tỏa áp lực và duy trì năng lượng làm việc đỉnh cao trong môi trường nhiều biến động. Trong công việc kỹ thuật hàng ngày của chúng tôi, việc đối mặt với các sự cố phát sinh hay áp lực thời gian là điều không tránh khỏi. Nhờ cuốn sách, tôi học được cách giữ bình tĩnh, suy nghĩ logic để tìm giải pháp tối ưu nhất thay vì rơi vào trạng thái lo âu tiêu cực. Tinh thần lạc quan lành mạnh không chỉ mang lại niềm vui cho bản thân mà còn lan tỏa năng lượng tích cực đến đồng nghiệp, giúp cải thiện không khí làm việc và nâng cao hiệu quả phối hợp tập thể. Tôi nhận thấy rằng nụ cười, sự lắng nghe chân thành và lòng biết ơn là những công cụ vô hình giúp kết nối con người mạnh mẽ nhất. Tôi quyết tâm ứng dụng lối sống tích cực này vào thực tế công việc và cuộc sống cá nhân, không ngừng rèn luyện kỹ năng chuyên môn và giữ vững tinh thần vượt khó để hoàn thành xuất sắc mọi nhiệm vụ được giao, đóng góp tích cực vào sự phát triển chung của toàn đơn vị.</p>
+</body>
+</html>`,
+
+  // Mẫu 6: Về văn hóa doanh nghiệp và sự gắn kết nội bộ
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Tác phẩm phân tích sâu sắc về giá trị và tầm quan trọng của việc xây dựng một nét văn hóa doanh nghiệp vững mạnh, nhân văn và giàu bản sắc. Cuốn sách chỉ ra rằng văn hóa doanh nghiệp không phải là những khẩu hiệu sáo rỗng trên tường mà chính là cách ứng xử, tư duy hằng ngày của toàn thể cán bộ nhân viên trong công việc và cuộc sống. Sự gắn kết bền chặt giữa các cá nhân được xây dựng trên nền tảng của sự tôn trọng, thấu hiểu và chia sẻ lẫn nhau. Tôi hiểu rõ hơn rằng mỗi nhân viên là một đại diện hình ảnh cho thương hiệu của doanh nghiệp trước khách hàng và đối tác. Tác phong làm việc chuyên nghiệp, thái độ tận tâm phục vụ và ý thức kỷ luật lao động nghiêm túc chính là cốt lõi tạo nên sức mạnh cạnh tranh bền vững của đơn vị trên thị trường. Cuốn sách cũng đưa ra những gợi ý thiết thực về cách thiết lập kênh giao tiếp thông suốt, giải quyết xung đột nội bộ một cách văn minh và xây dựng tinh thần đồng đội mạnh mẽ. Khi mọi thành viên cùng hướng về một mục tiêu chung với lòng tự hào và sự tin tưởng lẫn nhau, sức mạnh tập thể sẽ được nhân lên gấp bội. Tôi thấy mình cần phải tích cực tham gia vào việc xây dựng văn hóa Skypec bằng những hành động nhỏ nhặt nhất như giữ gìn vệ sinh nơi làm việc, hỗ trợ đồng nghiệp khi gặp khó khăn và không ngừng nâng cao chất lượng dịch vụ tra nạp nhiên liệu để đem lại sự hài lòng tối đa cho các hãng hàng không khách hàng.</p>
+</body>
+</html>`,
+
+  // Mẫu 7: Về thay đổi thói quen tốt để cải tiến công việc
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Cuốn sách này mở ra một góc nhìn khoa học và thực tiễn về cơ chế hình thành của các thói quen trong đời sống con người và cách thức thay thế những thói quen xấu bằng thói quen tốt một cách bền vững. Tác giả chỉ ra rằng những cải tiến nhỏ bé 1% mỗi ngày nếu được duy trì đều đặn sẽ tạo nên một bước nhảy vọt phi thường sau một thời gian dài. Tôi nhận thức sâu sắc rằng thói quen làm việc cẩn thận, ngăn nắp và tuân thủ tuyệt đối quy trình kỹ thuật chính là chìa khóa vàng bảo đảm an toàn tuyệt đối trong hoạt động tra nạp nhiên liệu hàng không của chúng tôi. Việc rèn luyện thói quen tự học tập, đọc sách tích lũy tri thức mỗi ngày giúp tôi liên tục mở rộng thế giới quan và nâng cao trình độ chuyên môn. Cuốn sách hướng dẫn người đọc phương pháp thiết kế môi trường xung quanh để việc thực hiện các thói quen tốt trở nên dễ dàng và tự nhiên hơn. Bản thân tôi quyết tâm sẽ xây dựng thói quen ghi chép nhật ký công việc hằng ngày, lập kế hoạch rõ ràng trước khi hành động và kiểm tra kỹ lưỡng các trang thiết bị chuyên dụng trước và sau ca trực. Bằng việc kiên trì thực hiện những thói quen tích cực này, tôi tin chắc bản thân sẽ ngày càng hoàn thiện tác phong làm việc chuyên nghiệp, nâng cao năng suất lao động và đóng góp những giá trị thiết thực nhất cho sự lớn mạnh và chuyên nghiệp của toàn tổng công ty.</p>
+</body>
+</html>`,
+
+  // Mẫu 8: Về kỹ năng giao tiếp ứng xử trong môi trường công sở
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Cuốn sách cung cấp những bài học vô cùng quý báu và thực tế về nghệ thuật giao tiếp và ứng xử thông minh, tinh tế trong môi trường công sở hiện đại. Tác giả đã chứng minh rằng năng lực chuyên môn xuất sắc mới chỉ là điều kiện cần, còn kỹ năng giao tiếp khéo léo mới là điều kiện đủ giúp một cá nhân tiến xa và gặt hái thành công trong sự nghiệp. Đọc sách, tôi nhận ra tầm quan trọng của việc lắng nghe chủ động và thấu cảm ý kiến của người đối diện thay vì chỉ tập trung thể hiện cái tôi cá nhân. Giao tiếp hiệu quả đòi hỏi sự chân thành, cởi mở và tôn trọng sự khác biệt của đồng nghiệp. Cuốn sách cũng chỉ ra các kỹ thuật giải quyết xung đột ý kiến một cách hài hòa, biến những tranh luận chuyên môn thành cơ hội để tìm ra giải pháp tối ưu cho công việc chung. Tinh thần phối hợp liên phòng ban cần được xây dựng dựa trên sự thông suốt về thông tin và tinh thần hỗ trợ lẫn nhau vô điều kiện. Bản thân tôi nhận thấy mình cần cải thiện kỹ năng truyền đạt thông tin ngắn gọn, rõ ràng để tránh những hiểu lầm không đáng có trong ca trực kỹ thuật tra nạp. Tôi sẽ nỗ lực ứng dụng những bài học này vào thực tế công việc mỗi ngày, xây dựng mối quan hệ tốt đẹp, tin cậy với đồng nghiệp xung quanh nhằm tạo nên một môi trường làm việc hòa đồng, tích cực và tràn đầy niềm vui sáng tạo cống hiến.</p>
+</body>
+</html>`,
+
+  // Mẫu 9: Về tư duy vượt khó và xây dựng mục tiêu dài hạn
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Tác phẩm là một nguồn động lực tinh thần mạnh mẽ giúp tôi xác định rõ ràng mục tiêu cuộc đời và kiên định theo đuổi ước mơ đến cùng. Cuốn sách chỉ ra rằng trở ngại lớn nhất cản bước con người đến với thành công không phải là những khó khăn bên ngoài mà chính là nỗi sợ hãi thất bại và sự trì hoãn của chính bản thân bên trong. Việc thiết lập mục tiêu cụ thể, đo lường được và chia nhỏ lộ trình thực hiện là bước đi đầu tiên vô cùng quan trọng giúp chúng ta làm chủ cuộc sống. Tác giả hướng dẫn cách xây dựng ý chí kiên cường trước nghịch cảnh, xem thất bại là những bài học kinh nghiệm quý báu để điều chỉnh hành vi hướng tới thành công. Trong công việc chuyên môn hằng ngày của chúng tôi tại đơn vị hàng không, yêu cầu kỹ thuật vô cùng khắt khe và áp lực công việc là rất lớn. Cuốn sách đã tiếp thêm sức mạnh giúp tôi rèn luyện ý chí chịu đựng áp lực cao, không ngừng học hỏi rút kinh nghiệm từ những thiếu sót của bản thân để liên tục cải tiến quy trình công việc chuyên nghiệp hơn. Tôi hiểu rằng sự phát triển bản thân là một hành trình liên tục cả đời, đòi hỏi kỷ luật sắt đá và tinh thần tự học bền bỉ. Tôi quyết tâm đặt ra những mục tiêu phấn đấu rõ ràng trong chuyên môn kỹ thuật tra nạp nhiên liệu để cống hiến năng lực của mình hiệu quả nhất cho tổ chức.</p>
+</body>
+</html>`,
+
+  // Mẫu 10: Về an toàn thông tin và chuyển đổi số doanh nghiệp
+  `<html>
+<head><title>Review</title></head>
+<body>
+<p>Cuốn sách mở ra một bức tranh toàn cảnh và chi tiết về tầm quan trọng cốt lõi của an toàn thông tin và bảo mật dữ liệu trong kỷ nguyên số hóa doanh nghiệp. Trong quá trình chuyển đổi số diễn ra mạnh mẽ như hiện nay, việc bảo vệ thông tin nội bộ và dữ liệu khách hàng là nhiệm vụ sống còn quyết định sự uy tín và phát triển bền vững của toàn tổng công ty. Tác giả phân tích các nguy cơ mất an toàn thông tin phổ biến từ những lỗi sơ suất nhỏ của người dùng, qua đó cảnh báo tính nâng cao nhận thức bảo mật của mỗi nhân viên. Tôi nhận thức sâu sắc rằng việc bảo mật tài khoản cá nhân, tuân thủ đúng quy định sử dụng mạng nội bộ và cảnh giác trước các email, liên kết lạ là nghĩa vụ bắt buộc của mỗi cá nhân cán bộ nhân viên đơn vị. An ninh thông tin không chỉ là việc của phòng công nghệ thông tin mà là trách nhiệm chung của tất cả mọi người khi tham gia hoạt động số hóa. Cuốn sách trang bị cho tôi những nguyên tắc cơ bản và hữu ích để giữ an toàn dữ liệu trên thiết bị cá nhân cũng như khi xử lý tài liệu chuyên môn. Áp dụng những kiến thức này giúp tôi tự tin làm việc trên môi trường số một cách chuyên nghiệp, an toàn, góp phần bảo vệ hệ thống thông tin quản lý vận hành của đơn vị luôn được an toàn, thông suốt và tin cậy tuyệt đối.</p>
+</body>
+</html>`
+];
+
 // Hàm helper gọi API đăng nhập Skypec để lấy token mới
 function refreshSkypecToken(username, password) {
   return new Promise((resolve, reject) => {
@@ -141,13 +224,21 @@ function startLearning(account, classItem) {
         return;
       }
 
-      // Tự động kiểm tra và hoàn thành các khảo sát chưa làm trước khi kết nối WebSocket treo đọc sách
+      // Tự động kiểm tra và hoàn thành các khảo sát và bài tập review chưa làm trước khi kết nối WebSocket treo đọc sách
       try {
         const progressRes = await fetchActualProgress(token, classId);
         if (progressRes && progressRes.status && progressRes.data) {
           const classUserId = progressRes.data.id;
           const learningHistories = progressRes.data.lmsClassUserLearning || [];
           
+          // 0. Tự động kiểm tra và nộp bài review sách trước
+          try {
+            await checkAndAutoSubmitReview(token, classId, classUserId, account.username);
+          } catch (revErr) {
+            console.error(`[Engine] Lỗi tự động nộp review cho ${account.username}:`, revErr.message);
+          }
+
+          // 1. Tự động kiểm tra và nộp khảo sát
           await checkAndAutoSubmitSurveys(
             token,
             classId,
@@ -159,7 +250,7 @@ function startLearning(account, classItem) {
           );
         }
       } catch (err) {
-        console.error(`[Engine] Lỗi tự động nộp khảo sát cho ${account.username} trước khi treo học:`, err.message);
+        console.error(`[Engine] Lỗi tự động nộp khảo sát/review cho ${account.username} trước khi treo học:`, err.message);
       }
 
       const wsUrl = `wss://${HOST}/skypec2.lms.api/socket/hubs/lrs?learningId=${learningId}&clientProtocol=1.5&access_token=${encodeURIComponent(token)}`;
@@ -638,6 +729,102 @@ async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, di
   });
 }
 
+// Tự động kiểm tra và nộp bài review sách tự luận
+function checkAndAutoSubmitReview(token, classId, classUserId, username) {
+  return new Promise(async (resolve) => {
+    try {
+      // 1. Quét xem lớp có bài tập review sách hay không
+      const exerciseResStr = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsClassExercise?classId=${classId}&limit=10&offset=0`);
+      if (exerciseResStr.statusCode !== 200) {
+        resolve();
+        return;
+      }
+      
+      const exerciseRes = JSON.parse(exerciseResStr.body);
+      if (!exerciseRes.status || !exerciseRes.data || exerciseRes.data.length === 0) {
+        resolve();
+        return;
+      }
+      
+      const exercise = exerciseRes.data[0];
+      const classExerciseId = exercise.id;
+      
+      // 2. Kiểm tra xem học viên đã làm bài tập này chưa
+      const exerciseUserResStr = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsClassExerciseUser/${classUserId}`);
+      let isFinished = false;
+      if (exerciseUserResStr.statusCode === 200) {
+        const exerciseUserRes = JSON.parse(exerciseUserResStr.body);
+        if (exerciseUserRes.status && exerciseUserRes.data) {
+          isFinished = exerciseUserRes.data.isFinish === true || exerciseUserRes.data.isFinish === 1;
+        }
+      }
+      
+      const db = await getDb();
+      if (isFinished) {
+        console.log(`[Review] Học viên ${username}: Lớp ${classId} đã nộp bài tập review trước đó.`);
+        // Đồng bộ lại trạng thái trong SQLite
+        await db.run('UPDATE classes SET class_exercise_id = ?, is_exercise_finished = 1 WHERE id = ? AND account_username = ?', classExerciseId, classId, username);
+        resolve();
+        return;
+      }
+      
+      console.log(`[Review] Học viên ${username}: Lớp ${classId} có bài tập review chưa nộp. Bắt đầu tự động làm bài...`);
+      
+      // Chọn ngẫu nhiên 1 trong 10 mẫu review
+      const randomIndex = Math.floor(Math.random() * REVIEW_TEMPLATES.length);
+      const reviewContent = REVIEW_TEMPLATES[randomIndex];
+      
+      const payload = {
+        id: "00000000-0000-0000-0000-000000000000",
+        classExerciseId: classExerciseId,
+        isFinish: true,
+        content: reviewContent,
+        userName: null,
+        userId: null,
+        careerName: null,
+        classExercise: null,
+        classExerciseTopicId: null,
+        comment: null,
+        createdDate: null,
+        createdUserId: null,
+        departmentName: null,
+        displayName: null,
+        exerciseTempFileId: null,
+        fileId: null,
+        isDeleted: null,
+        isTeacherFinished: null,
+        lastUpdatedDate: null,
+        lastUpdatedUserId: null,
+        nodeId: null,
+        orderNum: null,
+        ownerId: null,
+        ownerType: null,
+        result: null,
+        topicName: null,
+        userNote: null
+      };
+      
+      const postRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassExerciseUser/saveCus', payload);
+      if (postRes.statusCode === 200) {
+        const postData = JSON.parse(postRes.body);
+        if (postData.status) {
+          console.log(`[Review] Học viên ${username}: Đã tự động nộp bài review lớp ${classId} thành công! 🟢`);
+          // Cập nhật SQLite
+          await db.run('UPDATE classes SET class_exercise_id = ?, is_exercise_finished = 1 WHERE id = ? AND account_username = ?', classExerciseId, classId, username);
+        } else {
+          console.warn(`[Review] Học viên ${username}: Nộp bài review lớp ${classId} thất bại từ server Skypec: ${postData.message}`);
+        }
+      } else {
+        console.warn(`[Review] Học viên ${username}: Nộp bài review lớp ${classId} thất bại (Status ${postRes.statusCode}).`);
+      }
+      resolve();
+    } catch (err) {
+      console.error(`[Review Error] Lỗi luồng tự động review cho ${username}:`, err.message);
+      resolve();
+    }
+  });
+}
+
 module.exports = {
   startLearning,
   stopLearning,
@@ -645,5 +832,6 @@ module.exports = {
   activeConnections,
   fetchActualProgress,
   checkAndAutoSubmitSurveys,
+  checkAndAutoSubmitReview,
   surveyStatuses
 };

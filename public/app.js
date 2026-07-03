@@ -566,9 +566,12 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
             </div>
           </td>
           <td style="text-align: center;">
-            <span class="status-tag ${statusClass}" style="padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; background: ${isCompleted ? 'var(--success-bg)' : 'rgba(59, 130, 246, 0.15)'}; color: ${isCompleted ? 'var(--success)' : '#60a5fa'};">
-              ${statusText}
-            </span>
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <span class="status-tag ${statusClass}" style="padding: 4px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; background: ${isCompleted ? 'var(--success-bg)' : 'rgba(59, 130, 246, 0.15)'}; color: ${isCompleted ? 'var(--success)' : '#60a5fa'};">
+                ${statusText}
+              </span>
+              ${c.class_exercise_id ? (c.is_exercise_finished === 1 ? '<span class="status-tag review-finished">Đã Review</span>' : '<span class="status-tag review-pending">Cần Review</span>') : ''}
+            </div>
           </td>
           <td style="text-align: center;">
             <label class="switch">

@@ -586,10 +586,66 @@ async function syncUserClasses(username, token) {
           learnTime = currentLocal.learn_time;
         }
 
+        // 3. Tự động kiểm tra bài tập review
+        let classExerciseId = null;
+        let isExerciseFinished = 0;
+        try {
+          const exerciseRes = await new Promise((resEx) => {
+            const options = {
+              hostname: HOST, port: 443,
+              path: `/skypec2.lms.api/api/v1/LmsClassExercise?classId=${classId}&limit=10&offset=0`,
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${token}`, 'Accept-Encoding': 'identity' }
+            };
+            const req = https.request(options, (res) => {
+              let body = '';
+              res.on('data', chunk => body += chunk);
+              res.on('end', () => {
+                if (res.statusCode === 200) {
+                  try { resEx(JSON.parse(body)); } catch (e) { resEx(null); }
+                } else resEx(null);
+              });
+            });
+            req.on('error', () => resEx(null));
+            req.end();
+          });
+          if (exerciseRes && exerciseRes.status && exerciseRes.data && exerciseRes.data.length > 0) {
+            classExerciseId = exerciseRes.data[0].id;
+            
+            // Check xem đã nộp chưa
+            if (classUserId) {
+              const exUserRes = await new Promise((resExUser) => {
+                const options = {
+                  hostname: HOST, port: 443,
+                  path: `/skypec2.lms.api/api/v1/LmsClassExerciseUser/${classUserId}`,
+                  method: 'GET',
+                  headers: { 'Authorization': `Bearer ${token}`, 'Accept-Encoding': 'identity' }
+                };
+                const req = https.request(options, (res) => {
+                  let body = '';
+                  res.on('data', chunk => body += chunk);
+                  res.on('end', () => {
+                    if (res.statusCode === 200) {
+                      try { resExUser(JSON.parse(body)); } catch (e) { resExUser(null); }
+                    } else resExUser(null);
+                  });
+                });
+                req.on('error', () => resExUser(null));
+                req.end();
+              });
+              if (exUserRes && exUserRes.status && exUserRes.data) {
+                isExerciseFinished = (exUserRes.data.isFinish === true || exUserRes.data.isFinish === 1) ? 1 : 0;
+              }
+            }
+          }
+        } catch (exErr) {
+          console.warn(`[Sync Warning] Lỗi check bài tập lớp ${classId}:`, exErr.message);
+        }
+
         // Lưu vào DB cục bộ
         await db.run(`
-          INSERT INTO classes (id, account_username, class_title, class_user_id, learning_id, content_id, learn_time, min_time_required, is_finish)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO classes (id, account_username, class_title, class_user_id, learning_id, content_id, learn_time, min_time_required, is_finish, class_exercise_id, is_exercise_finished)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id, account_username) DO UPDATE SET
             class_title = excluded.class_title,
             class_user_id = excluded.class_user_id,
@@ -597,8 +653,10 @@ async function syncUserClasses(username, token) {
             content_id = excluded.content_id,
             learn_time = excluded.learn_time,
             min_time_required = excluded.min_time_required,
-            is_finish = excluded.is_finish
-        `, classId, username, item.classTitle, classUserId, learningId, contentId, learnTime, minTimeRequired, isFinish);
+            is_finish = excluded.is_finish,
+            class_exercise_id = excluded.class_exercise_id,
+            is_exercise_finished = excluded.is_exercise_finished
+        `, classId, username, item.classTitle, classUserId, learningId, contentId, learnTime, minTimeRequired, isFinish, classExerciseId, isExerciseFinished);
 
         // Tự động dừng học ngầm nếu lớp học đã hoàn thành hoặc đạt đủ số phút
         if (isFinish === 1) {

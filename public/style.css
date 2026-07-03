@@ -1092,3 +1092,21 @@ input:checked + .slider:before {
     transform: translateY(-8px);
   }
 }
+
+.status-tag {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.status-tag.review-pending {
+  background: rgba(249, 115, 22, 0.15) !important;
+  color: #fb923c !important;
+}
+
+.status-tag.review-finished {
+  background: var(--success-bg) !important;
+  color: var(--success) !important;
+}
