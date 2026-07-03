@@ -215,42 +215,61 @@ function startLearning(account, classItem) {
       }
 
       const token = currentAcc.access_token;
-      const learningId = currentClass.learning_id;
-      const contentId = currentClass.content_id;
+      
+      // 1. Tự động kiểm tra và hoàn thành các khảo sát và bài tập review trước khi kết nối WebSocket
+      let actualClassUserId = currentClass.class_user_id;
+      let actualUserId = null;
+      let actualDisplayName = currentAcc.display_name;
+      let learningHistories = [];
 
-      if (!learningId) {
-        console.log(`[Engine] Lớp ${classId} không có learningId. Không thể kết nối WebSocket.`);
-        connectionObj.stop();
-        return;
-      }
-
-      // Tự động kiểm tra và hoàn thành các khảo sát và bài tập review chưa làm trước khi kết nối WebSocket treo đọc sách
       try {
         const progressRes = await fetchActualProgress(token, classId);
         if (progressRes && progressRes.status && progressRes.data) {
-          const classUserId = progressRes.data.id;
-          const learningHistories = progressRes.data.lmsClassUserLearning || [];
+          actualClassUserId = progressRes.data.id;
+          actualUserId = progressRes.data.userId;
+          actualDisplayName = progressRes.data.displayName || currentAcc.display_name;
+          learningHistories = progressRes.data.lmsClassUserLearning || [];
           
-          // 0. Tự động kiểm tra và nộp bài review sách trước
-          try {
-            await checkAndAutoSubmitReview(token, classId, classUserId, account.username);
-          } catch (revErr) {
-            console.error(`[Engine] Lỗi tự động nộp review cho ${account.username}:`, revErr.message);
-          }
+          // Lưu lại classUserId mới nhất vào DB
+          await db.run('UPDATE classes SET class_user_id = ? WHERE id = ? AND account_username = ?', actualClassUserId, classId, account.username);
+        }
+      } catch (err) {
+        console.error(`[Engine] Lỗi tự động tải tiến độ thực tế cho ${account.username} trước khi check review:`, err.message);
+      }
 
-          // 1. Tự động kiểm tra và nộp khảo sát
+      // 0. Tự động kiểm tra và nộp bài review sách trước
+      try {
+        await checkAndAutoSubmitReview(token, classId, actualClassUserId, account.username);
+      } catch (revErr) {
+        console.error(`[Engine] Lỗi tự động nộp review cho ${account.username}:`, revErr.message);
+      }
+
+      // 1. Tự động kiểm tra và nộp khảo sát
+      try {
+        if (actualClassUserId) {
           await checkAndAutoSubmitSurveys(
             token,
             classId,
-            classUserId,
-            progressRes.data.userId,
-            progressRes.data.displayName,
+            actualClassUserId,
+            actualUserId,
+            actualDisplayName,
             account.username,
             learningHistories
           );
         }
-      } catch (err) {
-        console.error(`[Engine] Lỗi tự động nộp khảo sát/review cho ${account.username} trước khi treo học:`, err.message);
+      } catch (survErr) {
+        console.error(`[Engine] Lỗi tự động nộp khảo sát cho ${account.username}:`, survErr.message);
+      }
+
+      // Đọc lại thông tin class mới nhất để lấy learningId & contentId (vì syncUserClasses hoặc checkAndAutoSubmitReview có thể đã cập nhật lại)
+      const updatedClass = await db.get('SELECT * FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
+      const learningId = updatedClass ? updatedClass.learning_id : null;
+      const contentId = updatedClass ? updatedClass.content_id : null;
+
+      if (!learningId) {
+        console.log(`[Engine] Lớp ${classId} không có learningId. Không thể kết nối WebSocket treo đọc sách.`);
+        connectionObj.stop();
+        return;
       }
 
       const wsUrl = `wss://${HOST}/skypec2.lms.api/socket/hubs/lrs?learningId=${learningId}&clientProtocol=1.5&access_token=${encodeURIComponent(token)}`;
