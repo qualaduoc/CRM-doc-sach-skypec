@@ -294,6 +294,9 @@ function setupEventListeners() {
   // Kiểm tra danh sách Gemini API Keys
   document.getElementById('btn-test-gemini-keys').addEventListener('click', handleTestGeminiKeys);
 
+  // Sự kiện thay đổi ngày lọc lịch bay FMS
+  document.getElementById('fms-filter-date').addEventListener('change', () => loadFmsSchedules(false));
+
   // Đóng Modal Preview FMS
   document.getElementById('btn-close-fms-preview-modal').addEventListener('click', () => {
     document.getElementById('fms-preview-modal').classList.remove('active');
@@ -1108,9 +1111,25 @@ async function syncAccountFromRow(username, btn) {
 // --- LOGIC QUẢN LÝ FMS VIETNAM AIRLINES ---
 let fmsInterval = null;
 
+function formatDateVN(dateStr) {
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
 async function loadFmsSchedules(isSilent = false) {
   try {
-    const res = await fetch('/api/fms/schedules', {
+    const filterInput = document.getElementById('fms-filter-date');
+    if (filterInput && !filterInput.value) {
+      const vnDate = new Date();
+      // Chuyển múi giờ Việt Nam GMT+7
+      const utc = vnDate.getTime() + (vnDate.getTimezoneOffset() * 60000);
+      const vnTime = new Date(utc + (3600000 * 7));
+      filterInput.value = vnTime.toISOString().split('T')[0];
+    }
+    const selectedDate = filterInput ? filterInput.value : '';
+
+    const res = await fetch(`/api/fms/schedules?date=${selectedDate}`, {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
     const data = await res.json();
@@ -1125,7 +1144,7 @@ async function loadFmsSchedules(isSilent = false) {
       tbody.innerHTML = `
         <tr>
           <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            Chưa có lịch bay được phân công cho ngày hôm nay.
+            Chưa có lịch bay được phân công cho ngày ${selectedDate ? formatDateVN(selectedDate) : 'được chọn'}.
           </td>
         </tr>
       `;

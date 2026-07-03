@@ -1249,7 +1249,7 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
 
   try {
     const db = await getDb();
-    const todayDb = getVietnamDbDateStr();
+    const targetDate = req.query.date || getVietnamDbDateStr();
 
     const rows = await db.all(`
       SELECT 
@@ -1280,7 +1280,7 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
       LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no) = UPPER(fo.flight_no)
       WHERE s.date = ?
       ORDER BY s.id ASC
-    `, todayDb);
+    `, targetDate);
 
     res.json({ success: true, data: rows });
   } catch (err) {
