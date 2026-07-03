@@ -1212,7 +1212,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
         INSERT INTO fms_schedules (
           flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel, 
           gate, truck_no, driver_name, operator_name, crew_info, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         item.flight_no,
         item.ac_type,
