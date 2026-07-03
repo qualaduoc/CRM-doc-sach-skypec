@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const querystring = require('querystring');
 const { getDb } = require('./db');
 
@@ -6,6 +7,50 @@ const HOST = 'fms.vietnamairlines.com';
 
 function log(msg) {
   console.log(`[FMS Service] [${new Date().toISOString()}] ${msg}`);
+}
+
+// Gửi thông báo tải dầu qua Zalo Webhook API của ZaloCRM Bot
+async function sendZaloNotification(message) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({
+      name: "FMS Bot",
+      message: message
+    });
+
+    const options = {
+      hostname: 'zl2.aiphocap.vn',
+      port: 443,
+      path: '/api/public/webhook/order',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'x-api-key': 'whk_c51b17c25d3529584f9ee6f26ac7424909968546b31f9437'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          log('[Zalo Bot] Gửi thông báo thành công!');
+          resolve(body);
+        } else {
+          console.error(`[Zalo Bot] Gửi thông báo thất bại, HTTP ${res.statusCode}:`, body);
+          reject(new Error(`HTTP ${res.statusCode}: ${body}`));
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      console.error('[Zalo Bot] Lỗi kết nối gửi thông báo Zalo:', err.message);
+      reject(err);
+    });
+
+    req.write(payload);
+    req.end();
+  });
 }
 
 // Lấy ngày hôm nay định dạng DD/MM/YYYY theo múi giờ Việt Nam (GMT+7)
@@ -234,6 +279,36 @@ async function syncFMSData() {
         // Xác định trạng thái tải dầu
         const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
         const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
+
+        // Lấy dữ liệu cũ để so sánh trạng thái và số liệu tải dầu
+        const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
+
+        const isFirstTimeFuel = (!oldOrder || oldOrder.status === 'Chờ cập nhật') && hasOrder;
+        const isFuelUpdated = oldOrder && oldOrder.status === 'Đã có số liệu' && 
+                              (String(oldOrder.fuel_order) !== String(detail.fuel_order) || String(oldOrder.standby_fuel) !== String(detail.standby_fuel));
+
+        if (isFirstTimeFuel || isFuelUpdated) {
+          // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ)
+          const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel FROM fms_schedules WHERE flight_no = ? AND date = ?', cleanFltNo, todayDb);
+          
+          const title = isFirstTimeFuel ? '🔔 [FMS BÁO TẢI DẦU MỚI]' : '🔄 [FMS CẬP NHẬT TẢI DẦU]';
+          const msg = `${title}
+✈️ Chuyến bay: ${cleanFltNo}
+🛩️ Loại tàu: ${flt.ACTYPE ? flt.ACTYPE.trim() : '-'} | Số hiệu: ${flt.ACREG ? flt.ACREG.trim() : '-'}
+🗺️ Đường bay: ${flt.DEP_AP_SCHED || ''}-${flt.ARR_AP_SCHED || ''}
+📍 Vị trí đỗ: ${sched ? (sched.gate || '-') : '-'}
+👤 Tổ trực: ${sched ? (sched.crew_info || '-') : '-'}
+🚛 Số xe nạp: ${sched ? (sched.truck_no || '-') : '-'}
+---------------------------
+⛽ STANDBY FUEL (CFP BFuel): ${parseInt(detail.standby_fuel) > 0 ? parseInt(detail.standby_fuel).toLocaleString() : '0'} kg
+⛽ FUEL ORDER (Pilot Request): ${parseInt(detail.fuel_order) > 0 ? parseInt(detail.fuel_order).toLocaleString() : '0'} kg
+⛽ TRIP FUEL (Pilot TripFuel): ${parseInt(detail.trip_fuel) > 0 ? parseInt(detail.trip_fuel).toLocaleString() : '0'} kg
+⛽ TAXI FUEL: ${parseInt(detail.taxi_fuel) > 0 ? parseInt(detail.taxi_fuel).toLocaleString() : '0'} kg
+⏰ Giờ Tra nạp: ${sched && sched.time_fuel ? sched.time_fuel : '-'} (Báo dầu trước 15p)
+⏰ Giờ Hạ/Cất: Hạ: ${sched && sched.time_arr ? sched.time_arr : '-'} | Cất: ${sched && sched.time_dep ? sched.time_dep : '-'}`;
+
+          sendZaloNotification(msg).catch(err => console.error('[Zalo Bot] Lỗi gửi thông báo:', err.message));
+        }
 
         // Lưu hoặc cập nhật vào database SQLite
         await db.run(`
