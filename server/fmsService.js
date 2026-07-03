@@ -154,7 +154,11 @@ async function fetchFMSData(dateStr, authCookie) {
       path: `/FuelOrder/FuelOrderEstPayload/GetData?${params}`,
       headers: {
         'Cookie': authCookie,
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': 'http://fms.vietnamairlines.com/FuelOrder/FuelOrderEstPayload',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
       }
     }, (res) => {
       let body = '';
@@ -183,7 +187,10 @@ async function fetchFlightDetail(legNo, authCookie) {
       path: `/FuelOrder/FuelOrderEstPayload/UpdateFuelOrder?LEGNO=${legNo}`,
       headers: {
         'Cookie': authCookie,
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Referer': 'http://fms.vietnamairlines.com/FuelOrder/FuelOrderEstPayload',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
       }
     }, (res) => {
       let body = '';
