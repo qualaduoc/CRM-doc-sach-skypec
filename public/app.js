@@ -4,7 +4,8 @@ const state = {
   username: localStorage.getItem('crm_username'),
   displayName: localStorage.getItem('crm_display_name'),
   department: localStorage.getItem('crm_department'),
-  selectedUser: null // Dành cho Admin khi click xem chi tiết một nhân viên
+  permissions: JSON.parse(localStorage.getItem('crm_permissions') || '{}'),
+  selectedUser: null
 };
 
 let dashboardInterval = null;
@@ -18,8 +19,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initApp() {
   if (state.token) {
-    if (state.role === 'admin') {
+    const hasAdminAccess = state.role === 'admin' || 
+                           state.permissions?.perm_admin === 1 || 
+                           state.permissions?.perm_fms === 1 || 
+                           state.permissions?.perm_zalo === 1 || 
+                           state.permissions?.perm_gemini === 1;
+    if (hasAdminAccess) {
       showScreen('admin-screen');
+      applyPermissionsUI();
       loadAdminDashboard();
     } else {
       showScreen('user-screen');
@@ -37,6 +44,65 @@ function initApp() {
       document.getElementById('username').value = rememberedUser;
       document.getElementById('password').value = rememberedPass;
       document.getElementById('remember-me').checked = true;
+    }
+  }
+}
+
+// Áp dụng ẩn/hiện giao diện theo phân quyền của người dùng đăng nhập
+function applyPermissionsUI() {
+  const fmsTabBtn = document.getElementById('tab-btn-fms');
+  const geminiCard = document.getElementById('card-gemini-settings');
+  const zaloCard = document.getElementById('card-zalo-settings');
+  
+  if (state.role === 'admin') {
+    // Tài khoản admin gốc mặc định có full quyền
+    if (fmsTabBtn) fmsTabBtn.style.display = 'block';
+    if (geminiCard) geminiCard.style.display = 'flex';
+    if (zaloCard) zaloCard.style.display = 'flex';
+    return;
+  }
+
+  // Đối với tài khoản nhân viên (user)
+  const perms = state.permissions || {};
+
+  // 1. Phân quyền xem tab Theo dõi Tải dầu FMS
+  const canFms = perms.perm_fms === 1 || perms.perm_admin === 1;
+  if (fmsTabBtn) {
+    fmsTabBtn.style.display = canFms ? 'block' : 'none';
+  }
+
+  // 2. Phân quyền xem cấu hình API Gemini Keys
+  const canGemini = perms.perm_gemini === 1 || perms.perm_admin === 1;
+  if (geminiCard) {
+    geminiCard.style.display = canGemini ? 'flex' : 'none';
+  }
+
+  // 3. Phân quyền xem cấu hình Trợ lý SkyOne (Zalo)
+  const canZalo = perms.perm_zalo === 1 || perms.perm_admin === 1;
+  if (zaloCard) {
+    zaloCard.style.display = canZalo ? 'flex' : 'none';
+  }
+
+  // Nếu không có quyền FMS mà đang ở tab FMS thì tự động chuyển về tab Accounts
+  if (!canFms) {
+    const tabAccounts = document.getElementById('tab-accounts');
+    const tabFms = document.getElementById('tab-fms');
+    if (tabFms && tabFms.style.display !== 'none') {
+      if (tabFms) tabFms.style.display = 'none';
+      if (tabAccounts) tabAccounts.style.display = 'block';
+      // Đổi active button tab
+      const tabBtns = document.querySelectorAll('.admin-tab-btn');
+      tabBtns.forEach(btn => {
+        if (btn.getAttribute('data-tab') === 'tab-accounts') {
+          btn.classList.add('active');
+          btn.style.color = 'var(--primary)';
+          btn.style.borderBottom = '2px solid var(--primary)';
+        } else {
+          btn.classList.remove('active');
+          btn.style.color = 'var(--text-muted)';
+          btn.style.borderBottom = '2px solid transparent';
+        }
+      });
     }
   }
 }
@@ -388,11 +454,13 @@ async function handleLogin(e) {
       state.displayName = data.displayName;
       state.department = data.department;
 
+      state.permissions = data.permissions || {};
       localStorage.setItem('crm_token', data.token);
       localStorage.setItem('crm_role', data.role);
       localStorage.setItem('crm_username', usernameInput);
       localStorage.setItem('crm_display_name', data.displayName);
       localStorage.setItem('crm_department', data.department);
+      localStorage.setItem('crm_permissions', JSON.stringify(data.permissions || {}));
 
       // Lưu hoặc xóa thông tin Ghi nhớ đăng nhập
       const rememberMe = document.getElementById('remember-me').checked;
@@ -425,6 +493,7 @@ function handleLogout() {
     state.username = null;
     state.displayName = null;
     state.department = null;
+    state.permissions = {};
     state.selectedUser = null;
     showScreen('login-screen');
   }
@@ -485,6 +554,32 @@ async function loadAdminDashboard(isPolling = false) {
         kpiBorder = 'rgba(245, 158, 11, 0.2)';
       }
 
+      const permAdminChecked = acc.perm_admin === 1 ? 'checked' : '';
+      const permFmsChecked = acc.perm_fms === 1 ? 'checked' : '';
+      const permZaloChecked = acc.perm_zalo === 1 ? 'checked' : '';
+      const permGeminiChecked = acc.perm_gemini === 1 ? 'checked' : '';
+
+      const permissionsHtml = `
+        <div style="display: flex; gap: 10px; justify-content: center; align-items: center;">
+          <label title="Full quyền Admin" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
+            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="admin" ${permAdminChecked} style="cursor: pointer; width: 13px; height: 13px;">
+            <span style="font-size: 0.72rem;">👑</span>
+          </label>
+          <label title="Xem Tải dầu FMS" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
+            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="fms" ${permFmsChecked} style="cursor: pointer; width: 13px; height: 13px;">
+            <span style="font-size: 0.72rem;">⛽</span>
+          </label>
+          <label title="Cấu hình Zalo SkyOne" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
+            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="zalo" ${permZaloChecked} style="cursor: pointer; width: 13px; height: 13px;">
+            <span style="font-size: 0.72rem;">💬</span>
+          </label>
+          <label title="Cấu hình API Gemini" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
+            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="gemini" ${permGeminiChecked} style="cursor: pointer; width: 13px; height: 13px;">
+            <span style="font-size: 0.72rem;">🔑</span>
+          </label>
+        </div>
+      `;
+
       return `
         <tr>
           <td><code style="color: var(--primary); font-weight: 600;">${acc.username}</code></td>
@@ -503,6 +598,7 @@ async function loadAdminDashboard(isPolling = false) {
               ${kpi}%
             </span>
           </td>
+          <td style="text-align: center;">${permissionsHtml}</td>
           <td style="text-align: center;">
             <div style="display: flex; gap: 6px; justify-content: center;">
               <button class="btn-secondary" style="padding: 6px 12px; font-size: 0.85em;" onclick="viewStaffDetails('${acc.username}', '${acc.display_name}', '${acc.department}')">
@@ -520,6 +616,16 @@ async function loadAdminDashboard(isPolling = false) {
       `;
     }).join('');
 
+    // Đăng ký sự kiện thay đổi phân quyền
+    document.querySelectorAll('.perm-checkbox').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        const username = e.target.getAttribute('data-username');
+        const perm = e.target.getAttribute('data-perm');
+        const val = e.target.checked;
+        await updateAccountPermission(username, perm, val);
+      });
+    });
+
     // Lấy tổng số lớp học quản lý
     const classRes = await fetch('/api/classes', {
       headers: { 'Authorization': `Bearer ${state.token}` }
@@ -531,6 +637,28 @@ async function loadAdminDashboard(isPolling = false) {
 
   } catch (err) {
     console.error('Lỗi tải danh sách tài khoản:', err.message);
+  }
+}
+
+// Cập nhật phân quyền tài khoản học viên lên máy chủ
+async function updateAccountPermission(username, perm, value) {
+  try {
+    const res = await fetch(`/api/accounts/${username}/permissions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ perm, value: value ? 1 : 0 })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Đã cập nhật quyền ${perm.toUpperCase()} cho tài khoản ${username} thành công!`, 'success', 'Đã lưu');
+    } else {
+      showToast(data.error, 'error', 'Thất bại');
+    }
+  } catch (e) {
+    showToast('Lỗi cập nhật quyền: ' + e.message, 'error', 'Lỗi kết nối');
   }
 }
 

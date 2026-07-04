@@ -451,8 +451,26 @@ app.post('/api/auth/login', async (req, res) => {
     if (username.trim() === 'admin') {
       const adminRow = await db.get('SELECT * FROM admin WHERE username = ?', 'admin');
       if (adminRow && bcrypt.compareSync(password, adminRow.password)) {
-        const token = jwt.sign({ role: 'admin', username: 'admin' }, JWT_SECRET, { expiresIn: '7d' });
-        return res.json({ success: true, token, role: 'admin', displayName: 'Quản trị viên' });
+        const token = jwt.sign({ 
+          role: 'admin', 
+          username: 'admin',
+          perm_admin: 1,
+          perm_fms: 1,
+          perm_zalo: 1,
+          perm_gemini: 1
+        }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ 
+          success: true, 
+          token, 
+          role: 'admin', 
+          displayName: 'Quản trị viên',
+          permissions: {
+            perm_admin: 1,
+            perm_fms: 1,
+            perm_zalo: 1,
+            perm_gemini: 1
+          }
+        });
       } else {
         return res.status(401).json({ success: false, error: 'Mật khẩu admin không chính xác' });
       }
@@ -503,9 +521,35 @@ app.post('/api/auth/login', async (req, res) => {
     await syncUserClasses(username, accessToken);
     await syncUserStats(username, accessToken);
 
+    // Đọc phân quyền từ cơ sở dữ liệu
+    const userRow = await db.get('SELECT perm_admin, perm_fms, perm_zalo, perm_gemini FROM accounts WHERE username = ?', username);
+    const permAdmin = userRow ? (userRow.perm_admin || 0) : 0;
+    const permFms = userRow ? (userRow.perm_fms || 0) : 0;
+    const permZalo = userRow ? (userRow.perm_zalo || 0) : 0;
+    const permGemini = userRow ? (userRow.perm_gemini || 0) : 0;
+
     // Tạo JWT token cho phiên làm việc
-    const token = jwt.sign({ role: 'user', username: username }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ success: true, token, role: 'user', displayName, department });
+    const token = jwt.sign({ 
+      role: 'user', 
+      username: username,
+      perm_admin: permAdmin,
+      perm_fms: permFms,
+      perm_zalo: permZalo,
+      perm_gemini: permGemini
+    }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ 
+      success: true, 
+      token, 
+      role: 'user', 
+      displayName, 
+      department,
+      permissions: {
+        perm_admin: permAdmin,
+        perm_fms: permFms,
+        perm_zalo: permZalo,
+        perm_gemini: permGemini
+      }
+    });
 
   } catch (err) {
     console.error('[Auth Error]', err.message);
@@ -716,11 +760,11 @@ app.get('/api/me', authenticateToken, async (req, res) => {
 
 // Lấy danh sách tài khoản (Chỉ dành cho Admin)
 app.get('/api/accounts', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ success: false, error: 'Không có quyền truy cập' });
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) return res.status(403).json({ success: false, error: 'Không có quyền truy cập' });
 
   try {
     const db = await getDb();
-    const rows = await db.all('SELECT username, display_name, department, status, created_at, kpi_percent FROM accounts');
+    const rows = await db.all('SELECT username, display_name, department, status, created_at, kpi_percent, perm_admin, perm_fms, perm_zalo, perm_gemini FROM accounts');
     
     // Đếm số lớp học đang chạy ngầm của từng tài khoản
     const accounts = rows.map(acc => {
@@ -971,9 +1015,33 @@ app.get('/api/accounts/:username', authenticateToken, async (req, res) => {
   }
 });
 
-// Xóa tài khoản nhân viên ra khỏi LMS (Chỉ dành cho Admin)
+// Cập nhật phân quyền cho tài khoản học viên (chỉ Admin hoặc người có quyền admin)
+app.post('/api/accounts/:username/permissions', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { username } = req.params;
+  const { perm, value } = req.body;
+
+  const validPerms = ['admin', 'fms', 'zalo', 'gemini'];
+  if (!validPerms.includes(perm)) {
+    return res.status(400).json({ success: false, error: 'Quyền hạn không hợp lệ' });
+  }
+
+  try {
+    const db = await getDb();
+    const columnName = `perm_${perm}`;
+    await db.run(`UPDATE accounts SET ${columnName} = ? WHERE username = ?`, value ? 1 : 0, username);
+    res.json({ success: true, message: `Đã cập nhật quyền ${perm} thành công!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Xóa tài khoản nhân viên ra khỏi LMS (Chỉ dành cho Admin hoặc người có quyền admin)
 app.delete('/api/accounts/:username', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ success: false, error: 'Không có quyền thao tác' });
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) return res.status(403).json({ success: false, error: 'Không có quyền thao tác' });
 
   const targetUser = req.params.username;
 
@@ -1134,7 +1202,7 @@ app.post('/api/admin/change-password', authenticateToken, async (req, res) => {
 // --- API QUẢN LÝ TẢI DẦU FMS VIETNAM AIRLINES ---
 // Cập nhật lịch bay trực ca (chỉ Admin)
 app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
@@ -1245,7 +1313,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 
 // Lấy danh sách lịch bay và dữ liệu tải dầu tương ứng (chỉ Admin)
 app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
@@ -1298,7 +1366,7 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
 
 // Lấy trạng thái của Bot Zalo hiện tại (chỉ Admin)
 app.get('/api/fms/zalo/state', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
   try {
@@ -1311,7 +1379,7 @@ app.get('/api/fms/zalo/state', authenticateToken, async (req, res) => {
 
 // Yêu cầu sinh mã QR đăng nhập mới (chỉ Admin)
 app.post('/api/fms/zalo/qr', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
   try {
@@ -1324,7 +1392,7 @@ app.post('/api/fms/zalo/qr', authenticateToken, async (req, res) => {
 
 // Yêu cầu đăng xuất Zalo (chỉ Admin)
 app.post('/api/fms/zalo/logout', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
   try {
@@ -1335,9 +1403,9 @@ app.post('/api/fms/zalo/logout', authenticateToken, async (req, res) => {
   }
 });
 
-// Lấy danh sách nhóm chat Zalo (chỉ Admin)
+// Lấy danh sách nhóm chat Zalo (chỉ Admin hoặc người có quyền Zalo)
 app.get('/api/fms/zalo/groups', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
   try {
@@ -1348,9 +1416,9 @@ app.get('/api/fms/zalo/groups', authenticateToken, async (req, res) => {
   }
 });
 
-// Lấy các cài đặt Zalo đã lưu (chỉ Admin)
+// Lấy các cài đặt Zalo đã lưu (chỉ Admin hoặc người có quyền Zalo)
 app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
   try {
@@ -1374,9 +1442,9 @@ app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
   }
 });
 
-// Lưu cấu hình cài đặt Zalo (chỉ Admin)
+// Lưu cấu hình cài đặt Zalo (chỉ Admin hoặc người có quyền Zalo)
 app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
   const { targetGroupId, targetGroupName, notifyEnabled, messageTemplate } = req.body;
@@ -1393,9 +1461,9 @@ app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
   }
 });
 
-// Gửi tin nhắn test (chỉ Admin)
+// Gửi tin nhắn test (chỉ Admin hoặc người có quyền Zalo)
 app.post('/api/fms/zalo/send-test', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
   const { groupId, message } = req.body;
@@ -1412,9 +1480,9 @@ app.post('/api/fms/zalo/send-test', authenticateToken, async (req, res) => {
   }
 });
 
-// Gửi tin nhắn thử FMS thực tế (chỉ Admin)
+// Gửi tin nhắn thử FMS thực tế (chỉ Admin hoặc người có quyền Zalo)
 app.post('/api/fms/zalo/test-realtime', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
@@ -1516,9 +1584,9 @@ app.post('/api/fms/zalo/test-realtime', authenticateToken, async (req, res) => {
   }
 });
 
-// Yêu cầu quét FMS thủ công tức thì (chỉ Admin)
+// Yêu cầu quét FMS thủ công tức thì (chỉ Admin hoặc người có quyền FMS)
 app.post('/api/fms/sync', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
@@ -1530,9 +1598,9 @@ app.post('/api/fms/sync', authenticateToken, async (req, res) => {
   }
 });
 
-// Nhận diện ảnh lịch bay trực ca qua Gemini Vision API (chỉ Admin)
+// Nhận diện ảnh lịch bay trực ca qua Gemini Vision API (chỉ Admin hoặc người có quyền FMS)
 app.post('/api/fms/ocr-image', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
@@ -1554,9 +1622,9 @@ app.post('/api/fms/ocr-image', authenticateToken, async (req, res) => {
   }
 });
 
-// Lấy danh sách API Keys Gemini đã lưu (chỉ Admin)
+// Lấy danh sách API Keys Gemini đã lưu (chỉ Admin hoặc người có quyền Gemini)
 app.get('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_gemini !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
@@ -1569,9 +1637,9 @@ app.get('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) => 
   }
 });
 
-// Lưu danh sách API Keys Gemini (chỉ Admin)
+// Lưu danh sách API Keys Gemini (chỉ Admin hoặc người có quyền Gemini)
 app.post('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_gemini !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
@@ -1589,9 +1657,9 @@ app.post('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) =>
   }
 });
 
-// Kiểm thử danh sách API Keys Gemini (chỉ Admin)
+// Kiểm thử danh sách API Keys Gemini (chỉ Admin hoặc người có quyền Gemini)
 app.post('/api/fms/settings/test-keys', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_gemini !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 

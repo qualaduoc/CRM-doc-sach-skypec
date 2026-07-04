@@ -145,7 +145,7 @@
         <button class="admin-tab-btn active" data-tab="tab-accounts" style="background: none; border: none; color: var(--primary); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid var(--primary); transition: all 0.3s;">
           <i class="fa-solid fa-users"></i> Quản lý Học viên
         </button>
-        <button class="admin-tab-btn" data-tab="tab-fms" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
+        <button id="tab-btn-fms" class="admin-tab-btn" data-tab="tab-fms" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
           <i class="fa-solid fa-gas-pump"></i> Theo dõi Tải dầu FMS
         </button>
       </div>
@@ -176,7 +176,8 @@
                 <th>Đơn vị</th>
                 <th style="text-align: center;">Trạng thái</th>
                 <th style="text-align: center;">Số lớp đang chạy</th>
-                <th style="text-align: center;">Tiến độ KPI</th>
+                <th>KPI Tiến độ</th>
+                <th style="text-align: center; width: 160px;">Quyền hạn</th>
                 <th style="text-align: center;">Thao tác</th>
               </tr>
             </thead>
@@ -225,7 +226,7 @@
             </div>
 
             <!-- Cấu hình Gemini Keys xoay vòng -->
-            <div class="glass-panel" style="padding: 15px; display: flex; flex-direction: column; gap: 10px; height: fit-content;">
+            <div id="card-gemini-settings" class="glass-panel" style="padding: 15px; display: flex; flex-direction: column; gap: 10px; height: fit-content;">
               <h4 style="margin: 0; font-size: 0.95rem; color: #60a5fa; display: flex; align-items: center; gap: 8px;">
                 <i class="fa-solid fa-key"></i> API Key Gemini (Xoay vòng)
               </h4>
@@ -245,7 +246,7 @@
             </div>
 
             <!-- Card: Trợ lý Zalo SkyOne -->
-            <div class="glass-panel" style="padding: 15px; display: flex; flex-direction: column; gap: 12px;">
+            <div id="card-zalo-settings" class="glass-panel" style="padding: 15px; display: flex; flex-direction: column; gap: 12px;">
               <h4 style="margin: 0; font-size: 0.95rem; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
                 <i class="fa-solid fa-robot"></i> Trợ Lý Zalo SkyOne
               </h4>

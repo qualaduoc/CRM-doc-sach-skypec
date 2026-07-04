@@ -36,6 +36,10 @@ async function getDb() {
       class_total INTEGER DEFAULT 0,
       access_token TEXT,
       status TEXT DEFAULT 'active',
+      perm_admin INTEGER DEFAULT 0,
+      perm_fms INTEGER DEFAULT 0,
+      perm_zalo INTEGER DEFAULT 0,
+      perm_gemini INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -127,6 +131,12 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_standby INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_fuel_order INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_updated_at DATETIME;`); } catch(e) {}
+
+  // Thêm cột phân quyền cho accounts của database cũ
+  try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_admin INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_fms INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_zalo INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_gemini INTEGER DEFAULT 0;`); } catch(e) {}
 
   // Tạo tài khoản admin mặc định nếu chưa tồn tại
   const adminRow = await dbInstance.get('SELECT * FROM admin WHERE username = ?', 'admin');
