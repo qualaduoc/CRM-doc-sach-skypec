@@ -1500,7 +1500,7 @@ function renderFmsTable() {
     
     return `
       <tr>
-        <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
+        <td style="font-weight: 700; color: #38bdf8; font-size: 1rem;">${r.flight_no}</td>
         <td class="hide-on-mobile">${crewText}${truckText}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
         <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>

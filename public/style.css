@@ -1194,3 +1194,23 @@ input:checked + .slider:before {
     display: none !important;
   }
 }
+
+/* --- PHẦN STYLE DROPDOWN SELECT VÀ OPTION --- */
+select {
+  color: #ffffff;
+  background-color: #0f172a;
+}
+select option {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+  padding: 8px;
+}
+#fms-crew-filter {
+  border: 1px solid var(--border);
+  color: #ffffff;
+  background-color: rgba(15, 23, 42, 0.6);
+}
+#fms-crew-filter option {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+}
