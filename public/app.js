@@ -1707,7 +1707,7 @@ async function updateSkyOneUI(botState) {
   const qrImg = document.getElementById('skyone-qr-img');
   const btnConnect = document.getElementById('btn-skyone-connect');
   const btnLogout = document.getElementById('btn-skyone-logout');
-  const groupSelect = document.getElementById('skyone-group-select');
+  const groupsListDiv = document.getElementById('skyone-groups-list');
 
   if (botState.status !== lastSkyOneStatus) {
     console.log(`[SkyOne] Trạng thái chuyển đổi: ${lastSkyOneStatus} -> ${botState.status}`);
@@ -1765,8 +1765,9 @@ async function updateSkyOneUI(botState) {
       btnConnect.style.display = 'none';
       btnLogout.style.display = 'block';
 
-      // Tự động load danh sách nhóm nếu dropdown chưa có nhóm nào (chỉ có option mặc định)
-      if (groupSelect.options.length <= 1) {
+      // Tự động load danh sách nhóm nếu chưa được load
+      const hasGroupsLoaded = groupsListDiv && groupsListDiv.querySelectorAll('.skyone-group-checkbox').length > 0;
+      if (!hasGroupsLoaded) {
         loadSkyOneGroups();
       }
       break;
