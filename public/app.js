@@ -584,8 +584,8 @@ async function loadAdminDashboard(isPolling = false) {
         <tr>
           <td><code style="color: var(--primary); font-weight: 600;">${acc.username}</code></td>
           <td style="font-weight: 500;">${acc.display_name}</td>
-          <td style="color: var(--text-muted); font-size: 0.9em;">${acc.department}</td>
-          <td style="text-align: center;">
+          <td style="color: var(--text-muted); font-size: 0.9em;" class="hide-on-mobile">${acc.department}</td>
+          <td style="text-align: center;" class="hide-on-mobile">
             <span class="status-badge ${statusClass}">
               <i class="fa-solid fa-circle" style="font-size: 0.6em; color: ${indicatorColor}"></i> ${statusText}
             </span>
@@ -1398,13 +1398,13 @@ async function loadFmsSchedules(isSilent = false) {
       return `
         <tr>
           <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
-          <td>${crewText}${truckText}</td>
+          <td class="hide-on-mobile">${crewText}${truckText}</td>
           <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
           <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
           <td>${timesHtml}</td>
           <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyVal}</td>
           <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderVal}</td>
-          <td style="text-align: center; font-weight: 600; color: #60a5fa;">${tripVal}</td>
+          <td style="text-align: center; font-weight: 600; color: #60a5fa;" class="hide-on-mobile">${tripVal}</td>
           <td style="text-align: center;">
             <span class="status-tag ${statusClass}">
               ${statusText}

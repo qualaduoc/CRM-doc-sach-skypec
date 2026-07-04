@@ -49,10 +49,10 @@ body {
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 1800px;
   margin: 0 auto;
   padding: 20px;
-  width: 100%;
+  width: 96%;
 }
 
 /* --- MÀN HÌNH ĐĂNG NHẬP --- */
@@ -1188,5 +1188,9 @@ input:checked + .slider:before {
   .admin-tab-btn {
     padding: 8px 12px !important;
     font-size: 0.95rem !important;
+  }
+
+  .hide-on-mobile {
+    display: none !important;
   }
 }
