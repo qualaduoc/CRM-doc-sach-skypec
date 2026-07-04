@@ -366,7 +366,7 @@ async function syncFMSData() {
 
             if (!template || template.trim() === '') {
               template = `{{status_change_title}}
-✈️ Chuyến bay: {{flight_no}}
+✈️ Chuyến bay: {{flight_no}} - {{ac_reg}}
 👥 Cặp tra nạp: {{crew_info}}
 🚛 Số xe nạp: {{truck_no}}
 📍 Vị trí đỗ: {{gate}}
@@ -376,6 +376,11 @@ async function syncFMSData() {
 ⛽ Tải dầu Chính thức: {{fuel_order}} kg
 ⏰ Giờ Tra nạp: {{time_fuel}}
 ⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}`;
+            }
+
+            // Đảm bảo dòng Chuyến bay luôn có định dạng {{flight_no}} - {{ac_reg}} để nhận diện
+            if (template.includes('{{flight_no}}') && !template.includes('{{flight_no}} - {{ac_reg}}') && !template.includes('{{flight_no}}-{{ac_reg}}')) {
+              template = template.replace('{{flight_no}}', '{{flight_no}} - {{ac_reg}}');
             }
 
             const formatNumber = (val) => {
