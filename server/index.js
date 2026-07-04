@@ -1506,16 +1506,16 @@ app.post('/api/fms/zalo/test-realtime', authenticateToken, async (req, res) => {
     let template = templateSetting ? templateSetting.value : '';
     if (!template || template.trim() === '') {
       template = `{{status_change_title}}
-✈️ Chuyến bay: *{{flight_no}} - {{ac_reg}}*
-👥 Cặp tra nạp: *{{crew_info}}*
-🚛 Số xe nạp: *{{truck_no}}*
-📍 Vị trí đỗ: *{{gate}}*
-🛩️ Số hiệu tàu: *{{ac_reg}}* (Loại: *{{ac_type}}*)
+✈️ Chuyến bay: {{flight_no}} - {{ac_reg}}
+👥 Cặp tra nạp: {{crew_info}}
+🚛 Số xe nạp: {{truck_no}}
+📍 Vị trí đỗ: {{gate}}
+🛩️ Số hiệu tàu: {{ac_reg}} (Loại: {{ac_type}})
 ---------------------------
-⛽ Tải dầu Standby (CFP): *{{standby_fuel}}* kg
-⛽ Tải dầu Chính thức: *{{fuel_order}}* kg
-⏰ Giờ Tra nạp: *{{time_fuel}}*
-⏰ Giờ Hạ/Cất: Hạ *{{time_arr}}* | Cất *{{time_dep}}*`;
+⛽ Tải dầu Standby (CFP): {{standby_fuel}} kg
+⛽ Tải dầu Chính thức: {{fuel_order}} kg
+⏰ Giờ Tra nạp: {{time_fuel}}
+⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}`;
     }
 
     // Đảm bảo dòng Chuyến bay luôn có định dạng {{flight_no}} - {{ac_reg}} để nhận diện
@@ -1648,12 +1648,12 @@ app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) =>
       const targetGroupId = groupSetting ? groupSetting.value : null;
 
       if (targetGroupId) {
-        const title = '🔄 *[FMS THAY ĐỔI VỊ TRÍ ĐỖ]*';
+        const title = '🔄 [FMS THAY ĐỔI VỊ TRÍ ĐỖ]';
         const msg = `${title}
-✈️ Chuyến bay: *${flight.flight_no} - ${flight.ac_reg || '-'}*
-📍 Vị trí đỗ cũ: *${oldGate || '-'}* ➔ Mới: *${newGate || '-'}*
-👥 Cặp tra nạp: *${flight.crew_info || '-'}*
-🚛 Số xe nạp: *${flight.truck_no || '-'}*`;
+✈️ Chuyến bay: ${flight.flight_no} - ${flight.ac_reg || '-'}
+📍 Vị trí đỗ cũ: ${oldGate || '-'} ➔ Mới: ${newGate || '-'}
+👥 Cặp tra nạp: ${flight.crew_info || '-'}
+🚛 Số xe nạp: ${flight.truck_no || '-'}`;
 
         const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
         // Gửi tin nhắn chạy ngầm không chặn response
