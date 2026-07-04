@@ -263,11 +263,21 @@
 
                 <!-- Cài đặt nhóm nhận tin và bật/tắt thông báo -->
                 <div id="skyone-settings-area" style="display: flex; flex-direction: column; gap: 8px;">
-                  <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="display: flex; flex-direction: column; gap: 4px; position: relative;">
                     <label style="font-size: 0.78rem; color: var(--text-muted);">Nhóm Zalo nhận thông báo FMS:</label>
-                    <select id="skyone-group-select" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.8rem; cursor: pointer;">
-                      <option value="">-- Chưa tải danh sách nhóm --</option>
-                    </select>
+                    <div id="skyone-groups-display" style="width: 100%; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.8rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 34px; user-select: none;">
+                      <span id="skyone-groups-display-text" style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">-- Bấm để chọn các nhóm --</span>
+                      <i class="fa-solid fa-chevron-down" style="font-size: 0.7rem; color: var(--text-muted);"></i>
+                    </div>
+                    <div id="skyone-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #131d35; border: 1px solid var(--border); border-radius: 4px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);">
+                      <div style="padding: 6px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; align-items: center; background: rgba(255,255,255,0.02);">
+                        <i class="fa-solid fa-magnifying-glass" style="font-size: 0.75rem; color: var(--text-muted); margin-left: 4px;"></i>
+                        <input type="text" id="skyone-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.78rem; border: none; background: transparent; color: #fff; outline: none;">
+                      </div>
+                      <div id="skyone-groups-list" style="overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 190px;">
+                        <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Chưa tải danh sách nhóm</div>
+                      </div>
+                    </div>
                   </div>
                   <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
                     <input type="checkbox" id="skyone-notify-enabled" style="cursor: pointer; width: 14px; height: 14px;">

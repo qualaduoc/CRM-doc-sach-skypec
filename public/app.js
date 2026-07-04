@@ -317,7 +317,42 @@ function setupEventListeners() {
   document.getElementById('btn-skyone-send-test').addEventListener('click', handleSkyOneSendTest);
   document.getElementById('btn-skyone-test-realtime').addEventListener('click', handleSkyOneTestRealtime);
   document.getElementById('btn-skyone-logout').addEventListener('click', handleSkyOneLogout);
-  document.getElementById('skyone-group-select').addEventListener('change', handleSaveSkyOneSettings);
+  // Toggle Custom Dropdown chọn nhiều nhóm
+  const displayBox = document.getElementById('skyone-groups-display');
+  if (displayBox) {
+    displayBox.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dropdown = document.getElementById('skyone-groups-dropdown');
+      dropdown.style.display = dropdown.style.display === 'flex' ? 'none' : 'flex';
+    });
+  }
+
+  // Đóng dropdown khi click ra ngoài
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('skyone-groups-dropdown');
+    const display = document.getElementById('skyone-groups-display');
+    if (dropdown && display && !dropdown.contains(e.target) && !display.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  // Tìm kiếm lọc tên nhóm
+  const searchInput = document.getElementById('skyone-group-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const items = document.querySelectorAll('#skyone-groups-list label');
+      items.forEach(item => {
+        const name = item.textContent.toLowerCase();
+        if (name.includes(q)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    });
+  }
+
   document.getElementById('skyone-notify-enabled').addEventListener('change', handleSaveSkyOneSettings);
   document.getElementById('skyone-template-presets').addEventListener('change', handleSkyOnePresetChange);
   document.getElementById('skyone-template-input').addEventListener('blur', handleSaveSkyOneSettings);
@@ -1789,8 +1824,9 @@ async function handleSkyOneLogout() {
     if (data.success) {
       showToast('Đã ngắt kết nối Zalo thành công!', 'success', 'Đăng xuất thành công');
       // Reset dropdown nhóm
-      const groupSelect = document.getElementById('skyone-group-select');
-      groupSelect.innerHTML = '<option value="">-- Chưa tải danh sách nhóm --</option>';
+      const groupsListDiv = document.getElementById('skyone-groups-list');
+      if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Chưa tải danh sách nhóm</div>';
+      updateSkyOneGroupsDisplayText('');
       fetchSkyOneState();
     } else {
       showToast(data.error, 'error', 'Đăng xuất thất bại');
@@ -1813,42 +1849,48 @@ async function loadSkyOneSettings() {
       document.getElementById('skyone-notify-enabled').checked = notifyEnabled;
       document.getElementById('skyone-template-input').value = messageTemplate || '';
       
-      // Cập nhật dropdown nếu đã có nhóm đó, nếu chưa có thì tạm thời chèn option
-      const groupSelect = document.getElementById('skyone-group-select');
-      if (targetGroupId) {
-        let hasOption = false;
-        for (let i = 0; i < groupSelect.options.length; i++) {
-          if (groupSelect.options[i].value === targetGroupId) {
-            groupSelect.selectedIndex = i;
-            hasOption = true;
-            break;
-          }
-        }
-        if (!hasOption) {
-          const opt = document.createElement('option');
-          opt.value = targetGroupId;
-          opt.text = targetGroupName || `Nhóm ID: ${targetGroupId}`;
-          opt.selected = true;
-          groupSelect.appendChild(opt);
-        }
-      }
+      // Lưu lại các giá trị nhóm đã chọn để khi load group list sẽ check
+      window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',').map(id => id.trim()) : [];
+      window.savedTargetGroupName = targetGroupName || '';
+      
+      updateSkyOneGroupsDisplayText(targetGroupName);
     }
   } catch (err) {
     console.error('[SkyOne] Lỗi tải cấu hình Zalo:', err.message);
   }
 }
 
+// Cập nhật text hiển thị trên nút chọn nhóm
+function updateSkyOneGroupsDisplayText(namesStr) {
+  const displayText = document.getElementById('skyone-groups-display-text');
+  if (displayText) {
+    if (namesStr && namesStr.trim() !== '') {
+      displayText.textContent = 'Đã chọn: ' + namesStr;
+      displayText.style.color = '#38bdf8';
+    } else {
+      displayText.textContent = '-- Bấm để chọn các nhóm --';
+      displayText.style.color = 'var(--text-muted)';
+    }
+  }
+}
+
 // Lưu cấu hình nhóm nhận tin và checkbox bật/tắt
 async function handleSaveSkyOneSettings() {
-  const groupSelect = document.getElementById('skyone-group-select');
   const notifyEnabled = document.getElementById('skyone-notify-enabled').checked;
   const messageTemplate = document.getElementById('skyone-template-input').value;
   
-  const targetGroupId = groupSelect.value;
-  const targetGroupName = groupSelect.options[groupSelect.selectedIndex]?.text || '';
+  // Thu thập các ID và tên nhóm được tích chọn
+  const checkedBoxes = document.querySelectorAll('.skyone-group-checkbox:checked');
+  const targetGroupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
+  const targetGroupName = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-name')).join(', ');
+
+  // Lưu tạm vào biến global
+  window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',') : [];
+  window.savedTargetGroupName = targetGroupName;
+  updateSkyOneGroupsDisplayText(targetGroupName);
 
   if (!targetGroupId && notifyEnabled) {
-    showToast('Vui lòng chọn nhóm Zalo đích trước khi bật thông báo!', 'warning', 'Lưu ý');
+    showToast('Vui lòng chọn ít nhất một nhóm Zalo trước khi bật thông báo!', 'warning', 'Lưu ý');
     document.getElementById('skyone-notify-enabled').checked = false;
     return;
   }
@@ -1912,10 +1954,10 @@ function handleSkyOnePresetChange(e) {
 
 // Gửi thử tin nhắn test
 async function handleSkyOneSendTest() {
-  const groupSelect = document.getElementById('skyone-group-select');
-  const groupId = groupSelect.value;
+  const checkedBoxes = document.querySelectorAll('.skyone-group-checkbox:checked');
+  const groupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
   if (!groupId) {
-    showToast('Vui lòng chọn nhóm Zalo nhận tin trước khi gửi thử!', 'warning', 'Lưu ý');
+    showToast('Vui lòng chọn ít nhất một nhóm Zalo nhận tin trước khi gửi thử!', 'warning', 'Lưu ý');
     return;
   }
 
@@ -1952,10 +1994,10 @@ async function handleSkyOneSendTest() {
 
 // Gửi tin nhắn test FMS thực tế
 async function handleSkyOneTestRealtime() {
-  const groupSelect = document.getElementById('skyone-group-select');
-  const groupId = groupSelect.value;
+  const checkedBoxes = document.querySelectorAll('.skyone-group-checkbox:checked');
+  const groupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
   if (!groupId) {
-    showToast('Vui lòng chọn nhóm Zalo nhận tin trước khi test thực tế!', 'warning', 'Lưu ý');
+    showToast('Vui lòng chọn ít nhất một nhóm Zalo nhận tin trước khi test thực tế!', 'warning', 'Lưu ý');
     return;
   }
 
@@ -1988,8 +2030,8 @@ async function handleSkyOneTestRealtime() {
 
 // Tải danh sách các nhóm Zalo từ tài khoản đăng nhập
 async function loadSkyOneGroups() {
-  const groupSelect = document.getElementById('skyone-group-select');
-  groupSelect.innerHTML = '<option value="">-- Đang quét danh sách nhóm... --</option>';
+  const groupsListDiv = document.getElementById('skyone-groups-list');
+  if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải...</div>';
 
   try {
     const res = await fetch('/api/fms/zalo/groups', {
@@ -2000,28 +2042,45 @@ async function loadSkyOneGroups() {
     if (data.success && data.groups) {
       const groups = data.groups;
       if (groups.length === 0) {
-        groupSelect.innerHTML = '<option value="">-- Không tìm thấy nhóm nào --</option>';
+        if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Không tìm thấy nhóm nào</div>';
         return;
       }
 
-      // Lưu giữ ID đã chọn trước đó
+      // Lấy các cài đặt Zalo để check trạng thái
       const dbRes = await fetch('/api/fms/zalo/settings', {
         headers: { 'Authorization': `Bearer ${state.token}` }
       });
       const dbData = await dbRes.json();
       const savedGroupId = dbData.success ? dbData.settings.targetGroupId : '';
+      const savedGroupIdsArray = savedGroupId ? savedGroupId.split(',').map(id => id.trim()) : [];
+      const savedGroupName = dbData.success ? dbData.settings.targetGroupName : '';
 
-      groupSelect.innerHTML = '<option value="">-- Chọn nhóm Zalo nhận tin --</option>' +
-        groups.map(g => `
-          <option value="${g.groupId}" ${g.groupId === savedGroupId ? 'selected' : ''}>
-            ${g.groupName} (${g.memberCount} thành viên)
-          </option>
-        `).join('');
+      window.savedTargetGroupIds = savedGroupIdsArray;
+      window.savedTargetGroupName = savedGroupName;
+
+      if (groupsListDiv) {
+        groupsListDiv.innerHTML = groups.map(g => {
+          const isChecked = savedGroupIdsArray.includes(String(g.groupId).trim());
+          return `
+            <label style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; user-select: none; transition: background 0.2s; justify-content: flex-start; text-align: left; width: 100%;" class="group-item-hover">
+              <input type="checkbox" class="skyone-group-checkbox" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
+              <span style="font-size: 0.78rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${g.groupName}</span>
+            </label>
+          `;
+        }).join('');
+
+        // Đăng ký sự kiện change cho các checkbox
+        document.querySelectorAll('.skyone-group-checkbox').forEach(cb => {
+          cb.addEventListener('change', handleSaveSkyOneSettings);
+        });
+      }
+
+      updateSkyOneGroupsDisplayText(savedGroupName);
     } else {
-      groupSelect.innerHTML = '<option value="">-- Quét nhóm thất bại (Nhấp Kết nối lại) --</option>';
+      if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Quét nhóm thất bại</div>';
     }
   } catch (err) {
     console.error('[SkyOne] Lỗi tải danh sách nhóm:', err.message);
-    groupSelect.innerHTML = '<option value="">-- Lỗi tải danh sách nhóm --</option>';
+    if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Lỗi tải danh sách nhóm</div>';
   }
 }

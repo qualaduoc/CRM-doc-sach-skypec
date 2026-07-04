@@ -1403,8 +1403,10 @@ app.post('/api/fms/zalo/send-test', authenticateToken, async (req, res) => {
     return res.status(400).json({ success: false, error: 'Vui lòng cung cấp đầy đủ thông tin nhóm nhận và nội dung!' });
   }
   try {
-    const response = await sendSkyOneMessage(groupId, message);
-    res.json({ success: true, message: 'Gửi tin nhắn test thành công!', response });
+    const ids = String(groupId).split(',').map(id => id.trim()).filter(Boolean);
+    const promises = ids.map(id => sendSkyOneMessage(id, message));
+    const responses = await Promise.all(promises);
+    res.json({ success: true, message: `Đã gửi tin nhắn test tới ${ids.length} nhóm thành công!`, responses });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1505,8 +1507,10 @@ app.post('/api/fms/zalo/test-realtime', authenticateToken, async (req, res) => {
       msg = msg.replace(regex, value);
     }
 
-    const response = await sendSkyOneMessage(targetGroupId, msg);
-    res.json({ success: true, message: `Đã bắn tin nhắn test thực tế cho chuyến bay ${testFlight.flight_no} thành công!`, response });
+    const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+    const promises = ids.map(id => sendSkyOneMessage(id, msg));
+    const responses = await Promise.all(promises);
+    res.json({ success: true, message: `Đã bắn tin nhắn test thực tế tới ${ids.length} nhóm thành công!`, responses });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

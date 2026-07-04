@@ -449,9 +449,12 @@ async function syncFMSData() {
           const targetGroupId = groupSetting ? groupSetting.value : null;
 
           if (isSkyOneEnabled && targetGroupId) {
-            sendSkyOneMessage(targetGroupId, msg)
-              .then(() => log(`[SkyOne] Đã gửi thông báo trực tiếp cho chuyến bay ${cleanFltNo} thành công!`))
-              .catch(err => console.error('[SkyOne] Gửi thông báo trực tiếp thất bại:', err.message));
+            const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+            groupIds.forEach(id => {
+              sendSkyOneMessage(id, msg)
+                .then(() => log(`[SkyOne] Đã gửi thông báo trực tiếp cho chuyến bay ${cleanFltNo} tới nhóm ${id} thành công!`))
+                .catch(err => console.error(`[SkyOne] Gửi tới nhóm ${id} thất bại:`, err.message));
+            });
           }
 
           // Gửi qua Webhook Bot Zalo cũ làm phương án dự phòng (fallback)
