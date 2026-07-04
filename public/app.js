@@ -432,6 +432,88 @@ function setupEventListeners() {
   if (fmsCrewSelect) {
     fmsCrewSelect.addEventListener('change', () => renderFmsTable());
   }
+
+  // Đăng ký Event Delegation cho bảng FMS cập nhật vị trí đỗ (in-place edit)
+  const fmsTbody = document.getElementById('fms-table-body');
+  if (fmsTbody) {
+    fmsTbody.addEventListener('click', (e) => {
+      const span = e.target.closest('.editable-gate');
+      if (!span) return;
+      if (span.querySelector('input')) return; // Đang trong chế độ sửa
+
+      const flightNo = span.getAttribute('data-flight');
+      const flightDate = span.getAttribute('data-date');
+      const originalGate = span.textContent.trim();
+      const currentVal = originalGate === '-' ? '' : originalGate;
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = currentVal;
+      input.style.width = '60px';
+      input.style.textAlign = 'center';
+      input.style.background = '#1e293b';
+      input.style.border = '1px solid var(--success)';
+      input.style.color = '#fff';
+      input.style.fontWeight = 'bold';
+      input.style.borderRadius = '4px';
+      input.style.padding = '2px';
+      input.style.outline = 'none';
+
+      span.innerHTML = '';
+      span.appendChild(input);
+      input.focus();
+      input.select();
+
+      let isSaving = false;
+
+      const saveGate = async () => {
+        if (isSaving) return;
+        isSaving = true;
+        const newVal = input.value.trim();
+
+        if (newVal === currentVal) {
+          span.textContent = originalGate;
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/fms/schedule/update-gate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({ flightNo, date: flightDate, gate: newVal })
+          });
+          const data = await res.json();
+          if (!data.success) {
+            throw new Error(data.error);
+          }
+
+          // Cập nhật cache cục bộ
+          const flightInCache = cachedFmsRows.find(r => r.flight_no === flightNo && r.date === flightDate);
+          if (flightInCache) {
+            flightInCache.gate = newVal;
+          }
+
+          showToast(data.message || 'Đã cập nhật vị trí đỗ thành công!', 'success', 'Thành công');
+          renderFmsTable();
+        } catch (err) {
+          showToast('Không thể cập nhật vị trí đỗ: ' + err.message, 'error', 'Lỗi cập nhật');
+          span.textContent = originalGate;
+        }
+      };
+
+      input.addEventListener('blur', saveGate);
+      input.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Enter') {
+          saveGate();
+        } else if (evt.key === 'Escape') {
+          span.textContent = originalGate;
+        }
+      });
+    });
+  }
 }
 
 // --- XỬ LÝ ĐĂNG NHẬP / ĐĂNG XUẤT ---
@@ -568,9 +650,10 @@ async function loadAdminDashboard(isPolling = false) {
       const permFmsChecked = acc.perm_fms === 1 ? 'checked' : '';
       const permZaloChecked = acc.perm_zalo === 1 ? 'checked' : '';
       const permGeminiChecked = acc.perm_gemini === 1 ? 'checked' : '';
+      const permGateChecked = acc.perm_gate === 1 ? 'checked' : '';
 
       const permissionsHtml = `
-        <div style="display: flex; gap: 10px; justify-content: center; align-items: center;">
+        <div style="display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;">
           <label title="Full quyền Admin" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
             <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="admin" ${permAdminChecked} style="cursor: pointer; width: 13px; height: 13px;">
             <span style="font-size: 0.72rem;">👑</span>
@@ -586,6 +669,10 @@ async function loadAdminDashboard(isPolling = false) {
           <label title="Cấu hình API Gemini" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
             <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="gemini" ${permGeminiChecked} style="cursor: pointer; width: 13px; height: 13px;">
             <span style="font-size: 0.72rem;">🔑</span>
+          </label>
+          <label title="Sửa Vị trí đỗ FMS" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
+            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="gate" ${permGateChecked} style="cursor: pointer; width: 13px; height: 13px;">
+            <span style="font-size: 0.72rem;">📍</span>
           </label>
         </div>
       `;
@@ -1498,12 +1585,17 @@ function renderFmsTable() {
       </div>
     `;
     
+    const canEditGate = state.role === 'admin' || state.permissions?.perm_admin === 1 || state.permissions?.perm_gate === 1;
+    const gateHtml = canEditGate
+      ? `<span class="editable-gate" data-flight="${r.flight_no}" data-date="${r.date || ''}" title="Click để sửa vị trí đỗ" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px dashed rgba(245, 158, 11, 0.4); border-radius: 4px; min-width: 35px; transition: all 0.2s;">${r.gate || '-'}</span>`
+      : `${r.gate || '-'}`;
+
     return `
       <tr>
         <td style="font-weight: 700; color: #38bdf8; font-size: 1rem;">${r.flight_no}</td>
         <td class="hide-on-mobile">${crewText}${truckText}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
-        <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
+        <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${gateHtml}</td>
         <td>${timesHtml}</td>
         <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyVal}</td>
         <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderVal}</td>

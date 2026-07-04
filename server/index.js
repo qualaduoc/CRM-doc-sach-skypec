@@ -457,7 +457,8 @@ app.post('/api/auth/login', async (req, res) => {
           perm_admin: 1,
           perm_fms: 1,
           perm_zalo: 1,
-          perm_gemini: 1
+          perm_gemini: 1,
+          perm_gate: 1
         }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ 
           success: true, 
@@ -468,7 +469,8 @@ app.post('/api/auth/login', async (req, res) => {
             perm_admin: 1,
             perm_fms: 1,
             perm_zalo: 1,
-            perm_gemini: 1
+            perm_gemini: 1,
+            perm_gate: 1
           }
         });
       } else {
@@ -522,11 +524,12 @@ app.post('/api/auth/login', async (req, res) => {
     await syncUserStats(username, accessToken);
 
     // Đọc phân quyền từ cơ sở dữ liệu
-    const userRow = await db.get('SELECT perm_admin, perm_fms, perm_zalo, perm_gemini FROM accounts WHERE username = ?', username);
+    const userRow = await db.get('SELECT perm_admin, perm_fms, perm_zalo, perm_gemini, perm_gate FROM accounts WHERE username = ?', username);
     const permAdmin = userRow ? (userRow.perm_admin || 0) : 0;
     const permFms = userRow ? (userRow.perm_fms || 0) : 0;
     const permZalo = userRow ? (userRow.perm_zalo || 0) : 0;
     const permGemini = userRow ? (userRow.perm_gemini || 0) : 0;
+    const permGate = userRow ? (userRow.perm_gate || 0) : 0;
 
     // Tạo JWT token cho phiên làm việc
     const token = jwt.sign({ 
@@ -535,7 +538,8 @@ app.post('/api/auth/login', async (req, res) => {
       perm_admin: permAdmin,
       perm_fms: permFms,
       perm_zalo: permZalo,
-      perm_gemini: permGemini
+      perm_gemini: permGemini,
+      perm_gate: permGate
     }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ 
       success: true, 
@@ -547,7 +551,8 @@ app.post('/api/auth/login', async (req, res) => {
         perm_admin: permAdmin,
         perm_fms: permFms,
         perm_zalo: permZalo,
-        perm_gemini: permGemini
+        perm_gemini: permGemini,
+        perm_gate: permGate
       }
     });
 
@@ -764,7 +769,7 @@ app.get('/api/accounts', authenticateToken, async (req, res) => {
 
   try {
     const db = await getDb();
-    const rows = await db.all('SELECT username, display_name, department, status, created_at, kpi_percent, perm_admin, perm_fms, perm_zalo, perm_gemini FROM accounts');
+    const rows = await db.all('SELECT username, display_name, department, status, created_at, kpi_percent, perm_admin, perm_fms, perm_zalo, perm_gemini, perm_gate FROM accounts');
     
     // Đếm số lớp học đang chạy ngầm của từng tài khoản
     const accounts = rows.map(acc => {
@@ -1024,7 +1029,7 @@ app.post('/api/accounts/:username/permissions', authenticateToken, async (req, r
   const { username } = req.params;
   const { perm, value } = req.body;
 
-  const validPerms = ['admin', 'fms', 'zalo', 'gemini'];
+  const validPerms = ['admin', 'fms', 'zalo', 'gemini', 'gate'];
   if (!validPerms.includes(perm)) {
     return res.status(400).json({ success: false, error: 'Quyền hạn không hợp lệ' });
   }
@@ -1594,6 +1599,69 @@ app.post('/api/fms/sync', authenticateToken, async (req, res) => {
   try {
     syncFMSData().catch(err => console.error('[FMS] Lỗi quét thủ công:', err.message));
     res.json({ success: true, message: 'Đã bắt đầu tiến trình quét tải dầu FMS chạy ngầm...' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Cập nhật vị trí đỗ (Gate) thủ công và báo Zalo (Admin hoặc người có quyền sửa vị trí đỗ)
+app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_gate !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền sửa vị trí đỗ' });
+  }
+
+  const { flightNo, date, gate } = req.body;
+  if (!flightNo || !date) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp số hiệu chuyến bay và ngày bay!' });
+  }
+
+  const newGate = gate ? String(gate).trim() : '';
+
+  try {
+    const db = await getDb();
+    
+    // Tìm chuyến bay trong fms_schedules
+    const flight = await db.get(
+      'SELECT id, flight_no, ac_reg, crew_info, truck_no, gate FROM fms_schedules WHERE flight_no = ? AND date = ? ORDER BY id DESC LIMIT 1',
+      flightNo,
+      date
+    );
+
+    if (!flight) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy chuyến bay tương ứng trong lịch trực!' });
+    }
+
+    const oldGate = flight.gate ? String(flight.gate).trim() : '';
+    if (oldGate === newGate) {
+      return res.json({ success: true, message: 'Vị trí đỗ không thay đổi.' });
+    }
+
+    // Cập nhật vị trí đỗ
+    await db.run('UPDATE fms_schedules SET gate = ? WHERE id = ?', newGate, flight.id);
+
+    // Gửi thông báo qua Zalo nếu cấu hình thông báo đang bật
+    const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+    const notifyEnabled = notifySetting ? notifySetting.value === 'true' : false;
+
+    if (notifyEnabled) {
+      const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+      const targetGroupId = groupSetting ? groupSetting.value : null;
+
+      if (targetGroupId) {
+        const title = '🔄 [FMS THAY ĐỔI VỊ TRÍ ĐỖ]';
+        const msg = `${title}
+✈️ Chuyến bay: ${flight.flight_no} - ${flight.ac_reg || '-'}
+📍 Vị trí đỗ cũ: ${oldGate || '-'} ➔ Mới: ${newGate || '-'}
+👥 Cặp tra nạp: ${flight.crew_info || '-'}
+🚛 Số xe nạp: ${flight.truck_no || '-'}`;
+
+        const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+        // Gửi tin nhắn chạy ngầm không chặn response
+        Promise.all(ids.map(id => sendSkyOneMessage(id, msg).catch(err => console.error('[Zalo Gate Change Error] Group:', id, err.message))));
+      }
+    }
+
+    res.json({ success: true, message: `Đã cập nhật vị trí đỗ thành ${newGate || 'trống'} và gửi tin nhắn Zalo thành công!` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

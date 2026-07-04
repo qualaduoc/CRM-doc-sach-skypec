@@ -40,6 +40,7 @@ async function getDb() {
       perm_fms INTEGER DEFAULT 0,
       perm_zalo INTEGER DEFAULT 0,
       perm_gemini INTEGER DEFAULT 0,
+      perm_gate INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -137,6 +138,7 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_fms INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_zalo INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_gemini INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_gate INTEGER DEFAULT 0;`); } catch(e) {}
 
   // Tạo tài khoản admin mặc định nếu chưa tồn tại
   const adminRow = await dbInstance.get('SELECT * FROM admin WHERE username = ?', 'admin');
