@@ -316,32 +316,77 @@ async function syncFMSData() {
           const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
           const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-          // Lấy dữ liệu cũ để so sánh trạng thái và số liệu tải dầu
-          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
+          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
+
+          const cleanACREG = flt.ACREG ? flt.ACREG.trim() : '';
+          const isAcRegChanged = oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
+                                 (String(oldOrder.ac_reg).trim() !== cleanACREG);
 
           const isFirstTimeFuel = (!oldOrder || oldOrder.status === 'Chờ cập nhật') && hasOrder;
           const isFuelUpdated = oldOrder && oldOrder.status === 'Đã có số liệu' && 
-                                (String(oldOrder.fuel_order) !== String(detail.fuel_order) || String(oldOrder.standby_fuel) !== String(detail.standby_fuel));
+                                (String(oldOrder.fuel_order) !== String(detail.fuel_order) || 
+                                 String(oldOrder.standby_fuel) !== String(detail.standby_fuel) ||
+                                 isAcRegChanged);
 
           if (isFirstTimeFuel || isFuelUpdated) {
             // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày
             const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel FROM fms_schedules WHERE flight_no = ? AND date = ?', cleanFltNo, targetDate);
             
             const title = isFirstTimeFuel ? '🔔 [FMS BÁO TẢI DẦU MỚI]' : '🔄 [FMS CẬP NHẬT TẢI DẦU]';
-            const msg = `${title}
-✈️ Chuyến bay: ${cleanFltNo}
-🛩️ Loại tàu: ${flt.ACTYPE ? flt.ACTYPE.trim() : '-'} | Số hiệu: ${flt.ACREG ? flt.ACREG.trim() : '-'}
-🗺️ Đường bay: ${flt.DEP_AP_SCHED || ''}-${flt.ARR_AP_SCHED || ''}
-📍 Vị trí đỗ: ${sched ? (sched.gate || '-') : '-'}
-👤 Tổ trực: ${sched ? (sched.crew_info || '-') : '-'}
-🚛 Số xe nạp: ${sched ? (sched.truck_no || '-') : '-'}
+            
+            // Lấy giá trị cũ phục vụ template
+            const oldAcRegVal = oldOrder ? (oldOrder.ac_reg || '-') : '-';
+            const oldStandbyFuelVal = oldOrder ? (parseInt(oldOrder.standby_fuel) > 0 ? parseInt(oldOrder.standby_fuel).toLocaleString() : '0') : '-';
+            const oldFuelOrderVal = oldOrder ? (parseInt(oldOrder.fuel_order) > 0 ? parseInt(oldOrder.fuel_order).toLocaleString() : '0') : '-';
+
+            // Đọc template từ settings
+            const templateSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_message_template'");
+            let template = templateSetting ? templateSetting.value : '';
+
+            if (!template || template.trim() === '') {
+              template = `{{status_change_title}}
+✈️ Chuyến bay: {{flight_no}}
+👥 Cặp tra nạp: {{crew_info}}
+🚛 Số xe nạp: {{truck_no}}
+📍 Vị trí đỗ: {{gate}}
+🛩️ Số hiệu tàu: {{ac_reg}} (Loại: {{ac_type}})
 ---------------------------
-⛽ STANDBY FUEL (CFP BFuel): ${parseInt(detail.standby_fuel) > 0 ? parseInt(detail.standby_fuel).toLocaleString() : '0'} kg
-⛽ FUEL ORDER (Pilot Request): ${parseInt(detail.fuel_order) > 0 ? parseInt(detail.fuel_order).toLocaleString() : '0'} kg
-⛽ TRIP FUEL (Pilot TripFuel): ${parseInt(detail.trip_fuel) > 0 ? parseInt(detail.trip_fuel).toLocaleString() : '0'} kg
-⛽ TAXI FUEL: ${parseInt(detail.taxi_fuel) > 0 ? parseInt(detail.taxi_fuel).toLocaleString() : '0'} kg
-⏰ Giờ Tra nạp: ${sched && sched.time_fuel ? sched.time_fuel : '-'} (Báo dầu trước 15p)
-⏰ Giờ Hạ/Cất: Hạ: ${sched && sched.time_arr ? sched.time_arr : '-'} | Cất: ${sched && sched.time_dep ? sched.time_dep : '-'}`;
+⛽ Tải dầu Standby (CFP): {{standby_fuel}} kg
+⛽ Tải dầu Chính thức: {{fuel_order}} kg
+⏰ Giờ Tra nạp: {{time_fuel}}
+⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}`;
+            }
+
+            const formatNumber = (val) => {
+              const num = parseInt(val);
+              return isNaN(num) ? '0' : num.toLocaleString();
+            };
+
+            const replacements = {
+              status_change_title: title,
+              flight_no: cleanFltNo,
+              ac_reg: cleanACREG,
+              old_ac_reg: oldAcRegVal,
+              ac_type: flt.ACTYPE ? flt.ACTYPE.trim() : '-',
+              route: `${flt.DEP_AP_SCHED || ''}-${flt.ARR_AP_SCHED || ''}`,
+              gate: sched ? (sched.gate || '-') : '-',
+              old_gate: '-',
+              crew_info: sched ? (sched.crew_info || '-') : '-',
+              truck_no: sched ? (sched.truck_no || '-') : '-',
+              standby_fuel: formatNumber(detail.standby_fuel),
+              old_standby_fuel: oldStandbyFuelVal,
+              fuel_order: formatNumber(detail.fuel_order),
+              old_fuel_order: oldFuelOrderVal,
+              time_fuel: sched && sched.time_fuel ? sched.time_fuel : '-',
+              time_arr: sched && sched.time_arr ? sched.time_arr : '-',
+              time_dep: sched && sched.time_dep ? sched.time_dep : '-'
+            };
+
+            let msg = template;
+            for (const [key, value] of Object.entries(replacements)) {
+              const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
+              msg = msg.replace(regex, value);
+            }
 
           // Lấy cấu hình gửi tin nhắn trực tiếp qua Bot SkyOne từ settings
           const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");

@@ -318,6 +318,8 @@ function setupEventListeners() {
   document.getElementById('btn-skyone-logout').addEventListener('click', handleSkyOneLogout);
   document.getElementById('skyone-group-select').addEventListener('change', handleSaveSkyOneSettings);
   document.getElementById('skyone-notify-enabled').addEventListener('change', handleSaveSkyOneSettings);
+  document.getElementById('skyone-template-presets').addEventListener('change', handleSkyOnePresetChange);
+  document.getElementById('skyone-template-input').addEventListener('blur', handleSaveSkyOneSettings);
 }
 
 // --- XỬ LÝ ĐĂNG NHẬP / ĐĂNG XUẤT ---
@@ -1773,8 +1775,9 @@ async function loadSkyOneSettings() {
     });
     const data = await res.json();
     if (data.success && data.settings) {
-      const { targetGroupId, targetGroupName, notifyEnabled } = data.settings;
+      const { targetGroupId, targetGroupName, notifyEnabled, messageTemplate } = data.settings;
       document.getElementById('skyone-notify-enabled').checked = notifyEnabled;
+      document.getElementById('skyone-template-input').value = messageTemplate || '';
       
       // Cập nhật dropdown nếu đã có nhóm đó, nếu chưa có thì tạm thời chèn option
       const groupSelect = document.getElementById('skyone-group-select');
@@ -1805,6 +1808,7 @@ async function loadSkyOneSettings() {
 async function handleSaveSkyOneSettings() {
   const groupSelect = document.getElementById('skyone-group-select');
   const notifyEnabled = document.getElementById('skyone-notify-enabled').checked;
+  const messageTemplate = document.getElementById('skyone-template-input').value;
   
   const targetGroupId = groupSelect.value;
   const targetGroupName = groupSelect.options[groupSelect.selectedIndex]?.text || '';
@@ -1822,7 +1826,7 @@ async function handleSaveSkyOneSettings() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.token}`
       },
-      body: JSON.stringify({ targetGroupId, targetGroupName, notifyEnabled })
+      body: JSON.stringify({ targetGroupId, targetGroupName, notifyEnabled, messageTemplate })
     });
     const data = await res.json();
     if (data.success) {
@@ -1832,6 +1836,43 @@ async function handleSaveSkyOneSettings() {
     }
   } catch (e) {
     showToast('Lỗi lưu cấu hình: ' + e.message, 'error', 'Lỗi kết nối');
+  }
+}
+
+// Thay đổi mẫu tin nhắn từ mẫu soạn sẵn
+function handleSkyOnePresetChange(e) {
+  const preset = e.target.value;
+  const templateInput = document.getElementById('skyone-template-input');
+  
+  const presets = {
+    'preset-1': `{{status_change_title}}
+✈️ Chuyến bay: {{flight_no}}
+👥 Cặp tra nạp: {{crew_info}}
+🚛 Số xe nạp: {{truck_no}}
+📍 Vị trí đỗ: {{gate}}
+🛩️ Số hiệu tàu: {{ac_reg}} (Loại: {{ac_type}})
+---------------------------
+⛽ Tải dầu Standby (CFP): {{standby_fuel}} kg
+⛽ Tải dầu Chính thức: {{fuel_order}} kg
+⏰ Giờ Tra nạp: {{time_fuel}}
+⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}`,
+    'preset-2': `{{status_change_title}}
+✈️ Chuyến: {{flight_no}} | Đỗ: {{gate}} | Xe: {{truck_no}}
+👥 Cặp: {{crew_info}} | Giờ nạp: {{time_fuel}}
+🛩️ Tàu bay: {{ac_reg}} (Loại: {{ac_type}})
+⛽ Standby: {{standby_fuel}} kg
+⛽ Chính thức: {{fuel_order}} kg`,
+    'preset-3': `🔄 [FMS THAY ĐỔI THÔNG TIN CHUYẾN BAY]
+✈️ Chuyến bay: {{flight_no}}
+🛩️ Số hiệu tàu cũ: {{old_ac_reg}} ➔ Tàu mới: {{ac_reg}}
+⛽ Tải dầu Standby cũ: {{old_standby_fuel}} kg ➔ Mới: {{standby_fuel}} kg
+⛽ Tải dầu Chính thức cũ: {{old_fuel_order}} kg ➔ Mới: {{fuel_order}} kg
+📍 Vị trí đỗ: {{gate}} (Tổ nạp: {{crew_info}})`
+  };
+
+  if (preset && presets[preset]) {
+    templateInput.value = presets[preset];
+    handleSaveSkyOneSettings();
   }
 }
 

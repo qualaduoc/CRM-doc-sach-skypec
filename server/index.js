@@ -1354,13 +1354,15 @@ app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     const groupVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
     const nameVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_name'");
     const notifyVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+    const templateVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_message_template'");
 
     res.json({
       success: true,
       settings: {
         targetGroupId: groupVal ? groupVal.value : '',
         targetGroupName: nameVal ? nameVal.value : '',
-        notifyEnabled: notifyVal ? (notifyVal.value === 'true') : false
+        notifyEnabled: notifyVal ? (notifyVal.value === 'true') : false,
+        messageTemplate: templateVal ? templateVal.value : ''
       }
     });
   } catch (err) {
@@ -1373,12 +1375,13 @@ app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
-  const { targetGroupId, targetGroupName, notifyEnabled } = req.body;
+  const { targetGroupId, targetGroupName, notifyEnabled, messageTemplate } = req.body;
   try {
     const db = await getDb();
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_target_group_id', ?)", targetGroupId ? String(targetGroupId).trim() : '');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_target_group_name', ?)", targetGroupName ? String(targetGroupName).trim() : '');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_notify_enabled', ?)", notifyEnabled ? 'true' : 'false');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_message_template', ?)", messageTemplate ? String(messageTemplate) : '');
 
     res.json({ success: true, message: 'Đã lưu cấu hình trợ lý SkyOne thành công!' });
   } catch (err) {
