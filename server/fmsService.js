@@ -2,6 +2,7 @@ const http = require('http');
 const https = require('https');
 const querystring = require('querystring');
 const { getDb } = require('./db');
+const { sendSkyOneMessage } = require('./zaloService');
 
 const HOST = 'fms.vietnamairlines.com';
 
@@ -342,7 +343,21 @@ async function syncFMSData() {
 ⏰ Giờ Tra nạp: ${sched && sched.time_fuel ? sched.time_fuel : '-'} (Báo dầu trước 15p)
 ⏰ Giờ Hạ/Cất: Hạ: ${sched && sched.time_arr ? sched.time_arr : '-'} | Cất: ${sched && sched.time_dep ? sched.time_dep : '-'}`;
 
-          sendZaloNotification(msg).catch(err => console.error('[Zalo Bot] Lỗi gửi thông báo:', err.message));
+          // Lấy cấu hình gửi tin nhắn trực tiếp qua Bot SkyOne từ settings
+          const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+          const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+          
+          const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
+          const targetGroupId = groupSetting ? groupSetting.value : null;
+
+          if (isSkyOneEnabled && targetGroupId) {
+            sendSkyOneMessage(targetGroupId, msg)
+              .then(() => log(`[SkyOne] Đã gửi thông báo trực tiếp cho chuyến bay ${cleanFltNo} thành công!`))
+              .catch(err => console.error('[SkyOne] Gửi thông báo trực tiếp thất bại:', err.message));
+          }
+
+          // Gửi qua Webhook Bot Zalo cũ làm phương án dự phòng (fallback)
+          sendZaloNotification(msg).catch(err => console.error('[Zalo Bot cũ] Lỗi gửi thông báo:', err.message));
           }
 
           // Lưu hoặc cập nhật vào database SQLite

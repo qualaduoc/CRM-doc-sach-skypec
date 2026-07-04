@@ -11,6 +11,8 @@ const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
 const { syncFMSData, startFmsWorker, getVietnamDbDateStr } = require('./fmsService');
 const { performImageOCR, testSingleGeminiKey } = require('./ocrService');
+const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyOneMessage, getBotState } = require('./zaloService');
+
 
 const app = express();
 const PORT = process.env.PORT || 3005; // Chạy ở cổng 3005 để tránh xung đột
@@ -1288,6 +1290,119 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
   }
 });
 
+// --- CÁC ROUTE API QUẢN LÝ BOT ZALO SKYONE ---
+
+// Lấy trạng thái của Bot Zalo hiện tại (chỉ Admin)
+app.get('/api/fms/zalo/state', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+  try {
+    const state = getBotState();
+    res.json({ success: true, state });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Yêu cầu sinh mã QR đăng nhập mới (chỉ Admin)
+app.post('/api/fms/zalo/qr', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+  try {
+    startQRLogin().catch(err => console.error('[SkyOne] Lỗi sinh QR ngầm:', err.message));
+    res.json({ success: true, message: 'Đang bắt đầu tạo QR Code...' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Yêu cầu đăng xuất Zalo (chỉ Admin)
+app.post('/api/fms/zalo/logout', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+  try {
+    await logoutBot();
+    res.json({ success: true, message: 'Đã đăng xuất Bot Zalo thành công!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy danh sách nhóm chat Zalo (chỉ Admin)
+app.get('/api/fms/zalo/groups', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+  try {
+    const groups = await getBotGroups();
+    res.json({ success: true, groups });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy các cài đặt Zalo đã lưu (chỉ Admin)
+app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+  try {
+    const db = await getDb();
+    const groupVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+    const nameVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_name'");
+    const notifyVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+
+    res.json({
+      success: true,
+      settings: {
+        targetGroupId: groupVal ? groupVal.value : '',
+        targetGroupName: nameVal ? nameVal.value : '',
+        notifyEnabled: notifyVal ? (notifyVal.value === 'true') : false
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lưu cấu hình cài đặt Zalo (chỉ Admin)
+app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+  const { targetGroupId, targetGroupName, notifyEnabled } = req.body;
+  try {
+    const db = await getDb();
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_target_group_id', ?)", targetGroupId ? String(targetGroupId).trim() : '');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_target_group_name', ?)", targetGroupName ? String(targetGroupName).trim() : '');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_notify_enabled', ?)", notifyEnabled ? 'true' : 'false');
+
+    res.json({ success: true, message: 'Đã lưu cấu hình trợ lý SkyOne thành công!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Gửi tin nhắn test (chỉ Admin)
+app.post('/api/fms/zalo/send-test', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+  const { groupId, message } = req.body;
+  if (!groupId || !message) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp đầy đủ thông tin nhóm nhận và nội dung!' });
+  }
+  try {
+    const response = await sendSkyOneMessage(groupId, message);
+    res.json({ success: true, message: 'Gửi tin nhắn test thành công!', response });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Yêu cầu quét FMS thủ công tức thì (chỉ Admin)
 app.post('/api/fms/sync', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
@@ -1411,4 +1526,7 @@ app.listen(PORT, async () => {
 
   // Khởi chạy tiến trình quét ngầm FMS (3 phút một lần)
   startFmsWorker(3 * 60 * 1000);
+
+  // Tự động kết nối Zalo Bot SkyOne nếu đã có session cookies
+  initZaloBot().catch(err => console.error('[SkyOne] Khởi tạo Zalo tự động thất bại:', err.message));
 });
