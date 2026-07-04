@@ -1277,6 +1277,10 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         fo.taxi_fuel,
         fo.alternate,
         COALESCE(fo.status, 'Chờ cập nhật') as status,
+        fo.warn_ac_reg,
+        fo.warn_standby,
+        fo.warn_fuel_order,
+        fo.warn_updated_at,
         fo.updated_at
       FROM fms_schedules s
       LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no) = UPPER(fo.flight_no)

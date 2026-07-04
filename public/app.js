@@ -1185,8 +1185,41 @@ async function loadFmsSchedules(isSilent = false) {
       const crewText = r.crew_info || '-';
       const truckText = r.truck_no ? `<br><span style="color: var(--primary); font-size: 0.8rem; font-weight: bold;"><i class="fa-solid fa-truck-field"></i> Xe: ${r.truck_no}</span>` : '';
       
+      // 1. Tính toán hiệu ứng nhấp nháy cảnh báo (hết hạn nhấp nháy sau giờ tra nạp 15 phút)
+      let blinkAcReg = false;
+      let blinkStandby = false;
+      let blinkFuelOrder = false;
+
+      const now = new Date();
+      if (r.time_fuel && r.time_fuel !== '-' && r.date) {
+        try {
+          const [hour, minute] = r.time_fuel.split(':').map(Number);
+          const fuelTime = new Date(r.date);
+          fuelTime.setHours(hour, minute, 0, 0);
+          
+          const limitTime = new Date(fuelTime.getTime() + 15 * 60 * 1000); // Quá giờ nạp 15p
+          const isExpired = now > limitTime;
+          
+          if (!isExpired) {
+            blinkAcReg = r.warn_ac_reg === 1;
+            blinkStandby = r.warn_standby === 1;
+            blinkFuelOrder = r.warn_fuel_order === 1;
+          }
+        } catch (e) {
+          console.error('[Blink] Lỗi parse time:', e.message);
+        }
+      }
+
+      const acRegClass = blinkAcReg ? 'blink-red-text' : '';
+      const standbyClass = blinkStandby ? 'blink-orange-text' : '';
+      const fuelOrderClass = blinkFuelOrder ? 'blink-orange-text' : '';
+
+      const acRegTdClass = blinkAcReg ? 'blink-red-bg' : '';
+      const standbyTdClass = blinkStandby ? 'blink-orange-bg' : '';
+      const fuelOrderTdClass = blinkFuelOrder ? 'blink-orange-bg' : '';
+
       const planeInfo = `
-        ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;">${r.ac_reg}</span>` : '-'}
+        ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
         ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
         ${r.route ? `<span style="color: #60a5fa; font-size: 0.8rem; display: block; margin-top: 3px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
       `;
@@ -1203,11 +1236,11 @@ async function loadFmsSchedules(isSilent = false) {
         <tr>
           <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
           <td>${crewText}${truckText}</td>
-          <td style="text-align: center;">${planeInfo}</td>
+          <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
           <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
           <td>${timesHtml}</td>
-          <td style="text-align: center; font-weight: 600; color: #a3e635;">${standbyVal}</td>
-          <td style="text-align: center; font-weight: 700; color: #f97316;">${orderVal}</td>
+          <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyVal}</td>
+          <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderVal}</td>
           <td style="text-align: center; font-weight: 600; color: #60a5fa;">${tripVal}</td>
           <td style="text-align: center;">
             <span class="status-tag ${statusClass}">

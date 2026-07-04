@@ -7,6 +7,33 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
+  <style>
+    /* Animation nhấp nháy cảnh báo FMS */
+    @keyframes warnBlinkRed {
+      0%, 100% { background-color: rgba(239, 68, 68, 0.35); }
+      50% { background-color: rgba(239, 68, 68, 0.05); }
+    }
+    @keyframes warnBlinkOrange {
+      0%, 100% { background-color: rgba(245, 158, 11, 0.3); }
+      50% { background-color: rgba(245, 158, 11, 0.05); }
+    }
+    .blink-red-bg {
+      animation: warnBlinkRed 1.2s infinite ease-in-out !important;
+      border: 1px solid rgba(239, 68, 68, 0.6) !important;
+    }
+    .blink-orange-bg {
+      animation: warnBlinkOrange 1.2s infinite ease-in-out !important;
+      border: 1px solid rgba(245, 158, 11, 0.5) !important;
+    }
+    .blink-red-text {
+      color: #f87171 !important;
+      font-weight: bold !important;
+    }
+    .blink-orange-text {
+      color: #fbbf24 !important;
+      font-weight: bold !important;
+    }
+  </style>
 </head>
 <body>
 

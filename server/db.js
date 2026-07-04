@@ -92,6 +92,10 @@ async function getDb() {
       taxi_fuel TEXT,
       alternate TEXT,
       status TEXT DEFAULT 'Chờ cập nhật',
+      warn_ac_reg INTEGER DEFAULT 0,
+      warn_standby INTEGER DEFAULT 0,
+      warn_fuel_order INTEGER DEFAULT 0,
+      warn_updated_at DATETIME,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -117,6 +121,12 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN truck_no TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN driver_name TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN operator_name TEXT;`); } catch(e) {}
+
+  // Thêm cột cảnh báo cho fms_fuel_orders của database cũ
+  try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_ac_reg INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_standby INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_fuel_order INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_updated_at DATETIME;`); } catch(e) {}
 
   // Tạo tài khoản admin mặc định nếu chưa tồn tại
   const adminRow = await dbInstance.get('SELECT * FROM admin WHERE username = ?', 'admin');

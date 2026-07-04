@@ -316,7 +316,7 @@ async function syncFMSData() {
           const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
           const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
+          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
 
           const cleanACREG = flt.ACREG ? flt.ACREG.trim() : '';
           const oldStandby = oldOrder ? (parseInt(oldOrder.standby_fuel) || 0) : 0;
@@ -458,12 +458,29 @@ async function syncFMSData() {
           sendZaloNotification(msg).catch(err => console.error('[Zalo Bot cũ] Lỗi gửi thông báo:', err.message));
           }
 
+          // Tính toán các giá trị cảnh báo mới
+          const oldWarnAcReg = oldOrder ? (oldOrder.warn_ac_reg || 0) : 0;
+          const oldWarnStandby = oldOrder ? (oldOrder.warn_standby || 0) : 0;
+          const oldWarnFuelOrder = oldOrder ? (oldOrder.warn_fuel_order || 0) : 0;
+          const oldWarnUpdatedAt = oldOrder ? oldOrder.warn_updated_at : null;
+
+          const warnAcRegVal = isAcRegChanged ? 1 : oldWarnAcReg;
+          const warnStandbyVal = (isStandbyChanged || isNewStandby) ? 1 : oldWarnStandby;
+          const warnFuelOrderVal = (isFuelOrderChanged || isNewFuelOrder) ? 1 : oldWarnFuelOrder;
+          
+          let warnUpdatedAtVal = oldWarnUpdatedAt;
+          if (isAcRegChanged || isStandbyChanged || isNewStandby || isFuelOrderChanged || isNewFuelOrder) {
+            warnUpdatedAtVal = new Date().toISOString();
+          }
+
           // Lưu hoặc cập nhật vào database SQLite
           await db.run(`
             INSERT INTO fms_fuel_orders (
               flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
-              trip_fuel, trip_time, taxi_fuel, alternate, status, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+              trip_fuel, trip_time, taxi_fuel, alternate, status,
+              warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(flight_no) DO UPDATE SET
               ac_reg = excluded.ac_reg,
               ac_type = excluded.ac_type,
@@ -475,6 +492,10 @@ async function syncFMSData() {
               taxi_fuel = excluded.taxi_fuel,
               alternate = excluded.alternate,
               status = excluded.status,
+              warn_ac_reg = excluded.warn_ac_reg,
+              warn_standby = excluded.warn_standby,
+              warn_fuel_order = excluded.warn_fuel_order,
+              warn_updated_at = excluded.warn_updated_at,
               updated_at = CURRENT_TIMESTAMP
           `, 
             cleanFltNo,
@@ -487,7 +508,11 @@ async function syncFMSData() {
             detail.trip_time,
             detail.taxi_fuel,
             detail.alternate,
-            status
+            status,
+            warnAcRegVal,
+            warnStandbyVal,
+            warnFuelOrderVal,
+            warnUpdatedAtVal
           );
         log(`[Hoàn tất quét] Chuyến bay ${cleanFltNo}: Fuel Order = ${detail.fuel_order} kg, Trạng thái = ${status}`);
       } catch (fltErr) {
