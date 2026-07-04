@@ -409,6 +409,25 @@ async function syncFMSData() {
               msg = msg.replace(regex, value);
             }
 
+            // Tự động tối ưu hóa các dòng tin nhắn theo yêu cầu của Khầy Được
+            if (isAcRegChanged && !isFuelChanged) {
+              // Chỉ thay đổi tàu bay -> Lọc bỏ các dòng liên quan đến tải dầu
+              const lines = msg.split('\n');
+              const filteredLines = lines.filter(line => {
+                const lower = line.toLowerCase();
+                return !(lower.includes('tải dầu') || lower.includes('standby') || lower.includes('chính thức') || lower.includes('⛽'));
+              });
+              msg = filteredLines.join('\n');
+            } else if (isFuelChanged && !isAcRegChanged) {
+              // Chỉ thay đổi tải dầu -> Lọc bỏ các dòng liên quan đến số hiệu tàu bay
+              const lines = msg.split('\n');
+              const filteredLines = lines.filter(line => {
+                const lower = line.toLowerCase();
+                return !(lower.includes('tàu bay') || lower.includes('số hiệu tàu') || lower.includes('🛩️'));
+              });
+              msg = filteredLines.join('\n');
+            }
+
           // Lấy cấu hình gửi tin nhắn trực tiếp qua Bot SkyOne từ settings
           const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
           const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
