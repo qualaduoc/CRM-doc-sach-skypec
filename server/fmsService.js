@@ -409,24 +409,37 @@ async function syncFMSData() {
               msg = msg.replace(regex, value);
             }
 
-            // Tự động tối ưu hóa các dòng tin nhắn theo yêu cầu của Khầy Được
-            if (isAcRegChanged && !isFuelChanged) {
-              // Chỉ thay đổi tàu bay -> Lọc bỏ các dòng liên quan đến tải dầu
-              const lines = msg.split('\n');
-              const filteredLines = lines.filter(line => {
-                const lower = line.toLowerCase();
-                return !(lower.includes('tải dầu') || lower.includes('standby') || lower.includes('chính thức') || lower.includes('⛽'));
-              });
-              msg = filteredLines.join('\n');
-            } else if (isFuelChanged && !isAcRegChanged) {
-              // Chỉ thay đổi tải dầu -> Lọc bỏ các dòng liên quan đến số hiệu tàu bay
-              const lines = msg.split('\n');
-              const filteredLines = lines.filter(line => {
-                const lower = line.toLowerCase();
-                return !(lower.includes('tàu bay') || lower.includes('số hiệu tàu') || lower.includes('🛩️'));
-              });
-              msg = filteredLines.join('\n');
-            }
+            // Tự động lọc dòng thông minh chi tiết (Fine-grained Smart Filtering)
+            const lines = msg.split('\n');
+            const filteredLines = lines.filter(line => {
+              const lower = line.toLowerCase();
+              
+              // 1. Dòng chứa Số hiệu tàu cũ/mới: Chỉ hiển thị khi có đổi tàu
+              if (lower.includes('số hiệu tàu cũ') || lower.includes('old_ac_reg') || (lower.includes('tàu') && lower.includes('cũ') && lower.includes('mới'))) {
+                return !!isAcRegChanged;
+              }
+              
+              // 2. Dòng chứa Tải dầu Standby cũ/mới: Chỉ hiển thị khi Standby thay đổi hoặc mới xuất hiện
+              if (lower.includes('tải dầu standby cũ') || lower.includes('old_standby_fuel') || (lower.includes('standby') && lower.includes('cũ') && lower.includes('mới'))) {
+                return !!(isStandbyChanged || isNewStandby);
+              }
+              
+              // 3. Dòng chứa Tải dầu Chính thức cũ/mới: Chỉ hiển thị khi Chính thức thay đổi hoặc mới xuất hiện
+              if (lower.includes('tải dầu chính thức cũ') || lower.includes('old_fuel_order') || (lower.includes('chính thức') && lower.includes('cũ') && lower.includes('mới'))) {
+                return !!(isNewFuelOrder || isFuelOrderChanged);
+              }
+
+              return true;
+            });
+
+            // Gom lại và dọn dẹp các dòng trống liên tiếp bị thừa ra
+            msg = filteredLines
+              .map(line => line.trimEnd())
+              .filter((line, index, arr) => {
+                if (line === '' && index > 0 && arr[index - 1] === '') return false;
+                return true;
+              })
+              .join('\n');
 
           // Lấy cấu hình gửi tin nhắn trực tiếp qua Bot SkyOne từ settings
           const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
