@@ -366,16 +366,16 @@ async function syncFMSData() {
 
             if (!template || template.trim() === '') {
               template = `{{status_change_title}}
-✈️ Chuyến bay: {{flight_no}} - {{ac_reg}}
-👥 Cặp tra nạp: {{crew_info}}
-🚛 Số xe nạp: {{truck_no}}
-📍 Vị trí đỗ: {{gate}}
-🛩️ Số hiệu tàu: {{ac_reg}} (Loại: {{ac_type}})
+✈️ Chuyến bay: *{{flight_no}} - {{ac_reg}}*
+👥 Cặp tra nạp: *{{crew_info}}*
+🚛 Số xe nạp: *{{truck_no}}*
+📍 Vị trí đỗ: *{{gate}}*
+🛩️ Số hiệu tàu: *{{ac_reg}}* (Loại: *{{ac_type}}*)
 ---------------------------
-⛽ Tải dầu Standby (CFP): {{standby_fuel}} kg
-⛽ Tải dầu Chính thức: {{fuel_order}} kg
-⏰ Giờ Tra nạp: {{time_fuel}}
-⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}`;
+⛽ Tải dầu Standby (CFP): *{{standby_fuel}}* kg
+⛽ Tải dầu Chính thức: *{{fuel_order}}* kg
+⏰ Giờ Tra nạp: *{{time_fuel}}*
+⏰ Giờ Hạ/Cất: Hạ *{{time_arr}}* | Cất *{{time_dep}}*`;
             }
 
             // Đảm bảo dòng Chuyến bay luôn có định dạng {{flight_no}} - {{ac_reg}} để nhận diện
