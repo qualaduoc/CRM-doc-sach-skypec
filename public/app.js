@@ -422,6 +422,16 @@ function setupEventListeners() {
   document.getElementById('skyone-notify-enabled').addEventListener('change', handleSaveSkyOneSettings);
   document.getElementById('skyone-template-presets').addEventListener('change', handleSkyOnePresetChange);
   document.getElementById('skyone-template-input').addEventListener('blur', handleSaveSkyOneSettings);
+
+  // Lắng nghe sự kiện tìm kiếm và bộ lọc FMS
+  const fmsSearchInput = document.getElementById('fms-search-input');
+  if (fmsSearchInput) {
+    fmsSearchInput.addEventListener('input', () => renderFmsTable());
+  }
+  const fmsCrewSelect = document.getElementById('fms-crew-filter');
+  if (fmsCrewSelect) {
+    fmsCrewSelect.addEventListener('change', () => renderFmsTable());
+  }
 }
 
 // --- XỬ LÝ ĐĂNG NHẬP / ĐĂNG XUẤT ---
@@ -1287,6 +1297,7 @@ async function syncAccountFromRow(username, btn) {
 
 // --- LOGIC QUẢN LÝ FMS VIETNAM AIRLINES ---
 let fmsInterval = null;
+let cachedFmsRows = [];
 
 function formatDateVN(dateStr) {
   const parts = dateStr.split('-');
@@ -1315,6 +1326,7 @@ async function loadFmsSchedules(isSilent = false) {
     }
 
     const rows = data.data || [];
+    cachedFmsRows = rows;
     const tbody = document.getElementById('fms-table-body');
     
     if (rows.length === 0) {
@@ -1325,6 +1337,8 @@ async function loadFmsSchedules(isSilent = false) {
           </td>
         </tr>
       `;
+      // Xoá danh sách cặp tra nạp nếu không có dữ liệu
+      updateFmsCrewFilter([]);
       return;
     }
 
@@ -1335,84 +1349,11 @@ async function loadFmsSchedules(isSilent = false) {
       textarea.value = scheduleLines.join('\n');
     }
 
-    // Render bảng tải dầu FMS chi tiết (9 cột)
-    tbody.innerHTML = rows.map(r => {
-      const hasData = r.status === 'Đã có số liệu';
-      const statusClass = hasData ? 'review-finished' : 'review-pending';
-      const statusText = r.status;
-      
-      const standbyVal = parseInt(r.standby_fuel) > 0 ? `${parseInt(r.standby_fuel).toLocaleString()} kg` : '-';
-      const orderVal = parseInt(r.fuel_order) > 0 ? `${parseInt(r.fuel_order).toLocaleString()} kg` : '-';
-      const tripVal = parseInt(r.trip_fuel) > 0 ? `${parseInt(r.trip_fuel).toLocaleString()} kg` : '-';
-      
-      const crewText = r.crew_info || '-';
-      const truckText = r.truck_no ? `<br><span style="color: var(--primary); font-size: 0.8rem; font-weight: bold;"><i class="fa-solid fa-truck-field"></i> Xe: ${r.truck_no}</span>` : '';
-      
-      // 1. Tính toán hiệu ứng nhấp nháy cảnh báo (hết hạn nhấp nháy sau giờ tra nạp 15 phút)
-      let blinkAcReg = false;
-      let blinkStandby = false;
-      let blinkFuelOrder = false;
+    // Cập nhật bộ lọc dropdown cặp tra nạp
+    updateFmsCrewFilter(rows);
 
-      const now = new Date();
-      if (r.time_fuel && r.time_fuel !== '-' && r.date) {
-        try {
-          const [hour, minute] = r.time_fuel.split(':').map(Number);
-          const fuelTime = new Date(r.date);
-          fuelTime.setHours(hour, minute, 0, 0);
-          
-          const limitTime = new Date(fuelTime.getTime() + 15 * 60 * 1000); // Quá giờ nạp 15p
-          const isExpired = now > limitTime;
-          
-          if (!isExpired) {
-            blinkAcReg = r.warn_ac_reg === 1;
-            blinkStandby = r.warn_standby === 1;
-            blinkFuelOrder = r.warn_fuel_order === 1;
-          }
-        } catch (e) {
-          console.error('[Blink] Lỗi parse time:', e.message);
-        }
-      }
-
-      const acRegClass = blinkAcReg ? 'blink-red-text' : '';
-      const standbyClass = blinkStandby ? 'blink-orange-text' : '';
-      const fuelOrderClass = blinkFuelOrder ? 'blink-orange-text' : '';
-
-      const acRegTdClass = blinkAcReg ? 'blink-red-bg' : '';
-      const standbyTdClass = blinkStandby ? 'blink-orange-bg' : '';
-      const fuelOrderTdClass = blinkFuelOrder ? 'blink-orange-bg' : '';
-
-      const planeInfo = `
-        ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
-        ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
-        ${r.route ? `<span style="color: #60a5fa; font-size: 0.8rem; display: block; margin-top: 3px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
-      `;
-      
-      const timesHtml = `
-        <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
-          ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
-          ${r.time_dep ? `<div>Cất: <span>${r.time_dep}</span></div>` : ''}
-          ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
-        </div>
-      `;
-      
-      return `
-        <tr>
-          <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
-          <td class="hide-on-mobile">${crewText}${truckText}</td>
-          <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
-          <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
-          <td>${timesHtml}</td>
-          <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyVal}</td>
-          <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderVal}</td>
-          <td style="text-align: center; font-weight: 600; color: #60a5fa;" class="hide-on-mobile">${tripVal}</td>
-          <td style="text-align: center;">
-            <span class="status-tag ${statusClass}">
-              ${statusText}
-            </span>
-          </td>
-        </tr>
-      `;
-    }).join('');
+    // Render bảng tải dầu FMS chi tiết sau lọc
+    renderFmsTable();
 
     // Khởi động vòng lặp tự động cập nhật số liệu tải dầu mỗi 10 giây khi đang ở tab FMS
     if (!fmsInterval) {
@@ -1429,6 +1370,152 @@ async function loadFmsSchedules(isSilent = false) {
       showToast('Không thể tải lịch FMS: ' + err.message, 'error', 'Lỗi kết nối');
     }
   }
+}
+
+// Cập nhật danh sách cặp tra nạp vào Dropdown filter
+function updateFmsCrewFilter(rows) {
+  const crewSelect = document.getElementById('fms-crew-filter');
+  if (!crewSelect) return;
+
+  // Lưu giữ giá trị đang chọn hiện tại để không bị mất trạng thái
+  const currentVal = crewSelect.value;
+
+  // Lấy các giá trị cặp tra nạp duy nhất, không rỗng
+  const crews = [...new Set(rows.map(r => r.crew_info ? r.crew_info.trim() : '').filter(Boolean))].sort();
+
+  let html = '<option value="">-- Tất cả Cặp tra nạp --</option>';
+  crews.forEach(c => {
+    const selectedAttr = c === currentVal ? 'selected' : '';
+    html += `<option value="${c}" ${selectedAttr}>${c}</option>`;
+  });
+
+  crewSelect.innerHTML = html;
+}
+
+// Thực hiện lọc và vẽ lại bảng FMS
+function renderFmsTable() {
+  const tbody = document.getElementById('fms-table-body');
+  if (!tbody) return;
+
+  const searchInput = document.getElementById('fms-search-input');
+  const crewSelect = document.getElementById('fms-crew-filter');
+
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+  const selectedCrew = crewSelect ? crewSelect.value : '';
+
+  // Lọc dữ liệu
+  const filteredRows = cachedFmsRows.filter(r => {
+    // 1. Lọc theo dropdown Cặp tra nạp
+    if (selectedCrew && r.crew_info !== selectedCrew) {
+      return false;
+    }
+
+    // 2. Lọc theo tìm kiếm nhanh (số hiệu chuyến bay, số hiệu tàu bay, tên người tra nạp)
+    if (query) {
+      const fltNo = r.flight_no ? r.flight_no.toLowerCase() : '';
+      const acReg = r.ac_reg ? r.ac_reg.toLowerCase() : '';
+      const crewInfo = r.crew_info ? r.crew_info.toLowerCase() : '';
+      
+      const matchFltNo = fltNo.includes(query);
+      const matchAcReg = acReg.includes(query);
+      const matchCrew = crewInfo.includes(query);
+
+      return matchFltNo || matchAcReg || matchCrew;
+    }
+
+    return true;
+  });
+
+  if (filteredRows.length === 0) {
+    // Đảm bảo số cột colSpan khớp với bảng
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
+          Không tìm thấy chuyến bay nào khớp với điều kiện lọc.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  // Vẽ bảng
+  tbody.innerHTML = filteredRows.map(r => {
+    const hasData = r.status === 'Đã có số liệu';
+    const statusClass = hasData ? 'review-finished' : 'review-pending';
+    const statusText = r.status;
+    
+    const standbyVal = parseInt(r.standby_fuel) > 0 ? `${parseInt(r.standby_fuel).toLocaleString()} kg` : '-';
+    const orderVal = parseInt(r.fuel_order) > 0 ? `${parseInt(r.fuel_order).toLocaleString()} kg` : '-';
+    const tripVal = parseInt(r.trip_fuel) > 0 ? `${parseInt(r.trip_fuel).toLocaleString()} kg` : '-';
+    
+    const crewText = r.crew_info || '-';
+    const truckText = r.truck_no ? `<br><span style="color: var(--primary); font-size: 0.8rem; font-weight: bold;"><i class="fa-solid fa-truck-field"></i> Xe: ${r.truck_no}</span>` : '';
+    
+    // 1. Tính toán hiệu ứng nhấp nháy cảnh báo (hết hạn nhấp nháy sau giờ tra nạp 15 phút)
+    let blinkAcReg = false;
+    let blinkStandby = false;
+    let blinkFuelOrder = false;
+
+    const now = new Date();
+    if (r.time_fuel && r.time_fuel !== '-' && r.date) {
+      try {
+        const [hour, minute] = r.time_fuel.split(':').map(Number);
+        const fuelTime = new Date(r.date);
+        fuelTime.setHours(hour, minute, 0, 0);
+        
+        const limitTime = new Date(fuelTime.getTime() + 15 * 60 * 1000); // Quá giờ nạp 15p
+        const isExpired = now > limitTime;
+        
+        if (!isExpired) {
+          blinkAcReg = r.warn_ac_reg === 1;
+          blinkStandby = r.warn_standby === 1;
+          blinkFuelOrder = r.warn_fuel_order === 1;
+        }
+      } catch (e) {
+        console.error('[Blink] Lỗi parse time:', e.message);
+      }
+    }
+
+    const acRegClass = blinkAcReg ? 'blink-red-text' : '';
+    const standbyClass = blinkStandby ? 'blink-orange-text' : '';
+    const fuelOrderClass = blinkFuelOrder ? 'blink-orange-text' : '';
+
+    const acRegTdClass = blinkAcReg ? 'blink-red-bg' : '';
+    const standbyTdClass = blinkStandby ? 'blink-orange-bg' : '';
+    const fuelOrderTdClass = blinkFuelOrder ? 'blink-orange-bg' : '';
+
+    const planeInfo = `
+      ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
+      ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
+      ${r.route ? `<span style="color: #60a5fa; font-size: 0.8rem; display: block; margin-top: 3px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
+    `;
+    
+    const timesHtml = `
+      <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
+        ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
+        ${r.time_dep ? `<div>Cất: <span>${r.time_dep}</span></div>` : ''}
+        ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+      </div>
+    `;
+    
+    return `
+      <tr>
+        <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
+        <td class="hide-on-mobile">${crewText}${truckText}</td>
+        <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
+        <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
+        <td>${timesHtml}</td>
+        <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyVal}</td>
+        <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderVal}</td>
+        <td style="text-align: center; font-weight: 600; color: #60a5fa;" class="hide-on-mobile">${tripVal}</td>
+        <td style="text-align: center;">
+          <span class="status-tag ${statusClass}">
+            ${statusText}
+          </span>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 async function handleSaveFmsSchedule() {

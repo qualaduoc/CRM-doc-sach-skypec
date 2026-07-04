@@ -339,6 +339,19 @@
                 </button>
               </div>
             </div>
+
+            <!-- Bộ lọc và tìm kiếm nhanh FMS -->
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px; margin-bottom: 10px;">
+              <div style="flex: 1; min-width: 250px; position: relative;">
+                <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
+                <input type="text" id="fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
+              </div>
+              <div style="width: 220px; min-width: 180px;">
+                <select id="fms-crew-filter" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; cursor: pointer; outline: none; box-sizing: border-box;">
+                  <option value="">-- Tất cả Cặp tra nạp --</option>
+                </select>
+              </div>
+            </div>
             
             <div class="table-container" style="margin-top: 5px;">
               <table class="crm-table">
