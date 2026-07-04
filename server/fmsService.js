@@ -319,20 +319,41 @@ async function syncFMSData() {
           const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
 
           const cleanACREG = flt.ACREG ? flt.ACREG.trim() : '';
+          const oldStandby = oldOrder ? (parseInt(oldOrder.standby_fuel) || 0) : 0;
+          const oldFuelOrder = oldOrder ? (parseInt(oldOrder.fuel_order) || 0) : 0;
+          const newStandby = parseInt(detail.standby_fuel) || 0;
+          const newFuelOrder = parseInt(detail.fuel_order) || 0;
+
+          // Báo tin khi mới xuất hiện standby_fuel lần đầu
+          const isNewStandby = newStandby > 0 && oldStandby <= 0;
+          // Báo tin khi mới xuất hiện fuel_order lần đầu
+          const isNewFuelOrder = newFuelOrder > 0 && oldFuelOrder <= 0;
+          
+          // Kiểm tra thay đổi trị số khi đã có dữ liệu từ trước
+          const isStandbyChanged = oldStandby > 0 && newStandby > 0 && oldStandby !== newStandby;
+          const isFuelOrderChanged = oldFuelOrder > 0 && newFuelOrder > 0 && oldFuelOrder !== newFuelOrder;
+          const isFuelChanged = isStandbyChanged || isFuelOrderChanged;
+
+          // Báo tin khi đổi tàu bay
           const isAcRegChanged = oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
                                  (String(oldOrder.ac_reg).trim() !== cleanACREG);
 
-          const isFirstTimeFuel = (!oldOrder || oldOrder.status === 'Chờ cập nhật') && hasOrder;
-          const isFuelUpdated = oldOrder && oldOrder.status === 'Đã có số liệu' && 
-                                (String(oldOrder.fuel_order) !== String(detail.fuel_order) || 
-                                 String(oldOrder.standby_fuel) !== String(detail.standby_fuel) ||
-                                 isAcRegChanged);
+          const shouldNotify = isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged;
 
-          if (isFirstTimeFuel || isFuelUpdated) {
+          if (shouldNotify) {
             // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày
             const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel FROM fms_schedules WHERE flight_no = ? AND date = ?', cleanFltNo, targetDate);
             
-            const title = isFirstTimeFuel ? '🔔 [FMS BÁO TẢI DẦU MỚI]' : '🔄 [FMS CẬP NHẬT TẢI DẦU]';
+            let title = '🔔 [FMS BÁO TẢI DẦU MỚI]';
+            if (isNewStandby && !isNewFuelOrder) {
+              title = '🔔 [FMS BÁO TẢI DẦU STANDBY MỚI]';
+            } else if (isNewFuelOrder) {
+              title = '⛽ [FMS BÁO TẢI DẦU CHÍNH THỨC MỚI]';
+            } else if (isFuelChanged) {
+              title = '🔄 [FMS CẬP NHẬT SỐ LIỆU TẢI DẦU]';
+            } else if (isAcRegChanged) {
+              title = '🛩️ [FMS CẢNH BÁO THAY ĐỔI TÀU BAY]';
+            }
             
             // Lấy giá trị cũ phục vụ template
             const oldAcRegVal = oldOrder ? (oldOrder.ac_reg || '-') : '-';

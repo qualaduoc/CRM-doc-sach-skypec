@@ -1406,6 +1406,108 @@ app.post('/api/fms/zalo/send-test', authenticateToken, async (req, res) => {
   }
 });
 
+// Gửi tin nhắn thử FMS thực tế (chỉ Admin)
+app.post('/api/fms/zalo/test-realtime', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  try {
+    const db = await getDb();
+    
+    // Lấy cấu hình nhóm Zalo
+    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+    const targetGroupId = groupSetting ? groupSetting.value : null;
+    if (!targetGroupId) {
+      return res.status(400).json({ success: false, error: 'Vui lòng chọn và lưu nhóm Zalo đích trước!' });
+    }
+
+    // Đọc template từ settings
+    const templateSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_message_template'");
+    let template = templateSetting ? templateSetting.value : '';
+    if (!template || template.trim() === '') {
+      template = `{{status_change_title}}
+✈️ Chuyến bay: {{flight_no}}
+👥 Cặp tra nạp: {{crew_info}}
+# Mẫu tin nhắn FMS mặc định...`;
+      template = `{{status_change_title}}
+✈️ Chuyến bay: {{flight_no}}
+👥 Cặp tra nạp: {{crew_info}}
+🚛 Số xe nạp: {{truck_no}}
+📍 Vị trí đỗ: {{gate}}
+🛩️ Số hiệu tàu: {{ac_reg}} (Loại: {{ac_type}})
+---------------------------
+⛽ Tải dầu Standby (CFP): {{standby_fuel}} kg
+⛽ Tải dầu Chính thức: {{fuel_order}} kg
+⏰ Giờ Tra nạp: {{time_fuel}}
+⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}`;
+    }
+
+    // Cố gắng tìm một chuyến bay thực tế trong DB để test
+    let testFlight = await db.get('SELECT flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order FROM fms_fuel_orders WHERE status = "Đã có số liệu" LIMIT 1');
+    let sched = null;
+    
+    if (testFlight) {
+      sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel FROM fms_schedules WHERE flight_no = ? LIMIT 1', testFlight.flight_no);
+    } else {
+      // Giả lập dữ liệu ảo nếu DB trống
+      testFlight = {
+        flight_no: 'VN319',
+        ac_reg: 'VN-A897',
+        ac_type: 'A350',
+        dep_arr: 'DAD-SGN',
+        standby_fuel: 14500,
+        fuel_order: 16000
+      };
+      sched = {
+        crew_info: 'Thùy - Được',
+        truck_no: 'Xe 12',
+        gate: 'Gate 18',
+        time_arr: '18:30',
+        time_dep: '19:15',
+        time_fuel: '18:45'
+      };
+    }
+
+    const title = '⛽ [FMS TEST GỬI TIN THỰC TẾ]';
+    const formatNumber = (val) => {
+      const num = parseInt(val);
+      return isNaN(num) ? '0' : num.toLocaleString();
+    };
+
+    const replacements = {
+      status_change_title: title,
+      flight_no: testFlight.flight_no,
+      ac_reg: testFlight.ac_reg || '-',
+      old_ac_reg: 'VN-A886 (Cũ)',
+      ac_type: testFlight.ac_type || '-',
+      route: testFlight.dep_arr || '-',
+      gate: sched ? (sched.gate || '-') : '-',
+      old_gate: 'Gate 05',
+      crew_info: sched ? (sched.crew_info || '-') : '-',
+      truck_no: sched ? (sched.truck_no || '-') : '-',
+      standby_fuel: formatNumber(testFlight.standby_fuel),
+      old_standby_fuel: '12,000',
+      fuel_order: formatNumber(testFlight.fuel_order),
+      old_fuel_order: '14,500',
+      time_fuel: sched && sched.time_fuel ? sched.time_fuel : '-',
+      time_arr: sched && sched.time_arr ? sched.time_arr : '-',
+      time_dep: sched && sched.time_dep ? sched.time_dep : '-'
+    };
+
+    let msg = template;
+    for (const [key, value] of Object.entries(replacements)) {
+      const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
+      msg = msg.replace(regex, value);
+    }
+
+    const response = await sendSkyOneMessage(targetGroupId, msg);
+    res.json({ success: true, message: `Đã bắn tin nhắn test thực tế cho chuyến bay ${testFlight.flight_no} thành công!`, response });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Yêu cầu quét FMS thủ công tức thì (chỉ Admin)
 app.post('/api/fms/sync', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') {
@@ -1527,8 +1629,8 @@ app.listen(PORT, async () => {
   // Khởi chạy bộ máy học tập chạy ngầm cho các tài khoản đang bật sẵn
   await initEngine();
 
-  // Khởi chạy tiến trình quét ngầm FMS (3 phút một lần)
-  startFmsWorker(3 * 60 * 1000);
+  // Khởi chạy tiến trình quét ngầm FMS (1.5 phút/90 giây một lần)
+  startFmsWorker(1.5 * 60 * 1000);
 
   // Tự động kết nối Zalo Bot SkyOne nếu đã có session cookies
   initZaloBot().catch(err => console.error('[SkyOne] Khởi tạo Zalo tự động thất bại:', err.message));

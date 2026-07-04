@@ -315,6 +315,7 @@ function setupEventListeners() {
   // --- SỰ KIỆN TRỢ LÝ ZALO SKYONE ---
   document.getElementById('btn-skyone-connect').addEventListener('click', handleSkyOneConnect);
   document.getElementById('btn-skyone-send-test').addEventListener('click', handleSkyOneSendTest);
+  document.getElementById('btn-skyone-test-realtime').addEventListener('click', handleSkyOneTestRealtime);
   document.getElementById('btn-skyone-logout').addEventListener('click', handleSkyOneLogout);
   document.getElementById('skyone-group-select').addEventListener('change', handleSaveSkyOneSettings);
   document.getElementById('skyone-notify-enabled').addEventListener('change', handleSaveSkyOneSettings);
@@ -1910,6 +1911,42 @@ async function handleSkyOneSendTest() {
     }
   } catch (e) {
     showToast('Lỗi gửi thử Zalo: ' + e.message, 'error', 'Lỗi kết nối');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+
+// Gửi tin nhắn test FMS thực tế
+async function handleSkyOneTestRealtime() {
+  const groupSelect = document.getElementById('skyone-group-select');
+  const groupId = groupSelect.value;
+  if (!groupId) {
+    showToast('Vui lòng chọn nhóm Zalo nhận tin trước khi test thực tế!', 'warning', 'Lưu ý');
+    return;
+  }
+
+  const btn = document.getElementById('btn-skyone-test-realtime');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>...';
+
+  try {
+    const res = await fetch('/api/fms/zalo/test-realtime', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Đã gửi tin nhắn test thực tế thành công! Hãy kiểm tra nhóm Zalo.', 'success', 'Gửi test thành công');
+    } else {
+      showToast(data.error, 'error', 'Gửi test thất bại');
+    }
+  } catch (e) {
+    showToast('Lỗi gửi test thực tế: ' + e.message, 'error', 'Lỗi kết nối');
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
