@@ -1744,14 +1744,14 @@ app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) =>
   }
 });
 
-// Cập nhật hình thức thông báo Zalo (notify_type) cho chuyến bay
+// Cập nhật hình thức thông báo Zalo (notify_type) cho Cặp trực ban
 app.post('/api/fms/schedule/update-notify-type', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thay đổi cài đặt thông báo Zalo!' });
   }
 
-  const { flightNo, date, notifyType } = req.body;
-  if (!flightNo || !date || notifyType === undefined) {
+  const { crewInfo, date, notifyType } = req.body;
+  if (!crewInfo || !date || notifyType === undefined) {
     return res.status(400).json({ success: false, error: 'Thiếu thông số cần thiết!' });
   }
 
@@ -1763,19 +1763,19 @@ app.post('/api/fms/schedule/update-notify-type', authenticateToken, async (req, 
   try {
     const db = await getDb();
     
-    // Cập nhật tất cả bản ghi khớp chuyến bay và ngày bay
+    // Cập nhật tất cả bản ghi khớp Cặp trực ban và ngày bay
     const result = await db.run(
-      'UPDATE fms_schedules SET notify_type = ? WHERE flight_no = ? AND date = ?',
+      'UPDATE fms_schedules SET notify_type = ? WHERE UPPER(crew_info) = UPPER(?) AND date = ?',
       nType,
-      flightNo,
+      crewInfo.trim(),
       date
     );
 
     if (result.changes === 0) {
-      return res.status(404).json({ success: false, error: 'Không tìm thấy chuyến bay tương ứng!' });
+      return res.status(404).json({ success: false, error: 'Không tìm thấy Cặp trực ban tương ứng trong lịch trực!' });
     }
 
-    res.json({ success: true, message: 'Đã cập nhật hình thức thông báo Zalo thành công!' });
+    res.json({ success: true, message: `Đã cập nhật hình thức báo Zalo cho cặp ${crewInfo.trim()} thành công!` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

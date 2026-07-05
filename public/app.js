@@ -539,44 +539,55 @@ function setupEventListeners() {
       });
     });
 
-    // Lắng nghe thay đổi dropdown hình thức thông báo Zalo trực tiếp trên bảng theo dõi FMS
-    fmsTbody.addEventListener('change', async (e) => {
-      if (e.target.classList.contains('fms-notify-type-select')) {
-        const select = e.target;
-        const flightNo = select.getAttribute('data-flight');
-        const date = select.getAttribute('data-date');
-        const notifyType = parseInt(select.value);
-        const originalVal = parseInt(select.getAttribute('data-original-val') || "1");
+  }
 
-        try {
-          const res = await fetch('/api/fms/schedule/update-notify-type', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${state.token}`
-            },
-            body: JSON.stringify({ flightNo, date, notifyType })
-          });
-          const data = await res.json();
-          if (data.success) {
-            showToast(`Đã cập nhật hình thức báo Zalo: ${select.options[select.selectedIndex].text}`, 'success', 'Cập nhật thành công');
-            select.setAttribute('data-original-val', notifyType);
-            
-            // Cập nhật cache cục bộ
-            const cachedIdx = cachedFmsRows.findIndex(r => r.flight_no === flightNo && r.date === date);
-            if (cachedIdx !== -1) {
-              cachedFmsRows[cachedIdx].notify_type = notifyType;
+  // Lắng nghe thay đổi dropdown hình thức thông báo Zalo theo Cặp trực ban trên bảng chính
+  const notifyContainer = document.getElementById('fms-crew-notify-settings-container');
+  if (notifyContainer) {
+    if (!notifyContainer.getAttribute('data-has-listener')) {
+      notifyContainer.setAttribute('data-has-listener', 'true');
+      notifyContainer.addEventListener('change', async (e) => {
+        if (e.target.classList.contains('fms-crew-notify-select')) {
+          const select = e.target;
+          const crewInfo = select.getAttribute('data-crew');
+          const date = select.getAttribute('data-date');
+          const notifyType = parseInt(select.value);
+          const originalVal = parseInt(select.getAttribute('data-original-val') || "1");
+
+          try {
+            const res = await fetch('/api/fms/schedule/update-notify-type', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.token}`
+              },
+              body: JSON.stringify({ crewInfo, date, notifyType })
+            });
+            const data = await res.json();
+            if (data.success) {
+              showToast(`Đã chuyển cài đặt Cặp ${crewInfo} sang: ${select.options[select.selectedIndex].text}`, 'success', 'Cập nhật thành công');
+              select.setAttribute('data-original-val', notifyType);
+              
+              // Cập nhật cache cục bộ cho tất cả các chuyến bay thuộc cặp trực này
+              cachedFmsRows.forEach(r => {
+                if (r.crew_info && r.crew_info.toUpperCase().trim() === crewInfo.toUpperCase().trim() && r.date === date) {
+                  r.notify_type = notifyType;
+                }
+              });
+              
+              // Vẽ lại bảng
+              renderFmsTable();
+            } else {
+              showToast(data.error || 'Lỗi cập nhật hình thức thông báo', 'error', 'Cập nhật thất bại');
+              select.value = originalVal; // Rollback
             }
-          } else {
-            showToast(data.error || 'Lỗi cập nhật hình thức thông báo', 'error', 'Cập nhật thất bại');
+          } catch (err) {
+            showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi cập nhật');
             select.value = originalVal; // Rollback
           }
-        } catch (err) {
-          showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi cập nhật');
-          select.value = originalVal; // Rollback
         }
-      }
-    });
+      });
+    }
   }
 }
 
@@ -1548,6 +1559,50 @@ function renderFmsTable() {
   const tbody = document.getElementById('fms-table-body');
   if (!tbody) return;
 
+  // Vẽ cấu hình thông báo Zalo theo Cặp trực ban
+  const crewContainer = document.getElementById('fms-crew-notify-settings-container');
+  if (crewContainer) {
+    const crewMap = {};
+    cachedFmsRows.forEach(r => {
+      if (r.crew_info && r.crew_info !== '-') {
+        const key = r.crew_info.toUpperCase().trim();
+        if (!crewMap[key]) {
+          crewMap[key] = {
+            crewName: r.crew_info,
+            truckNo: r.truck_no || '-',
+            notifyType: r.notify_type || 1,
+            date: r.date
+          };
+        }
+      }
+    });
+
+    const crews = Object.values(crewMap);
+    if (crews.length > 0) {
+      crewContainer.innerHTML = `
+        <div style="width: 100%; font-size: 0.85rem; font-weight: bold; color: #fb923c; margin-bottom: 5px; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-comments"></i> Hình Thức Báo Tin Zalo Theo Cặp Trực Ban:
+        </div>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
+          ${crews.map(c => `
+            <div class="crew-notify-badge" style="background: rgba(30, 41, 59, 0.65); border: 1px solid rgba(56, 189, 248, 0.25); padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.82rem;">
+              <span style="font-weight: bold; color: #38bdf8;">👥 ${c.crewName} ${c.truckNo !== '-' ? `(Xe: ${c.truckNo})` : ''}</span>
+              <select class="fms-crew-notify-select" data-crew="${c.crewName}" data-date="${c.date || ''}" data-original-val="${c.notifyType}" style="font-size: 0.75rem; padding: 2px 4px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white; cursor: pointer; outline: none;">
+                <option value="1" ${c.notifyType == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
+                <option value="2" ${c.notifyType == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
+                <option value="3" ${c.notifyType == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
+              </select>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      crewContainer.style.display = 'block';
+    } else {
+      crewContainer.innerHTML = '';
+      crewContainer.style.display = 'none';
+    }
+  }
+
   const searchInput = document.getElementById('fms-search-input');
   const crewSelect = document.getElementById('fms-crew-filter');
 
@@ -1928,6 +1983,68 @@ function renderZaloMappingTable(flights) {
   }
 }
 
+// Vẽ bảng cấu hình thông báo Zalo theo Cặp trực ban trong Modal Preview
+function renderCrewNotifyTable(flights) {
+  const crewMap = {};
+  flights.forEach(f => {
+    const driver = (f.driver_name || '').trim().toUpperCase();
+    const operator = (f.operator_name || '').trim().toUpperCase();
+    
+    if (!driver && !operator) return;
+    
+    const crewName = `${driver || '?'}-${operator || '?'}`;
+    const truckNo = f.truck_no || '-';
+    
+    const key = `${crewName}::${truckNo}`;
+    if (!crewMap[key]) {
+      crewMap[key] = {
+        crewName,
+        truckNo,
+        notifyType: f.notify_type || 1
+      };
+    }
+  });
+
+  const crews = Object.values(crewMap);
+  const notifyTbody = document.getElementById('fms-crew-notify-table-body');
+  const section = document.getElementById('fms-crew-notify-section');
+
+  if (crews.length > 0) {
+    const currentSelections = {};
+    document.querySelectorAll('.crew-notify-row').forEach(row => {
+      const key = row.getAttribute('data-key');
+      const select = row.querySelector('.crew-notify-select');
+      if (key && select) {
+        currentSelections[key] = select.value;
+      }
+    });
+
+    notifyTbody.innerHTML = crews.map(c => {
+      const key = `${c.crewName}::${c.truckNo}`;
+      const savedNotifyType = currentSelections[key] !== undefined ? currentSelections[key] : c.notifyType;
+
+      return `
+        <tr class="crew-notify-row" data-key="${key}" data-crew="${c.crewName}" data-truck="${c.truckNo}">
+          <td style="font-weight: 700; color: #fb923c;">${c.crewName}</td>
+          <td style="font-weight: bold; color: var(--primary);">${c.truckNo}</td>
+          <td>
+            <select class="crew-notify-select" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
+              <option value="1" ${savedNotifyType == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
+              <option value="2" ${savedNotifyType == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
+              <option value="3" ${savedNotifyType == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
+            </select>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    section.style.display = 'block';
+  } else {
+    notifyTbody.innerHTML = '';
+    section.style.display = 'none';
+  }
+}
+
 // Gửi xác nhận lưu lịch trực bay từ Modal Preview
 // Render dữ liệu nhận diện ảnh/Excel lên preview modal (kèm cấu hình Zalo Mapping)
 async function renderFmsPreviewContent(flights) {
@@ -1944,7 +2061,7 @@ async function renderFmsPreviewContent(flights) {
   btnConfirm.disabled = false;
   btnConfirm.innerHTML = originalConfirmText;
 
-  // 2. Render bảng chuyến bay kèm ô input cho phép sửa tên Lái xe - Thợ bơm trực tiếp và dropdown "Báo Zalo"
+  // 2. Render bảng chuyến bay kèm ô input cho phép sửa tên Lái xe - Thợ bơm trực tiếp (Đã xóa cột Báo Zalo)
   const tbody = document.getElementById('fms-preview-table-body');
   tbody.innerHTML = flights.map((f, index) => `
     <tr>
@@ -1963,17 +2080,10 @@ async function renderFmsPreviewContent(flights) {
       <td>
         <input type="text" class="fms-preview-operator-input" data-index="${index}" value="${f.operator_name || ''}" style="width: 100%; min-width: 110px; padding: 4px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600;">
       </td>
-      <td style="text-align: center;">
-        <select class="fms-preview-notify-select" data-index="${index}" style="padding: 4px; font-size: 0.85rem; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
-          <option value="1" ${f.notify_type == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
-          <option value="2" ${f.notify_type == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
-          <option value="3" ${f.notify_type == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
-        </select>
-      </td>
     </tr>
   `).join('');
 
-  // Lắng nghe sự thay đổi tên nhân viên để cập nhật realtime bảng Zalo Mapping phía dưới
+  // Lắng nghe sự thay đổi tên nhân viên để cập nhật realtime các bảng Zalo Mapping & Crew Notify
   const updatePreviewInputs = () => {
     tbody.querySelectorAll('.fms-preview-driver-input').forEach(input => {
       const idx = parseInt(input.getAttribute('data-index'));
@@ -1984,14 +2094,16 @@ async function renderFmsPreviewContent(flights) {
       state.fmsPreviewFlights[idx].operator_name = input.value.trim();
     });
     renderZaloMappingTable(state.fmsPreviewFlights);
+    renderCrewNotifyTable(state.fmsPreviewFlights);
   };
 
   tbody.querySelectorAll('.fms-preview-driver-input, .fms-preview-operator-input').forEach(input => {
     input.addEventListener('input', updatePreviewInputs);
   });
 
-  // 3. Gọi render bảng Zalo Mapping
+  // 3. Gọi render bảng Zalo Mapping & Crew Notify
   renderZaloMappingTable(flights);
+  renderCrewNotifyTable(flights);
 
   // Hiện Modal Xem trước
   document.getElementById('fms-preview-modal').classList.add('active');
@@ -2027,10 +2139,25 @@ async function handleConfirmFmsPreview() {
       }
     });
 
+    // 1b. Gom cấu hình báo Zalo theo Cặp trực ban
+    const crewNotifyMap = {}; // "crewName::truckNo" -> notifyType
+    document.querySelectorAll('.crew-notify-row').forEach(row => {
+      const key = row.getAttribute('data-key');
+      const select = row.querySelector('.crew-notify-select');
+      if (key && select) {
+        crewNotifyMap[key.toUpperCase()] = parseInt(select.value);
+      }
+    });
+
     // 2. Cập nhật crew_zalo_uids và notify_type cho từng chuyến bay
     const finalFlights = state.fmsPreviewFlights.map((f, index) => {
-      const notifySelect = document.querySelector(`.fms-preview-notify-select[data-index="${index}"]`);
-      const notifyType = notifySelect ? parseInt(notifySelect.value) : 1;
+      const driver = (f.driver_name || '').trim().toUpperCase();
+      const operator = (f.operator_name || '').trim().toUpperCase();
+      const crewName = `${driver}-${operator}`;
+      const truckNo = f.truck_no || '-';
+      const key = `${crewName}::${truckNo}`.toUpperCase();
+
+      const notifyType = crewNotifyMap[key] !== undefined ? crewNotifyMap[key] : 1;
 
       // Gom UID của driver và operator của chuyến bay này dựa trên bảng nameToUidMap
       const uids = [];
@@ -2046,6 +2173,7 @@ async function handleConfirmFmsPreview() {
 
       return {
         ...f,
+        crew_info: f.driver_name && f.operator_name ? `${f.driver_name.trim()} - ${f.operator_name.trim()}` : f.crew_info,
         crew_zalo_uids: uniqueUids.join(','),
         notify_type: notifyType
       };

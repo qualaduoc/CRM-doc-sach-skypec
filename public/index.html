@@ -353,6 +353,11 @@
               </div>
             </div>
             
+            <!-- Khu vực cài đặt thông báo Zalo theo Cặp trực ban -->
+            <div id="fms-crew-notify-settings-container" style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; margin-bottom: 10px; padding: 10px; background: rgba(255,255,255,0.01); border: 1px dashed rgba(255,255,255,0.08); border-radius: 8px; display: none;">
+              <!-- Vẽ động từ JS -->
+            </div>
+            
             <div class="table-container" style="margin-top: 5px;">
               <table class="crm-table">
                 <thead>
@@ -616,13 +621,36 @@
               <th style="text-align: center;">Số xe</th>
               <th>Lái xe</th>
               <th>Thợ bơm</th>
-              <th style="width: 140px; text-align: center;">Báo Zalo</th>
             </tr>
           </thead>
           <tbody id="fms-preview-table-body">
             <!-- Render động từ JS -->
           </tbody>
         </table>
+      </div>
+
+      <!-- Cấu hình thông báo theo Cặp trực ban -->
+      <div id="fms-crew-notify-section" style="margin-top: 20px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 15px; display: none;">
+        <h4 style="margin-bottom: 10px; color: #fb923c; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-comments"></i> Cài Đặt Thông Báo Theo Cặp Trực Ban
+        </h4>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+          Chọn hình thức gửi tin nhắn báo Zalo (tag nhóm, inbox, hoặc cả hai) cho từng Cặp tra nạp trong ngày.
+        </div>
+        <div class="table-container" style="max-height: 250px; overflow-y: auto; margin-bottom: 20px;">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Cặp trực ban</th>
+                <th>Xe nạp</th>
+                <th style="width: 250px; text-align: center;">Hình thức báo Zalo</th>
+              </tr>
+            </thead>
+            <tbody id="fms-crew-notify-table-body">
+              <!-- Render động các Cặp trực từ JS -->
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Bảng ánh xạ Zalo bổ sung -->
