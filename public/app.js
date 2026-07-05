@@ -538,6 +538,45 @@ function setupEventListeners() {
         }
       });
     });
+
+    // Lắng nghe thay đổi dropdown hình thức thông báo Zalo trực tiếp trên bảng theo dõi FMS
+    fmsTbody.addEventListener('change', async (e) => {
+      if (e.target.classList.contains('fms-notify-type-select')) {
+        const select = e.target;
+        const flightNo = select.getAttribute('data-flight');
+        const date = select.getAttribute('data-date');
+        const notifyType = parseInt(select.value);
+        const originalVal = parseInt(select.getAttribute('data-original-val') || "1");
+
+        try {
+          const res = await fetch('/api/fms/schedule/update-notify-type', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({ flightNo, date, notifyType })
+          });
+          const data = await res.json();
+          if (data.success) {
+            showToast(`Đã cập nhật hình thức báo Zalo: ${select.options[select.selectedIndex].text}`, 'success', 'Cập nhật thành công');
+            select.setAttribute('data-original-val', notifyType);
+            
+            // Cập nhật cache cục bộ
+            const cachedIdx = cachedFmsRows.findIndex(r => r.flight_no === flightNo && r.date === date);
+            if (cachedIdx !== -1) {
+              cachedFmsRows[cachedIdx].notify_type = notifyType;
+            }
+          } else {
+            showToast(data.error || 'Lỗi cập nhật hình thức thông báo', 'error', 'Cập nhật thất bại');
+            select.value = originalVal; // Rollback
+          }
+        } catch (err) {
+          showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi cập nhật');
+          select.value = originalVal; // Rollback
+        }
+      }
+    });
   }
 }
 
@@ -1561,6 +1600,17 @@ function renderFmsTable() {
     const crewText = r.crew_info || '-';
     const truckText = r.truck_no ? `<br><span style="color: var(--primary); font-size: 0.8rem; font-weight: bold;"><i class="fa-solid fa-truck-field"></i> Xe: ${r.truck_no}</span>` : '';
     
+    // Dropdown chọn hình thức báo Zalo trực tiếp trên bảng theo dõi chính
+    const notifyTypeDropdown = `
+      <div style="margin-top: 5px;">
+        <select class="fms-notify-type-select" data-flight="${r.flight_no}" data-date="${r.date || ''}" data-original-val="${r.notify_type || 1}" style="font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; border: 1px dashed rgba(56, 189, 248, 0.4); background: #0f172a; color: #38bdf8; cursor: pointer; max-width: 120px;">
+          <option value="1" ${r.notify_type == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
+          <option value="2" ${r.notify_type == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
+          <option value="3" ${r.notify_type == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
+        </select>
+      </div>
+    `;
+    
     // 1. Tính toán hiệu ứng nhấp nháy cảnh báo (hết hạn nhấp nháy sau giờ tra nạp 15 phút)
     let blinkAcReg = false;
     let blinkStandby = false;
@@ -1655,7 +1705,7 @@ function renderFmsTable() {
     return `
       <tr>
         <td style="font-weight: 700; color: #38bdf8; font-size: 1rem;">${r.flight_no}</td>
-        <td class="hide-on-mobile">${crewText}${truckText}</td>
+        <td class="hide-on-mobile">${crewText}${truckText}${notifyTypeDropdown}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
         <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${gateHtml}</td>
         <td>${timesHtml}</td>

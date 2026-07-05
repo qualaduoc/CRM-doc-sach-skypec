@@ -1744,6 +1744,43 @@ app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) =>
   }
 });
 
+// Cập nhật hình thức thông báo Zalo (notify_type) cho chuyến bay
+app.post('/api/fms/schedule/update-notify-type', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền thay đổi cài đặt thông báo Zalo!' });
+  }
+
+  const { flightNo, date, notifyType } = req.body;
+  if (!flightNo || !date || notifyType === undefined) {
+    return res.status(400).json({ success: false, error: 'Thiếu thông số cần thiết!' });
+  }
+
+  const nType = parseInt(notifyType);
+  if (![1, 2, 3].includes(nType)) {
+    return res.status(400).json({ success: false, error: 'Hình thức thông báo không hợp lệ!' });
+  }
+
+  try {
+    const db = await getDb();
+    
+    // Cập nhật tất cả bản ghi khớp chuyến bay và ngày bay
+    const result = await db.run(
+      'UPDATE fms_schedules SET notify_type = ? WHERE flight_no = ? AND date = ?',
+      nType,
+      flightNo,
+      date
+    );
+
+    if (result.changes === 0) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy chuyến bay tương ứng!' });
+    }
+
+    res.json({ success: true, message: 'Đã cập nhật hình thức thông báo Zalo thành công!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Nhận diện ảnh lịch bay trực ca qua Gemini Vision API (chỉ Admin hoặc người có quyền FMS)
 app.post('/api/fms/ocr-image', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
