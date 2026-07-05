@@ -47,9 +47,10 @@ async function run() {
         for (let i = 0; i < uids.length && i < 150; i += chunkSize) {
           const chunk = uids.slice(i, i + chunkSize);
           const membersInfo = await api.getGroupMembersInfo(chunk);
-          if (membersInfo) {
-            // Xem cấu trúc membersInfo trả về
-            // ZCA SDK: getGroupMembersInfo trả về map uid -> profile object
+          console.log("Cấu trúc membersInfo thô:", JSON.stringify(membersInfo, null, 2));
+          if (membersInfo && membersInfo.profiles) {
+            allMembersInfo = { ...allMembersInfo, ...membersInfo.profiles };
+          } else if (membersInfo) {
             allMembersInfo = { ...allMembersInfo, ...membersInfo };
           }
         }

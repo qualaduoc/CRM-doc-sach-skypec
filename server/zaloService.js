@@ -290,8 +290,8 @@ async function logoutBot() {
   return true;
 }
 
-// Gửi tin nhắn đến nhóm
-async function sendSkyOneMessage(groupId, message) {
+// Gửi tin nhắn đến nhóm (hỗ trợ tag mentions)
+async function sendSkyOneMessage(groupId, message, mentions = []) {
   if (!activeApi) {
     // Thử kết nối lại bằng cookies đã có
     await initZaloBot();
@@ -301,12 +301,36 @@ async function sendSkyOneMessage(groupId, message) {
   }
 
   try {
+    const payload = { msg: message };
+    if (Array.isArray(mentions) && mentions.length > 0) {
+      payload.mentions = mentions;
+    }
     // 1 chính là ThreadTypeGroup trong ZCA SDK
-    const res = await activeApi.sendMessage({ msg: message }, String(groupId), 1);
-    console.log('[SkyOne] Đã gửi thông báo thành công!');
+    const res = await activeApi.sendMessage(payload, String(groupId), 1);
+    console.log('[SkyOne] Đã gửi thông báo nhóm thành công!');
     return res;
   } catch (err) {
-    console.error('[SkyOne] Gửi tin nhắn thất bại:', err.message);
+    console.error('[SkyOne] Gửi tin nhắn nhóm thất bại:', err.message);
+    throw err;
+  }
+}
+
+// Gửi tin nhắn inbox cá nhân riêng tư
+async function sendSkyOnePrivateMessage(zaloUid, message) {
+  if (!activeApi) {
+    await initZaloBot();
+    if (!activeApi) {
+      throw new Error('Bot Zalo chưa được đăng nhập hoặc không hoạt động!');
+    }
+  }
+
+  try {
+    // 0 chính là ThreadType.User trong ZCA SDK
+    const res = await activeApi.sendMessage({ msg: message }, String(zaloUid), 0);
+    console.log(`[SkyOne] Đã gửi inbox riêng thành công tới UID ${zaloUid}!`);
+    return res;
+  } catch (err) {
+    console.error(`[SkyOne] Gửi inbox riêng thất bại tới UID ${zaloUid}:`, err.message);
     throw err;
   }
 }
@@ -326,5 +350,6 @@ module.exports = {
   getBotGroups,
   logoutBot,
   sendSkyOneMessage,
+  sendSkyOnePrivateMessage,
   getBotState
 };

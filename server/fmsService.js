@@ -2,7 +2,7 @@ const http = require('http');
 const https = require('https');
 const querystring = require('querystring');
 const { getDb } = require('./db');
-const { sendSkyOneMessage } = require('./zaloService');
+const { sendSkyOneMessage, sendSkyOnePrivateMessage } = require('./zaloService');
 
 const HOST = 'fms.vietnamairlines.com';
 
@@ -341,8 +341,8 @@ async function syncFMSData() {
           const shouldNotify = isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged;
 
           if (shouldNotify) {
-            // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày
-            const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel FROM fms_schedules WHERE flight_no = ? AND date = ?', cleanFltNo, targetDate);
+            // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày (kèm cấu hình Zalo)
+            const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type FROM fms_schedules WHERE flight_no = ? AND date = ?', cleanFltNo, targetDate);
             
             let title = '🔔 [FMS BÁO TẢI DẦU MỚI]';
             if (isNewStandby && !isNewFuelOrder) {
@@ -453,13 +453,60 @@ async function syncFMSData() {
           const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
           const targetGroupId = groupSetting ? groupSetting.value : null;
 
-          if (isSkyOneEnabled && targetGroupId) {
-            const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
-            groupIds.forEach(id => {
-              sendSkyOneMessage(id, msg)
-                .then(() => log(`[SkyOne] Đã gửi thông báo trực tiếp cho chuyến bay ${cleanFltNo} tới nhóm ${id} thành công!`))
-                .catch(err => console.error(`[SkyOne] Gửi tới nhóm ${id} thất bại:`, err.message));
-            });
+          if (isSkyOneEnabled) {
+            const notifyType = sched ? (sched.notify_type || 1) : 1;
+            const crewZaloUidsStr = sched ? (sched.crew_zalo_uids || '') : '';
+            const uids = crewZaloUidsStr.split(',').map(uid => uid.trim()).filter(Boolean);
+
+            let msgGroup = msg;
+            let groupMentions = [];
+
+            // Nếu cần gửi vào nhóm (notifyType === 1 hoặc 3)
+            if ((notifyType === 1 || notifyType === 3) && targetGroupId) {
+              if (uids.length > 0) {
+                try {
+                  const placeholders = uids.map(() => '?').join(',');
+                  const mappings = await db.all(`SELECT zalo_uid, zalo_name FROM zalo_user_mappings WHERE zalo_uid IN (${placeholders})`, uids);
+                  const nameMap = {};
+                  mappings.forEach(m => {
+                    nameMap[m.zalo_uid] = m.zalo_name || m.zalo_uid;
+                  });
+
+                  let tagPrefix = '\n👥 Người trực: ';
+                  let msgWithTags = msg + tagPrefix;
+                  uids.forEach(uid => {
+                    const zaloName = nameMap[uid] || 'Thành viên';
+                    const tagLabel = `@${zaloName}`;
+                    const startPos = msgWithTags.length;
+                    msgWithTags += tagLabel + ' ';
+                    groupMentions.push({
+                      pos: startPos,
+                      uid: uid,
+                      len: tagLabel.length
+                    });
+                  });
+                  msgGroup = msgWithTags.trimEnd();
+                } catch (mentionErr) {
+                  console.error('[Mentions Build Error]', mentionErr.message);
+                }
+              }
+
+              const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+              groupIds.forEach(id => {
+                sendSkyOneMessage(id, msgGroup, groupMentions)
+                  .then(() => log(`[SkyOne] Đã gửi thông báo trực tiếp cho chuyến bay ${cleanFltNo} tới nhóm ${id} thành công!`))
+                  .catch(err => console.error(`[SkyOne] Gửi tới nhóm ${id} thất bại:`, err.message));
+              });
+            }
+
+            // Nếu cần gửi inbox cá nhân riêng (notifyType === 2 hoặc 3)
+            if ((notifyType === 2 || notifyType === 3) && uids.length > 0) {
+              uids.forEach(uid => {
+                sendSkyOnePrivateMessage(uid, msg)
+                  .then(() => log(`[SkyOne] Đã gửi tin nhắn riêng cho chuyến bay ${cleanFltNo} tới UID ${uid} thành công!`))
+                  .catch(err => console.error(`[SkyOne] Gửi tin nhắn riêng tới UID ${uid} thất bại:`, err.message));
+              });
+            }
           }
 
           // Gửi qua Webhook Bot Zalo cũ làm phương án dự phòng (fallback)

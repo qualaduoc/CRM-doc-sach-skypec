@@ -616,12 +616,37 @@
               <th style="text-align: center;">Số xe</th>
               <th>Lái xe</th>
               <th>Thợ bơm</th>
+              <th style="width: 140px; text-align: center;">Báo Zalo</th>
             </tr>
           </thead>
           <tbody id="fms-preview-table-body">
             <!-- Render động từ JS -->
           </tbody>
         </table>
+      </div>
+
+      <!-- Bảng ánh xạ Zalo bổ sung -->
+      <div id="fms-zalo-mapping-section" style="margin-top: 20px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 15px; display: none;">
+        <h4 style="margin-bottom: 10px; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-user-tag"></i> Liên Kết Thành Viên Zalo Trực Ca
+        </h4>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+          Hệ thống phát hiện danh sách nhân viên trực. Vui lòng chọn tài khoản Zalo tương ứng (hệ thống sẽ tự động ghi nhớ cho các lần sau).
+        </div>
+        <div class="table-container" style="max-height: 250px; overflow-y: auto; margin-bottom: 20px;">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Tên nhân viên trên lịch</th>
+                <th>Chọn tài khoản Zalo trong nhóm</th>
+                <th>Zalo UID</th>
+              </tr>
+            </thead>
+            <tbody id="fms-zalo-mapping-table-body">
+              <!-- Render động nhân viên từ JS -->
+            </tbody>
+          </table>
+        </div>
       </div>
       
       <div style="display: flex; justify-content: flex-end; gap: 10px;">

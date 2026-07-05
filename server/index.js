@@ -11,7 +11,7 @@ const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
 const { syncFMSData, startFmsWorker, getVietnamDbDateStr } = require('./fmsService');
 const { performImageOCR, testSingleGeminiKey } = require('./ocrService');
-const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyOneMessage, getBotState } = require('./zaloService');
+const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyOneMessage, sendSkyOnePrivateMessage, getBotState } = require('./zaloService');
 
 
 const app = express();
@@ -1211,13 +1211,32 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
-  const { scheduleText, flights } = req.body;
+  const { scheduleText, flights, mappings } = req.body;
   if (!scheduleText && (!flights || flights.length === 0)) {
     return res.status(400).json({ success: false, error: 'Vui lòng cung cấp lịch bay hoặc danh sách chuyến bay' });
   }
 
   try {
     const db = await getDb();
+
+    // Lưu các mapping Zalo mới được cấu hình từ client (lưu học hỏi)
+    if (Array.isArray(mappings)) {
+      for (const m of mappings) {
+        if (m.scheduleName && m.zaloUid) {
+          try {
+            await db.run(
+              'INSERT OR REPLACE INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name) VALUES (?, ?, ?)',
+              String(m.scheduleName).trim().toUpperCase(),
+              String(m.zaloUid).trim(),
+              m.zaloName ? String(m.zaloName).trim() : ''
+            );
+          } catch (e) {
+            console.error('[Save Mapping Error]', e.message);
+          }
+        }
+      }
+    }
+
     const todayDb = getVietnamDbDateStr();
     const schedules = [];
 
@@ -1242,7 +1261,9 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
           truck_no: f.truck_no ? f.truck_no.trim() : '',
           driver_name: driverName,
           operator_name: operatorName,
-          crew_info: crewInfo
+          crew_info: crewInfo,
+          crew_zalo_uids: f.crew_zalo_uids ? f.crew_zalo_uids.trim() : '',
+          notify_type: parseInt(f.notify_type) || 1
         });
       }
     } else if (scheduleText) {
@@ -1269,7 +1290,9 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
               truck_no: '',
               driver_name: crewInfo.split('-')[0] ? crewInfo.split('-')[0].trim() : '',
               operator_name: crewInfo.split('-')[1] ? crewInfo.split('-')[1].trim() : '',
-              crew_info: crewInfo
+              crew_info: crewInfo,
+              crew_zalo_uids: '',
+              notify_type: 1
             });
           }
         }
@@ -1288,8 +1311,8 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
       await db.run(`
         INSERT INTO fms_schedules (
           flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel, 
-          gate, truck_no, driver_name, operator_name, crew_info, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          gate, truck_no, driver_name, operator_name, crew_info, crew_zalo_uids, notify_type, date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         item.flight_no,
         item.ac_type,
@@ -1303,6 +1326,8 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
         item.driver_name,
         item.operator_name,
         item.crew_info,
+        item.crew_zalo_uids || '',
+        item.notify_type || 1,
         todayDb
       );
     }
@@ -1341,6 +1366,8 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         s.driver_name,
         s.operator_name,
         s.crew_info,
+        s.crew_zalo_uids,
+        s.notify_type,
         s.date,
         fo.dep_arr,
         fo.standby_fuel,
@@ -1762,6 +1789,126 @@ app.post('/api/fms/settings/test-keys', authenticateToken, async (req, res) => {
 
     const results = await Promise.all(promises);
     res.json({ success: true, results });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// --- API QUẢN LÝ MAPPING THÀNH VIÊN VÀ TRẠNG THÁI ZALO MỚI ---
+let cachedMembers = null;
+let cacheTime = 0;
+
+// API lấy danh sách thành viên nhóm Zalo đang được cấu hình
+app.get('/api/fms/zalo/group-members', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền truy cập cài đặt Zalo' });
+  }
+
+  // Kiểm tra cache (3 phút) để tránh spam API Zalo làm block tài khoản
+  const now = Date.now();
+  if (cachedMembers && (now - cacheTime < 3 * 60 * 1000)) {
+    return res.json({ success: true, members: cachedMembers });
+  }
+
+  try {
+    const db = await getDb();
+    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+    const targetGroupId = groupSetting ? groupSetting.value : null;
+
+    if (!targetGroupId) {
+      return res.json({ success: true, members: [], message: 'Chưa cấu hình nhóm Zalo đích' });
+    }
+
+    const { initZaloBot } = require('./zaloService');
+    const api = await initZaloBot();
+    if (!api) {
+      return res.status(500).json({ success: false, error: 'Bot Zalo chưa được đăng nhập hoặc không hoạt động!' });
+    }
+
+    const ids = targetGroupId.split(',').map(id => id.trim()).filter(Boolean);
+    let allMembers = [];
+    let processedUids = new Set();
+
+    for (const gid of ids) {
+      try {
+        const gInfo = await api.getGroupInfo(gid);
+        const gridInfo = gInfo?.gridInfoMap?.[gid];
+        const memList = gridInfo?.memVerList || [];
+
+        if (memList.length > 0) {
+          const uids = memList.map(item => {
+            if (typeof item === 'string') return item.split('_')[0];
+            if (item && typeof item === 'object') return Object.keys(item)[0];
+            return String(item);
+          }).filter(Boolean);
+
+          const chunkSize = 50;
+          for (let i = 0; i < uids.length; i += chunkSize) {
+            const chunk = uids.slice(i, i + chunkSize);
+            const membersInfo = await api.getGroupMembersInfo(chunk);
+            const profiles = membersInfo?.profiles || membersInfo || {};
+
+            for (const uid of Object.keys(profiles)) {
+              if (!processedUids.has(uid) && uid !== 'profiles' && uid !== 'unchangeds_profile') {
+                processedUids.add(uid);
+                const profile = profiles[uid];
+                allMembers.push({
+                  uid: uid,
+                  displayName: profile?.displayName || profile?.name || profile?.zaloName || uid
+                });
+              }
+            }
+          }
+        }
+      } catch (groupErr) {
+        console.error(`[API Members] Lỗi xử lý nhóm ${gid}:`, groupErr.message);
+      }
+    }
+
+    allMembers.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    
+    cachedMembers = allMembers;
+    cacheTime = now;
+
+    res.json({ success: true, members: allMembers });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API lấy toàn bộ danh sách mapping tên lịch trực -> Zalo UID
+app.get('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
+  try {
+    const db = await getDb();
+    const rows = await db.all('SELECT schedule_name, zalo_uid, zalo_name FROM zalo_user_mappings');
+    res.json({ success: true, mappings: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API thêm/cập nhật mapping Zalo
+app.post('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { scheduleName, zaloUid, zaloName } = req.body;
+  if (!scheduleName || !zaloUid) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp đầy đủ Tên lịch trực và Zalo UID!' });
+  }
+
+  const cleanName = String(scheduleName).trim().toUpperCase();
+
+  try {
+    const db = await getDb();
+    await db.run(
+      'INSERT OR REPLACE INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name) VALUES (?, ?, ?)',
+      cleanName,
+      String(zaloUid).trim(),
+      zaloName ? String(zaloName).trim() : ''
+    );
+    res.json({ success: true, message: `Đã cập nhật mapping cho nhân viên ${cleanName} thành công!` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

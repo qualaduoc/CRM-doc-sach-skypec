@@ -81,6 +81,8 @@ async function getDb() {
       driver_name TEXT,
       operator_name TEXT,
       crew_info TEXT,
+      crew_zalo_uids TEXT,
+      notify_type INTEGER DEFAULT 1,
       date TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -102,6 +104,14 @@ async function getDb() {
       warn_fuel_order INTEGER DEFAULT 0,
       warn_updated_at DATETIME,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS zalo_user_mappings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      schedule_name TEXT UNIQUE,
+      zalo_uid TEXT NOT NULL,
+      zalo_name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
@@ -126,6 +136,8 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN truck_no TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN driver_name TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN operator_name TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN crew_zalo_uids TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN notify_type INTEGER DEFAULT 1;`); } catch(e) {}
 
   // Thêm cột cảnh báo cho fms_fuel_orders của database cũ
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_ac_reg INTEGER DEFAULT 0;`); } catch(e) {}

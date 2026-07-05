@@ -5,8 +5,33 @@ const state = {
   displayName: localStorage.getItem('crm_display_name'),
   department: localStorage.getItem('crm_department'),
   permissions: JSON.parse(localStorage.getItem('crm_permissions') || '{}'),
-  selectedUser: null
+  selectedUser: null,
+  zaloMembers: [],
+  zaloMappings: []
 };
+
+// Tải danh sách thành viên nhóm Zalo và các mapping tên nhân viên trực ca
+async function loadZaloMembersAndMappings() {
+  if (!state.token) return;
+  try {
+    const [resMembers, resMappings] = await Promise.all([
+      fetch('/api/fms/zalo/group-members', { headers: { 'Authorization': `Bearer ${state.token}` } }),
+      fetch('/api/fms/zalo/mappings', { headers: { 'Authorization': `Bearer ${state.token}` } })
+    ]);
+
+    const dataMembers = await resMembers.json();
+    const dataMappings = await resMappings.json();
+
+    if (dataMembers.success) {
+      state.zaloMembers = dataMembers.members || [];
+    }
+    if (dataMappings.success) {
+      state.zaloMappings = dataMappings.mappings || [];
+    }
+  } catch (err) {
+    console.error('[Zalo Load Error]', err.message);
+  }
+}
 
 let dashboardInterval = null;
 
@@ -1739,9 +1764,29 @@ function parseFmsExcel(rows) {
   // Lưu lịch bay bóc tách tạm thời vào state để xác nhận sau
   state.fmsPreviewFlights = flights;
 
-  // Hiển thị bảng xem trước (Preview) lên modal
+  // Hiển thị bảng xem trước (Preview) và Zalo Mapping lên modal
+  renderFmsPreviewContent(flights);
+}
+
+// Gửi xác nhận lưu lịch trực bay từ Modal Preview
+// Render dữ liệu nhận diện ảnh/Excel lên preview modal (kèm cấu hình Zalo Mapping)
+async function renderFmsPreviewContent(flights) {
+  state.fmsPreviewFlights = flights;
+  
+  // 1. Tải danh sách thành viên Zalo và mapping
+  const btnConfirm = document.getElementById('btn-fms-confirm-preview');
+  const originalConfirmText = btnConfirm.innerHTML;
+  btnConfirm.disabled = true;
+  btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu Zalo...';
+  
+  await loadZaloMembersAndMappings();
+  
+  btnConfirm.disabled = false;
+  btnConfirm.innerHTML = originalConfirmText;
+
+  // 2. Render bảng chuyến bay kèm dropdown chọn "Báo Zalo"
   const tbody = document.getElementById('fms-preview-table-body');
-  tbody.innerHTML = flights.map(f => `
+  tbody.innerHTML = flights.map((f, index) => `
     <tr>
       <td style="font-weight: 700; color: var(--primary);">${f.flight_no}</td>
       <td style="color: var(--text-muted);">${f.ac_type || '-'}</td>
@@ -1754,8 +1799,72 @@ function parseFmsExcel(rows) {
       <td style="text-align: center; font-weight: bold; color: var(--primary);">${f.truck_no || '-'}</td>
       <td>${f.driver_name || '-'}</td>
       <td>${f.operator_name || '-'}</td>
+      <td style="text-align: center;">
+        <select class="fms-preview-notify-select" data-index="${index}" style="padding: 4px; font-size: 0.85rem; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
+          <option value="1" ${f.notify_type == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
+          <option value="2" ${f.notify_type == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
+          <option value="3" ${f.notify_type == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
+        </select>
+      </td>
     </tr>
   `).join('');
+
+  // 3. Gom danh sách tên nhân viên độc nhất xuất hiện trên lịch trực
+  const uniqueNamesSet = new Set();
+  flights.forEach(f => {
+    if (f.driver_name && f.driver_name.trim()) {
+      uniqueNamesSet.add(f.driver_name.trim().toUpperCase());
+    }
+    if (f.operator_name && f.operator_name.trim()) {
+      uniqueNamesSet.add(f.operator_name.trim().toUpperCase());
+    }
+  });
+  
+  const uniqueNames = Array.from(uniqueNamesSet).sort();
+  const mappingTbody = document.getElementById('fms-zalo-mapping-table-body');
+  
+  if (uniqueNames.length > 0) {
+    // Tạo map danh sách mapping từ db để tra cứu nhanh: schedule_name -> zalo_uid
+    const mapDb = {};
+    state.zaloMappings.forEach(m => {
+      mapDb[m.schedule_name.toUpperCase()] = m.zalo_uid;
+    });
+
+    mappingTbody.innerHTML = uniqueNames.map(name => {
+      const savedUid = mapDb[name] || '';
+      
+      // Tạo danh sách option của thành viên Zalo
+      let optionsHtml = '<option value="">-- Chưa liên kết --</option>';
+      state.zaloMembers.forEach(mem => {
+        optionsHtml += `<option value="${mem.uid}" ${mem.uid === savedUid ? 'selected' : ''}>${mem.displayName}</option>`;
+      });
+
+      return `
+        <tr class="zalo-mapping-row" data-name="${name}">
+          <td style="font-weight: 700; color: #fb923c;">${name}</td>
+          <td>
+            <select class="zalo-member-select" style="width: 100%; max-width: 300px; padding: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
+              ${optionsHtml}
+            </select>
+          </td>
+          <td class="zalo-uid-display" style="color: var(--text-muted); font-family: monospace;">${savedUid || '-'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Lắng nghe sự kiện thay đổi dropdown thành viên Zalo để tự động điền hiển thị UID
+    mappingTbody.querySelectorAll('.zalo-member-select').forEach(sel => {
+      sel.addEventListener('change', (e) => {
+        const tr = e.target.closest('tr');
+        const uidTd = tr.querySelector('.zalo-uid-display');
+        uidTd.textContent = e.target.value || '-';
+      });
+    });
+
+    document.getElementById('fms-zalo-mapping-section').style.display = 'block';
+  } else {
+    document.getElementById('fms-zalo-mapping-section').style.display = 'none';
+  }
 
   // Hiện Modal Xem trước
   document.getElementById('fms-preview-modal').classList.add('active');
@@ -1771,13 +1880,61 @@ async function handleConfirmFmsPreview() {
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang lưu...';
 
   try {
+    // 1. Gom các mapping Zalo từ giao diện người dùng
+    const mappings = [];
+    const nameToUidMap = {}; // schedule_name -> zalo_uid
+    
+    document.querySelectorAll('.zalo-mapping-row').forEach(row => {
+      const scheduleName = row.getAttribute('data-name');
+      const select = row.querySelector('.zalo-member-select');
+      const zaloUid = select.value;
+      const zaloName = select.options[select.selectedIndex].text;
+
+      if (scheduleName && zaloUid) {
+        mappings.push({
+          scheduleName: scheduleName,
+          zaloUid: zaloUid,
+          zaloName: zaloName !== '-- Chưa liên kết --' ? zaloName : ''
+        });
+        nameToUidMap[scheduleName.toUpperCase()] = zaloUid;
+      }
+    });
+
+    // 2. Cập nhật crew_zalo_uids và notify_type cho từng chuyến bay
+    const finalFlights = state.fmsPreviewFlights.map((f, index) => {
+      const notifySelect = document.querySelector(`.fms-preview-notify-select[data-index="${index}"]`);
+      const notifyType = notifySelect ? parseInt(notifySelect.value) : 1;
+
+      // Gom UID của driver và operator của chuyến bay này dựa trên bảng nameToUidMap
+      const uids = [];
+      if (f.driver_name && nameToUidMap[f.driver_name.trim().toUpperCase()]) {
+        uids.push(nameToUidMap[f.driver_name.trim().toUpperCase()]);
+      }
+      if (f.operator_name && nameToUidMap[f.operator_name.trim().toUpperCase()]) {
+        uids.push(nameToUidMap[f.operator_name.trim().toUpperCase()]);
+      }
+
+      // Loại bỏ trùng lặp UID
+      const uniqueUids = Array.from(new Set(uids));
+
+      return {
+        ...f,
+        crew_zalo_uids: uniqueUids.join(','),
+        notify_type: notifyType
+      };
+    });
+
+    // 3. Gọi API lưu lịch bay và mapping học hỏi
     const res = await fetch('/api/fms/schedule', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.token}`
       },
-      body: JSON.stringify({ flights: state.fmsPreviewFlights })
+      body: JSON.stringify({ 
+        flights: finalFlights,
+        mappings: mappings
+      })
     });
     
     const data = await res.json();
@@ -1887,26 +2044,7 @@ async function handleImageFileSelect(e) {
 
 // Render dữ liệu nhận diện ảnh lên preview modal giống Excel
 function renderOcrPreview(flights) {
-  state.fmsPreviewFlights = flights;
-  const tbody = document.getElementById('fms-preview-table-body');
-  
-  tbody.innerHTML = flights.map(f => `
-    <tr>
-      <td style="font-weight: 700; color: var(--primary);">${f.flight_no}</td>
-      <td style="color: var(--text-muted);">${f.ac_type || '-'}</td>
-      <td>${f.ac_reg || '-'}</td>
-      <td style="color: #60a5fa;">${f.route || '-'}</td>
-      <td style="text-align: center;">${f.time_arr || '-'}</td>
-      <td style="text-align: center;">${f.time_dep || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: #fb923c;">${f.time_fuel || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: #f59e0b;">${f.gate || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: var(--primary);">${f.truck_no || '-'}</td>
-      <td>${f.driver_name || '-'}</td>
-      <td>${f.operator_name || '-'}</td>
-    </tr>
-  `).join('');
-
-  document.getElementById('fms-preview-modal').classList.add('active');
+  renderFmsPreviewContent(flights);
 }
 
 // Kiểm thử đồng thời danh sách API Keys Gemini
