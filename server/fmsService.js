@@ -238,12 +238,29 @@ function convertDbDateToFmsDate(dbDateStr) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+let isSyncing = false;
+
 // Thực hiện đồng bộ hóa toàn bộ chuyến bay trong lịch trực từ FMS
 async function syncFMSData() {
+  if (isSyncing) {
+    log('Chu kỳ quét trước vẫn đang chạy. Bỏ qua chu kỳ này để tránh tranh chấp dữ liệu.');
+    return;
+  }
+  isSyncing = true;
   log('Bắt đầu chu kỳ quét tải dầu FMS...');
   try {
     const db = await getDb();
     const todayDb = getVietnamDbDateStr();
+
+    // Dọn dẹp dữ liệu lịch bay và kế hoạch trực ca cũ của những ngày trước để tránh quá tải DB
+    try {
+      const deletedRows = await db.run('DELETE FROM fms_schedules WHERE date < ?', todayDb);
+      if (deletedRows && deletedRows.changes > 0) {
+        log(`[Dọn dẹp DB] Đã xóa ${deletedRows.changes} dòng lịch bay cũ của các ngày hôm trước.`);
+      }
+    } catch (cleanupErr) {
+      console.error('[Dọn dẹp DB] Lỗi khi dọn dẹp lịch bay cũ:', cleanupErr.message);
+    }
     // 1. Quét dải 3 ngày liên tiếp: Hôm trước, Hôm nay, Hôm sau để tránh lệch múi giờ và bắt chuyến rạng sáng (00h00 - 07h00)
     const todayDate = new Date();
     // Chuyển múi giờ Việt Nam GMT+7
@@ -316,7 +333,7 @@ async function syncFMSData() {
           const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
           const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
+          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
 
           const cleanACREG = flt.ACREG ? flt.ACREG.trim() : '';
           const oldStandby = oldOrder ? (parseInt(oldOrder.standby_fuel) || 0) : 0;
@@ -528,14 +545,26 @@ async function syncFMSData() {
             warnUpdatedAtVal = new Date().toISOString();
           }
 
+          // Trực quan hóa giá trị cũ để hiển thị trên UI
+          const oldAcRegDb = oldOrder ? oldOrder.old_ac_reg : null;
+          const oldStandbyDb = oldOrder ? oldOrder.old_standby_fuel : null;
+          const oldFuelOrderDb = oldOrder ? oldOrder.old_fuel_order : null;
+
+          // Khi có thay đổi thì lưu lại giá trị cũ (trước khi thay đổi)
+          // Nếu không đổi nhưng đang trong thời gian nhấp nháy, giữ lại giá trị cũ để render
+          const finalOldAcReg = isAcRegChanged ? oldOrder.ac_reg : (warnAcRegVal === 1 ? oldAcRegDb : null);
+          const finalOldStandby = isStandbyChanged ? oldOrder.standby_fuel : (warnStandbyVal === 1 ? oldStandbyDb : null);
+          const finalOldFuelOrder = isFuelOrderChanged ? oldOrder.fuel_order : (warnFuelOrderVal === 1 ? oldFuelOrderDb : null);
+
           // Lưu hoặc cập nhật vào database SQLite
           await db.run(`
             INSERT INTO fms_fuel_orders (
               flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
               trip_fuel, trip_time, taxi_fuel, alternate, status,
               warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at,
+              old_ac_reg, old_standby_fuel, old_fuel_order,
               updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(flight_no) DO UPDATE SET
               ac_reg = excluded.ac_reg,
               ac_type = excluded.ac_type,
@@ -551,6 +580,9 @@ async function syncFMSData() {
               warn_standby = excluded.warn_standby,
               warn_fuel_order = excluded.warn_fuel_order,
               warn_updated_at = excluded.warn_updated_at,
+              old_ac_reg = excluded.old_ac_reg,
+              old_standby_fuel = excluded.old_standby_fuel,
+              old_fuel_order = excluded.old_fuel_order,
               updated_at = CURRENT_TIMESTAMP
           `, 
             cleanFltNo,
@@ -567,7 +599,10 @@ async function syncFMSData() {
             warnAcRegVal,
             warnStandbyVal,
             warnFuelOrderVal,
-            warnUpdatedAtVal
+            warnUpdatedAtVal,
+            finalOldAcReg,
+            finalOldStandby,
+            finalOldFuelOrder
           );
         log(`[Hoàn tất quét] Chuyến bay ${cleanFltNo}: Fuel Order = ${detail.fuel_order} kg, Trạng thái = ${status}`);
       } catch (fltErr) {
@@ -581,6 +616,8 @@ async function syncFMSData() {
     log('Hoàn thành chu kỳ quét tải dầu FMS!');
   } catch (err) {
     console.error('[FMS Service] Lỗi đồng bộ FMS:', err.message);
+  } finally {
+    isSyncing = false;
   }
 }
 

@@ -1556,8 +1556,6 @@ function renderFmsTable() {
     const statusClass = hasData ? 'review-finished' : 'review-pending';
     const statusText = r.status;
     
-    const standbyVal = parseInt(r.standby_fuel) > 0 ? `${parseInt(r.standby_fuel).toLocaleString()} kg` : '-';
-    const orderVal = parseInt(r.fuel_order) > 0 ? `${parseInt(r.fuel_order).toLocaleString()} kg` : '-';
     const tripVal = parseInt(r.trip_fuel) > 0 ? `${parseInt(r.trip_fuel).toLocaleString()} kg` : '-';
     
     const crewText = r.crew_info || '-';
@@ -1596,11 +1594,50 @@ function renderFmsTable() {
     const standbyTdClass = blinkStandby ? 'blink-orange-bg' : '';
     const fuelOrderTdClass = blinkFuelOrder ? 'blink-orange-bg' : '';
 
-    const planeInfo = `
-      ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
-      ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
-      ${r.route ? `<span style="color: #60a5fa; font-size: 0.8rem; display: block; margin-top: 3px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
-    `;
+    // Trực quan hóa chi tiết thay đổi (Cũ và Mới) cho số hiệu máy bay
+    let planeInfo = '';
+    if (blinkAcReg && r.old_ac_reg) {
+      planeInfo = `
+        <div style="font-size: 0.78rem; text-align: left; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25);">
+          <div style="color: #a3e635; font-weight: 500;">Cũ: <span style="text-decoration: line-through;">${r.old_ac_reg}</span></div>
+          <div style="color: #ef4444; font-weight: bold; margin-top: 1px;" class="${acRegClass}">Mới: ${r.ac_reg || '-'}</div>
+          ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.72rem; display: block; margin-top: 2px;">Loại: ${r.ac_type}</span>` : ''}
+          ${r.route ? `<span style="color: #60a5fa; font-size: 0.72rem; display: block; margin-top: 2px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
+        </div>
+      `;
+    } else {
+      planeInfo = `
+        ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
+        ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
+        ${r.route ? `<span style="color: #60a5fa; font-size: 0.8rem; display: block; margin-top: 3px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
+      `;
+    }
+
+    // Trực quan hóa chi tiết thay đổi (Cũ và Mới) cho standby fuel
+    let standbyHtml = '';
+    if (blinkStandby && r.old_standby_fuel) {
+      standbyHtml = `
+        <div style="font-size: 0.78rem; text-align: center; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.25);">
+          <div style="color: #a3e635; font-size: 0.72rem;">Cũ: ${parseInt(r.old_standby_fuel) > 0 ? parseInt(r.old_standby_fuel).toLocaleString() + ' kg' : '-'}</div>
+          <div style="color: #fb923c; font-weight: bold; margin-top: 1px;" class="${standbyClass}">Mới: ${parseInt(r.standby_fuel) > 0 ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</div>
+        </div>
+      `;
+    } else {
+      standbyHtml = parseInt(r.standby_fuel) > 0 ? `${parseInt(r.standby_fuel).toLocaleString()} kg` : '-';
+    }
+
+    // Trực quan hóa chi tiết thay đổi (Cũ và Mới) cho fuel order chính thức
+    let orderHtml = '';
+    if (blinkFuelOrder && r.old_fuel_order) {
+      orderHtml = `
+        <div style="font-size: 0.78rem; text-align: center; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(249, 115, 22, 0.12); border: 1px solid rgba(249, 115, 22, 0.25);">
+          <div style="color: #a3e635; font-size: 0.72rem;">Cũ: ${parseInt(r.old_fuel_order) > 0 ? parseInt(r.old_fuel_order).toLocaleString() + ' kg' : '-'}</div>
+          <div style="color: #f97316; font-weight: bold; margin-top: 1px;" class="${fuelOrderClass}">Mới: ${parseInt(r.fuel_order) > 0 ? parseInt(r.fuel_order).toLocaleString() + ' kg' : '-'}</div>
+        </div>
+      `;
+    } else {
+      orderHtml = parseInt(r.fuel_order) > 0 ? `${parseInt(r.fuel_order).toLocaleString()} kg` : '-';
+    }
     
     const timesHtml = `
       <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
@@ -1622,8 +1659,8 @@ function renderFmsTable() {
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
         <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${gateHtml}</td>
         <td>${timesHtml}</td>
-        <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyVal}</td>
-        <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderVal}</td>
+        <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyHtml}</td>
+        <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderHtml}</td>
         <td style="text-align: center; font-weight: 600; color: #60a5fa;" class="hide-on-mobile">${tripVal}</td>
         <td style="text-align: center;">
           <span class="status-tag ${statusClass}">
@@ -1770,46 +1807,8 @@ function parseFmsExcel(rows) {
 
 // Gửi xác nhận lưu lịch trực bay từ Modal Preview
 // Render dữ liệu nhận diện ảnh/Excel lên preview modal (kèm cấu hình Zalo Mapping)
-async function renderFmsPreviewContent(flights) {
-  state.fmsPreviewFlights = flights;
-  
-  // 1. Tải danh sách thành viên Zalo và mapping
-  const btnConfirm = document.getElementById('btn-fms-confirm-preview');
-  const originalConfirmText = btnConfirm.innerHTML;
-  btnConfirm.disabled = true;
-  btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu Zalo...';
-  
-  await loadZaloMembersAndMappings();
-  
-  btnConfirm.disabled = false;
-  btnConfirm.innerHTML = originalConfirmText;
-
-  // 2. Render bảng chuyến bay kèm dropdown chọn "Báo Zalo"
-  const tbody = document.getElementById('fms-preview-table-body');
-  tbody.innerHTML = flights.map((f, index) => `
-    <tr>
-      <td style="font-weight: 700; color: var(--primary);">${f.flight_no}</td>
-      <td style="color: var(--text-muted);">${f.ac_type || '-'}</td>
-      <td>${f.ac_reg || '-'}</td>
-      <td style="color: #60a5fa;">${f.route || '-'}</td>
-      <td style="text-align: center;">${f.time_arr || '-'}</td>
-      <td style="text-align: center;">${f.time_dep || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: #fb923c;">${f.time_fuel || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: #f59e0b;">${f.gate || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: var(--primary);">${f.truck_no || '-'}</td>
-      <td>${f.driver_name || '-'}</td>
-      <td>${f.operator_name || '-'}</td>
-      <td style="text-align: center;">
-        <select class="fms-preview-notify-select" data-index="${index}" style="padding: 4px; font-size: 0.85rem; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
-          <option value="1" ${f.notify_type == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
-          <option value="2" ${f.notify_type == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
-          <option value="3" ${f.notify_type == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
-        </select>
-      </td>
-    </tr>
-  `).join('');
-
-  // 3. Gom danh sách tên nhân viên độc nhất xuất hiện trên lịch trực
+// Vẽ bảng Zalo Mapping (tự học hỏi) phía dưới bảng Preview
+function renderZaloMappingTable(flights) {
   const uniqueNamesSet = new Set();
   flights.forEach(f => {
     if (f.driver_name && f.driver_name.trim()) {
@@ -1830,8 +1829,19 @@ async function renderFmsPreviewContent(flights) {
       mapDb[m.schedule_name.toUpperCase()] = m.zalo_uid;
     });
 
+    // Lấy trạng thái đã chọn trên các dropdown hiện tại để giữ lại lựa chọn tương tác
+    const currentSelections = {};
+    document.querySelectorAll('.zalo-mapping-row').forEach(row => {
+      const name = row.getAttribute('data-name');
+      const select = row.querySelector('.zalo-member-select');
+      if (name && select) {
+        currentSelections[name.toUpperCase()] = select.value;
+      }
+    });
+
     mappingTbody.innerHTML = uniqueNames.map(name => {
-      const savedUid = mapDb[name] || '';
+      // Ưu tiên lựa chọn hiện tại đang tương tác, nếu không có thì lấy từ DB học hỏi
+      const savedUid = currentSelections[name] !== undefined ? currentSelections[name] : (mapDb[name] || '');
       
       // Tạo danh sách option của thành viên Zalo
       let optionsHtml = '<option value="">-- Chưa liên kết --</option>';
@@ -1863,8 +1873,75 @@ async function renderFmsPreviewContent(flights) {
 
     document.getElementById('fms-zalo-mapping-section').style.display = 'block';
   } else {
+    mappingTbody.innerHTML = '';
     document.getElementById('fms-zalo-mapping-section').style.display = 'none';
   }
+}
+
+// Gửi xác nhận lưu lịch trực bay từ Modal Preview
+// Render dữ liệu nhận diện ảnh/Excel lên preview modal (kèm cấu hình Zalo Mapping)
+async function renderFmsPreviewContent(flights) {
+  state.fmsPreviewFlights = flights;
+  
+  // 1. Tải danh sách thành viên Zalo và mapping
+  const btnConfirm = document.getElementById('btn-fms-confirm-preview');
+  const originalConfirmText = btnConfirm.innerHTML;
+  btnConfirm.disabled = true;
+  btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu Zalo...';
+  
+  await loadZaloMembersAndMappings();
+  
+  btnConfirm.disabled = false;
+  btnConfirm.innerHTML = originalConfirmText;
+
+  // 2. Render bảng chuyến bay kèm ô input cho phép sửa tên Lái xe - Thợ bơm trực tiếp và dropdown "Báo Zalo"
+  const tbody = document.getElementById('fms-preview-table-body');
+  tbody.innerHTML = flights.map((f, index) => `
+    <tr>
+      <td style="font-weight: 700; color: var(--primary);">${f.flight_no}</td>
+      <td style="color: var(--text-muted);">${f.ac_type || '-'}</td>
+      <td>${f.ac_reg || '-'}</td>
+      <td style="color: #60a5fa;">${f.route || '-'}</td>
+      <td style="text-align: center;">${f.time_arr || '-'}</td>
+      <td style="text-align: center;">${f.time_dep || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: #fb923c;">${f.time_fuel || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: #f59e0b;">${f.gate || '-'}</td>
+      <td style="text-align: center; font-weight: bold; color: var(--primary);">${f.truck_no || '-'}</td>
+      <td>
+        <input type="text" class="fms-preview-driver-input" data-index="${index}" value="${f.driver_name || ''}" style="width: 100%; min-width: 110px; padding: 4px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600;">
+      </td>
+      <td>
+        <input type="text" class="fms-preview-operator-input" data-index="${index}" value="${f.operator_name || ''}" style="width: 100%; min-width: 110px; padding: 4px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600;">
+      </td>
+      <td style="text-align: center;">
+        <select class="fms-preview-notify-select" data-index="${index}" style="padding: 4px; font-size: 0.85rem; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
+          <option value="1" ${f.notify_type == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
+          <option value="2" ${f.notify_type == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
+          <option value="3" ${f.notify_type == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
+        </select>
+      </td>
+    </tr>
+  `).join('');
+
+  // Lắng nghe sự thay đổi tên nhân viên để cập nhật realtime bảng Zalo Mapping phía dưới
+  const updatePreviewInputs = () => {
+    tbody.querySelectorAll('.fms-preview-driver-input').forEach(input => {
+      const idx = parseInt(input.getAttribute('data-index'));
+      state.fmsPreviewFlights[idx].driver_name = input.value.trim();
+    });
+    tbody.querySelectorAll('.fms-preview-operator-input').forEach(input => {
+      const idx = parseInt(input.getAttribute('data-index'));
+      state.fmsPreviewFlights[idx].operator_name = input.value.trim();
+    });
+    renderZaloMappingTable(state.fmsPreviewFlights);
+  };
+
+  tbody.querySelectorAll('.fms-preview-driver-input, .fms-preview-operator-input').forEach(input => {
+    input.addEventListener('input', updatePreviewInputs);
+  });
+
+  // 3. Gọi render bảng Zalo Mapping
+  renderZaloMappingTable(flights);
 
   // Hiện Modal Xem trước
   document.getElementById('fms-preview-modal').classList.add('active');

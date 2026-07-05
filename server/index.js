@@ -1303,6 +1303,9 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Không tìm thấy chuyến bay hợp lệ trong dữ liệu gửi lên' });
     }
 
+    // Dọn dẹp dữ liệu lịch bay của các ngày hôm trước để tránh quá tải DB
+    await db.run('DELETE FROM fms_schedules WHERE date < ?', todayDb);
+
     // Xóa lịch cũ của ngày hôm nay
     await db.run('DELETE FROM fms_schedules WHERE date = ?', todayDb);
 
@@ -1381,6 +1384,9 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         fo.warn_standby,
         fo.warn_fuel_order,
         fo.warn_updated_at,
+        fo.old_ac_reg,
+        fo.old_standby_fuel,
+        fo.old_fuel_order,
         fo.updated_at
       FROM fms_schedules s
       LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no) = UPPER(fo.flight_no)
@@ -1649,7 +1655,7 @@ app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) =>
     
     // Tìm chuyến bay trong fms_schedules
     const flight = await db.get(
-      'SELECT id, flight_no, ac_reg, crew_info, truck_no, gate FROM fms_schedules WHERE flight_no = ? AND date = ? ORDER BY id DESC LIMIT 1',
+      'SELECT id, flight_no, ac_reg, crew_info, truck_no, gate, crew_zalo_uids, notify_type FROM fms_schedules WHERE flight_no = ? AND date = ? ORDER BY id DESC LIMIT 1',
       flightNo,
       date
     );
@@ -1674,17 +1680,61 @@ app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) =>
       const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
       const targetGroupId = groupSetting ? groupSetting.value : null;
 
-      if (targetGroupId) {
-        const title = '🔄 [FMS THAY ĐỔI VỊ TRÍ ĐỖ]';
-        const msg = `${title}
+      const crewZaloUids = flight.crew_zalo_uids || '';
+      const notifyType = flight.notify_type !== undefined ? parseInt(flight.notify_type) : 1; // 1: Tag Nhóm, 2: Inbox, 3: Cả hai
+      const uids = crewZaloUids.split(',').map(uid => uid.trim()).filter(Boolean);
+
+      const title = '🔄 [FMS THAY ĐỔI VỊ TRÍ ĐỖ]';
+      const msg = `${title}
 ✈️ Chuyến bay: ${flight.flight_no} - ${flight.ac_reg || '-'}
 📍 Vị trí đỗ cũ: ${oldGate || '-'} ➔ Mới: ${newGate || '-'}
 👥 Cặp tra nạp: ${flight.crew_info || '-'}
 🚛 Số xe nạp: ${flight.truck_no || '-'}`;
 
+      let msgGroup = msg;
+      let groupMentions = [];
+
+      // 1. Gửi tin nhóm (notifyType === 1 || notifyType === 3)
+      if ((notifyType === 1 || notifyType === 3) && targetGroupId) {
+        if (uids.length > 0) {
+          try {
+            const placeholders = uids.map(() => '?').join(',');
+            const mappings = await db.all(`SELECT zalo_uid, zalo_name FROM zalo_user_mappings WHERE zalo_uid IN (${placeholders})`, uids);
+            const nameMap = {};
+            mappings.forEach(m => {
+              nameMap[m.zalo_uid] = m.zalo_name || m.zalo_uid;
+            });
+
+            let tagPrefix = '\n👥 Người trực: ';
+            let msgWithTags = msg + tagPrefix;
+            uids.forEach(uid => {
+              const zaloName = nameMap[uid] || 'Thành viên';
+              const tagLabel = `@${zaloName}`;
+              const startPos = msgWithTags.length;
+              msgWithTags += tagLabel + ' ';
+              groupMentions.push({
+                pos: startPos,
+                uid: uid,
+                len: tagLabel.length
+              });
+            });
+            msgGroup = msgWithTags.trimEnd();
+          } catch (mentionErr) {
+            console.error('[Gate Mentions Build Error]', mentionErr.message);
+          }
+        }
+
         const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
-        // Gửi tin nhắn chạy ngầm không chặn response
-        Promise.all(ids.map(id => sendSkyOneMessage(id, msg).catch(err => console.error('[Zalo Gate Change Error] Group:', id, err.message))));
+        ids.forEach(id => {
+          sendSkyOneMessage(id, msgGroup, groupMentions).catch(err => console.error('[Zalo Gate Change Error] Group:', id, err.message));
+        });
+      }
+
+      // 2. Gửi inbox cá nhân riêng (notifyType === 2 || notifyType === 3)
+      if ((notifyType === 2 || notifyType === 3) && uids.length > 0) {
+        uids.forEach(uid => {
+          sendSkyOnePrivateMessage(uid, msg).catch(err => console.error('[Zalo Gate Change Private Error] UID:', uid, err.message));
+        });
       }
     }
 
