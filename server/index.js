@@ -748,16 +748,36 @@ app.get('/api/me', authenticateToken, async (req, res) => {
           role: 'admin', 
           username: 'admin', 
           display_name: 'Quản trị viên',
-          department: 'Quản lý hệ thống'
+          department: 'Quản lý hệ thống',
+          permissions: {
+            perm_admin: 1,
+            perm_fms: 1,
+            perm_zalo: 1,
+            perm_gemini: 1,
+            perm_gate: 1
+          }
         } 
       });
     }
 
-    const user = await db.get('SELECT username, display_name, department, email, phone, position_name, kpi_percent, kpi_total, kpi_current, total_certificate, class_total FROM accounts WHERE username = ?', req.user.username);
+    const user = await db.get('SELECT username, display_name, department, email, phone, position_name, kpi_percent, kpi_total, kpi_current, total_certificate, class_total, perm_admin, perm_fms, perm_zalo, perm_gemini, perm_gate FROM accounts WHERE username = ?', req.user.username);
     if (!user) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản nhân viên' });
     }
-    res.json({ success: true, user: { ...user, role: 'user' } });
+    res.json({ 
+      success: true, 
+      user: { 
+        ...user, 
+        role: 'user',
+        permissions: {
+          perm_admin: user.perm_admin,
+          perm_fms: user.perm_fms,
+          perm_zalo: user.perm_zalo,
+          perm_gemini: user.perm_gemini,
+          perm_gate: user.perm_gate
+        }
+      } 
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

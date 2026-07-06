@@ -49,18 +49,57 @@ function getUserRole() {
   return 'nv_c2';
 }
 
+// Đồng bộ thông tin phân quyền mới nhất của chính mình từ server
+async function syncUserPermissions() {
+  if (!state.token) return;
+  try {
+    const res = await fetch('/api/me', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success && data.user) {
+      const oldRole = getUserRole();
+      
+      // Cập nhật state và localStorage
+      state.permissions = data.user.permissions || {};
+      localStorage.setItem('crm_permissions', JSON.stringify(state.permissions));
+      
+      const newRole = getUserRole();
+      
+      // Nếu vai trò bị thay đổi thì cập nhật ngay UI
+      if (oldRole !== newRole) {
+        console.log(`[Permission Sync] Phát hiện thay đổi vai trò từ ${oldRole} sang ${newRole}. Cập nhật lại UI...`);
+        if (newRole === 'admin' || newRole === 'dieu_hanh') {
+          showScreen('admin-screen');
+          applyPermissionsUI();
+          loadAdminDashboard();
+        } else {
+          showScreen('user-screen');
+          applyUserPermissionsUI();
+          loadUserDashboard();
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Permission Sync Error]', err.message);
+  }
+}
+
 function initApp() {
   if (state.token) {
-    const userRole = getUserRole();
-    if (userRole === 'admin' || userRole === 'dieu_hanh') {
-      showScreen('admin-screen');
-      applyPermissionsUI();
-      loadAdminDashboard();
-    } else {
-      showScreen('user-screen');
-      applyUserPermissionsUI();
-      loadUserDashboard();
-    }
+    // Luôn đồng bộ lấy quyền mới nhất khi khởi động hoặc F5 tải lại trang
+    syncUserPermissions().then(() => {
+      const userRole = getUserRole();
+      if (userRole === 'admin' || userRole === 'dieu_hanh') {
+        showScreen('admin-screen');
+        applyPermissionsUI();
+        loadAdminDashboard();
+      } else {
+        showScreen('user-screen');
+        applyUserPermissionsUI();
+        loadUserDashboard();
+      }
+    });
     startDashboardPolling();
   } else {
     showScreen('login-screen');
@@ -248,6 +287,9 @@ function initSpaceBackground() {
 function startDashboardPolling() {
   if (dashboardInterval) clearInterval(dashboardInterval);
   dashboardInterval = setInterval(() => {
+    // Tự động kiểm tra đồng bộ phân quyền động từ server
+    syncUserPermissions();
+
     const activeScreen = document.querySelector('.screen.active');
     if (activeScreen && activeScreen.id === 'user-screen') {
       const userRole = getUserRole();
