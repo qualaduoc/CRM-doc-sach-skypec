@@ -2980,7 +2980,7 @@ async function handleSkyEyesSendTest() {
       },
       body: JSON.stringify({
         groupId,
-        message: '🤖 Trợ lý Zalo SkyEyes xin kính chào Khầy Được! Kênh thông báo tải dầu FMS đã hoạt động tốt.'
+        message: '🤖 Trợ lý Zalo SkyEyes rất hân hạnh được phục vụ bạn! Kênh thông báo tải dầu FMS đã hoạt động tốt.'
       })
     });
     const data = await res.json();
