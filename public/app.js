@@ -1975,23 +1975,13 @@ function renderZaloMappingTable(flights) {
         <tr class="zalo-mapping-row" data-name="${name}">
           <td style="font-weight: 700; color: #fb923c;">${name}</td>
           <td>
-            <select class="zalo-member-select" style="width: 100%; max-width: 300px; padding: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
+            <select class="zalo-member-select" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
               ${optionsHtml}
             </select>
           </td>
-          <td class="zalo-uid-display" style="color: var(--text-muted); font-family: monospace;">${savedUid || '-'}</td>
         </tr>
       `;
     }).join('');
-
-    // Lắng nghe sự kiện thay đổi dropdown thành viên Zalo để tự động điền hiển thị UID
-    mappingTbody.querySelectorAll('.zalo-member-select').forEach(sel => {
-      sel.addEventListener('change', (e) => {
-        const tr = e.target.closest('tr');
-        const uidTd = tr.querySelector('.zalo-uid-display');
-        uidTd.textContent = e.target.value || '-';
-      });
-    });
 
     document.getElementById('fms-zalo-mapping-section').style.display = 'block';
   } else {
@@ -2067,29 +2057,33 @@ function renderCrewNotifyTable(flights) {
 async function renderFmsPreviewContent(flights) {
   state.fmsPreviewFlights = flights;
   
-  // 1. Tải danh sách thành viên Zalo và mapping
+  // 1. Tải danh sách thành viên Zalo và mapping (nếu chưa tải)
   const btnConfirm = document.getElementById('btn-fms-confirm-preview');
   const originalConfirmText = btnConfirm.innerHTML;
-  btnConfirm.disabled = true;
-  btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu Zalo...';
   
-  await loadZaloMembersAndMappings();
-  
-  btnConfirm.disabled = false;
-  btnConfirm.innerHTML = originalConfirmText;
+  if (!state.zaloMembers || state.zaloMembers.length === 0) {
+    btnConfirm.disabled = true;
+    btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu Zalo...';
+    await loadZaloMembersAndMappings();
+    btnConfirm.disabled = false;
+    btnConfirm.innerHTML = originalConfirmText;
+  }
 
   // Điền ngày trực kế hoạch mặc định vào DatePicker trên modal preview
   const todayStr = new Date().toLocaleDateString('en-CA'); 
   const detectedDate = flights.length > 0 && flights[0].date ? flights[0].date : todayStr;
   const dateInput = document.getElementById('fms-preview-date-input');
-  if (dateInput) {
+  if (dateInput && !dateInput.value) {
     dateInput.value = detectedDate;
   }
 
-  // 2. Render bảng chuyến bay kèm ô input cho phép sửa tên Lái xe - Thợ bơm trực tiếp (Đã xóa cột Báo Zalo)
+  // 2. Render bảng chuyến bay kèm nút Xóa ở cột đầu tiên
   const tbody = document.getElementById('fms-preview-table-body');
   tbody.innerHTML = flights.map((f, index) => `
-    <tr>
+    <tr data-index="${index}">
+      <td style="text-align: center; vertical-align: middle; padding: 4px;">
+        <span class="btn-delete-preview-flight" data-index="${index}" style="font-weight: 900; font-size: 1.25rem; color: #ef4444; cursor: pointer; user-select: none; transition: transform 0.2s; display: inline-block;" title="Xóa chuyến bay này">X</span>
+      </td>
       <td style="font-weight: 700; color: var(--primary);">${f.flight_no}</td>
       <td style="color: var(--text-muted);">${f.ac_type || '-'}</td>
       <td>${f.ac_reg || '-'}</td>
@@ -2112,11 +2106,15 @@ async function renderFmsPreviewContent(flights) {
   const updatePreviewInputs = () => {
     tbody.querySelectorAll('.fms-preview-driver-input').forEach(input => {
       const idx = parseInt(input.getAttribute('data-index'));
-      state.fmsPreviewFlights[idx].driver_name = input.value.trim();
+      if (state.fmsPreviewFlights[idx]) {
+        state.fmsPreviewFlights[idx].driver_name = input.value.trim();
+      }
     });
     tbody.querySelectorAll('.fms-preview-operator-input').forEach(input => {
       const idx = parseInt(input.getAttribute('data-index'));
-      state.fmsPreviewFlights[idx].operator_name = input.value.trim();
+      if (state.fmsPreviewFlights[idx]) {
+        state.fmsPreviewFlights[idx].operator_name = input.value.trim();
+      }
     });
     renderZaloMappingTable(state.fmsPreviewFlights);
     renderCrewNotifyTable(state.fmsPreviewFlights);
@@ -2124,6 +2122,20 @@ async function renderFmsPreviewContent(flights) {
 
   tbody.querySelectorAll('.fms-preview-driver-input, .fms-preview-operator-input').forEach(input => {
     input.addEventListener('input', updatePreviewInputs);
+  });
+
+  // Lắng nghe sự kiện Click nút Xóa chuyến bay
+  tbody.querySelectorAll('.btn-delete-preview-flight').forEach(span => {
+    span.addEventListener('mouseenter', () => span.style.transform = 'scale(1.2)');
+    span.addEventListener('mouseleave', () => span.style.transform = 'scale(1)');
+    
+    span.addEventListener('click', (e) => {
+      const idx = parseInt(e.target.getAttribute('data-index'));
+      // Xóa phần tử khỏi mảng
+      state.fmsPreviewFlights.splice(idx, 1);
+      // Render lại giao diện modal với danh sách mới
+      renderFmsPreviewContent(state.fmsPreviewFlights);
+    });
   });
 
   // 3. Gọi render bảng Zalo Mapping & Crew Notify
