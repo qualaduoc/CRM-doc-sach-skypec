@@ -9,7 +9,8 @@ const PORT = 4567;
 
 // Cấu hình multer để upload file lên bộ nhớ tạm (Buffer)
 const storage = multer.memoryStorage();
-const upload = multer.fields([
+const uploadInstance = multer({ storage: storage });
+const upload = uploadInstance.fields([
   { name: 'viasFile', maxCount: 1 },
   { name: 'skypecFile', maxCount: 1 }
 ]);
