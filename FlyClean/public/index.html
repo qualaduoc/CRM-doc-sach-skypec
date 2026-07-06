@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkyEyes FlyClean - Đối soát Lịch bay & Tra nạp xăng dầu</title>
+  
+  <!-- Font chữ Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome 6 Icon -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    :root {
+      --bg-dark: #090d1a;
+      --panel-bg: rgba(15, 23, 42, 0.45);
+      --border: rgba(255, 255, 255, 0.08);
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --secondary: #a855f7;
+      --orange: #fb923c;
+      --green: #4ade80;
+      --red: #f87171;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 10% 10%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
+        radial-gradient(at 90% 10%, rgba(168, 85, 247, 0.08) 0px, transparent 50%),
+        radial-gradient(at 50% 90%, rgba(251, 146, 60, 0.05) 0px, transparent 50%);
+      background-attachment: fixed;
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1680px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* GLASS PANEL STYLE */
+    .glass-panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    /* HEADER */
+    header.app-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      font-size: 2.2rem;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+    }
+
+    .logo-text h1 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .logo-text p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .header-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      background: rgba(255,255,255,0.03);
+      padding: 8px 16px;
+      border-radius: 30px;
+      border: 1px solid var(--border);
+    }
+
+    /* UPLOAD & CONFIG AREA */
+    .main-grid {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+
+    .left-col {
+      flex: 1.1;
+      min-width: 500px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .right-col {
+      flex: 1.3;
+      min-width: 600px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* DROPZONE UPLOAD */
+    .upload-box {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .dropzone-container {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .dropzone {
+      flex: 1;
+      min-width: 220px;
+      height: 150px;
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      cursor: pointer;
+      background: rgba(255,255,255,0.01);
+      transition: all 0.3s ease;
+      user-select: none;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background: rgba(56, 189, 248, 0.03);
+      box-shadow: inset 0 0 15px rgba(56, 189, 248, 0.05);
+    }
+
+    .dropzone i {
+      font-size: 2.2rem;
+      color: var(--text-muted);
+      transition: color 0.3s;
+    }
+
+    .dropzone:hover i {
+      color: var(--primary);
+    }
+
+    .dropzone-text {
+      text-align: center;
+    }
+
+    .dropzone-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .dropzone-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .file-selected {
+      border-color: var(--green) !important;
+      background: rgba(74, 222, 128, 0.03) !important;
+    }
+
+    .file-selected i {
+      color: var(--green) !important;
+    }
+
+    /* CONFIG AREA (DYNAMIC ROWS/COLUMNS) */
+    .config-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .config-title h3 {
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .config-body {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .config-group {
+      border: 1px solid rgba(255,255,255,0.05);
+      background: rgba(0,0,0,0.15);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .config-group-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .config-inputs {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .input-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .input-field label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .input-field input {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: #0f172a;
+      color: #fff;
+      font-size: 0.82rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-field input:focus {
+      border-color: var(--primary);
+    }
+
+    /* BUTTONS */
+    .btn-glow {
+      position: relative;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      color: #fff;
+      border: none;
+      padding: 14px 28px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3);
+      outline: none;
+    }
+
+    .btn-glow:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(56, 189, 248, 0.45);
+    }
+
+    .btn-glow:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      outline: none;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.2);
+    }
+
+    /* KPI STATS CARD */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 16px;
+      width: 100%;
+    }
+
+    .kpi-card {
+      padding: 16px;
+      border-radius: 12px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100px;
+    }
+
+    .kpi-card.blue { background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.15); }
+    .kpi-card.orange { background: rgba(251, 146, 60, 0.08); border-color: rgba(251, 146, 60, 0.15); }
+    .kpi-card.purple { background: rgba(168, 85, 247, 0.08); border-color: rgba(168, 85, 247, 0.15); }
+    .kpi-card.green { background: rgba(74, 222, 128, 0.08); border-color: rgba(74, 222, 128, 0.15); }
+    .kpi-card.red { background: rgba(248, 113, 113, 0.08); border-color: rgba(248, 113, 113, 0.15); }
+
+    .kpi-num {
+      font-size: 1.8rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+      line-height: 1;
+    }
+    .kpi-card.blue .kpi-num { color: var(--primary); }
+    .kpi-card.orange .kpi-num { color: var(--orange); }
+    .kpi-card.purple .kpi-num { color: var(--secondary); }
+    .kpi-card.green .kpi-num { color: var(--green); }
+    .kpi-card.red .kpi-num { color: var(--red); }
+
+    .kpi-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* RESULTS SCROLLABLE AREA */
+    .result-area {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 100%;
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .result-header h3 {
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .result-list {
+      max-height: 520px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      gap: 12px;
+    }
+
+    .result-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 60px 20px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .result-empty i {
+      font-size: 3rem;
+      color: rgba(255,255,255,0.05);
+    }
+
+    /* CARD ROW IN AUDIT REPORT */
+    .audit-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      transition: transform 0.2s, background-color 0.2s;
+    }
+
+    .audit-card:hover {
+      background-color: rgba(255,255,255,0.04);
+      transform: translateY(-2px);
+    }
+
+    .audit-card.mismatch {
+      border-left: 4px solid var(--red);
+    }
+
+    .audit-card-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px dashed rgba(255,255,255,0.06);
+      padding-bottom: 8px;
+    }
+
+    .audit-flt {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .audit-route {
+      font-size: 0.8rem;
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--primary);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .audit-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .audit-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .audit-val {
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .audit-val.correct { color: var(--green); }
+    .audit-val.incorrect { color: var(--red); }
+    .audit-val.highlight { color: var(--orange); }
+
+    /* FOOTER */
+    footer {
+      margin-top: auto;
+      padding-top: 40px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    /* TOAST */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e293b;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
+      border-radius: 8px;
+      padding: 12px 24px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      z-index: 9999;
+      display: none;
+      animation: slideIn 0.3s ease;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- HEADER -->
+    <header class="glass-panel app-header">
+      <div class="logo-area">
+        <i class="fa-solid fa-eye logo-icon"></i>
+        <div class="logo-text">
+          <h1>SkyEyes FlyClean</h1>
+          <p>Hệ thống Đối soát & Làm sạch Dữ liệu bay Hàng không</p>
+        </div>
+      </div>
+      <div class="header-info">
+        <i class="fa-solid fa-shield-halved" style="color: var(--green);"></i>
+        <span>Chạy Offline (Cục bộ)</span>
+      </div>
+    </header>
+
+    <!-- MAIN GRID -->
+    <div class="main-grid">
+      
+      <!-- CỘT BÊN TRÁI: UPLOAD VÀ CẤU HÌNH -->
+      <div class="left-col">
+        
+        <!-- CARD UPLOAD FILE -->
+        <div class="glass-panel upload-box">
+          <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-file-excel" style="color: var(--green);"></i> Nạp tài liệu đối soát
+          </h3>
+          
+          <div class="dropzone-container">
+            <!-- Dropzone VIAS -->
+            <div class="dropzone" id="dropzone-vias" onclick="document.getElementById('input-vias').click()">
+              <i class="fa-solid fa-file-arrow-up"></i>
+              <div class="dropzone-text">
+                <p class="dropzone-title">File Kế hoạch VIAS</p>
+                <p class="dropzone-sub">Kéo thả hoặc click chọn (.xlsx)</p>
+              </div>
+              <input type="file" id="input-vias" accept=".xlsx,.xls" style="display: none;">
+            </div>
+            
+            <!-- Dropzone SKYPEC -->
+            <div class="dropzone" id="dropzone-skypec" onclick="document.getElementById('input-skypec').click()">
+              <i class="fa-solid fa-file-arrow-up"></i>
+              <div class="dropzone-text">
+                <p class="dropzone-title">File Tra nạp SKYPEC</p>
+                <p class="dropzone-sub">Kéo thả hoặc click chọn (.xlsx, .xls)</p>
+              </div>
+              <input type="file" id="input-skypec" accept=".xlsx,.xls" style="display: none;">
+            </div>
+          </div>
+          
+          <button id="btn-run-audit" class="btn-glow" style="margin-top: 8px;">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Đối soát dữ liệu bay
+          </button>
+        </div>
+
+        <!-- CARD CẤU HÌNH HÀNG CỘT ĐỘNG (THỦ CÔNG) -->
+        <div class="glass-panel">
+          <div class="config-title" id="config-toggle-btn">
+            <h3><i class="fa-solid fa-sliders" style="color: var(--secondary);"></i> Cấu hình Cột & Dòng Excel</h3>
+            <i class="fa-solid fa-chevron-down" id="config-chevron-icon" style="transition: transform 0.3s;"></i>
+          </div>
+          
+          <div class="config-body" id="config-body" style="display: flex;">
+            
+            <!-- Cấu hình VIAS -->
+            <div class="config-group">
+              <div class="config-group-title">
+                <i class="fa-solid fa-circle-dot"></i> File Kế hoạch VIAS (Chuẩn)
+              </div>
+              <div class="config-inputs">
+                <div class="input-field">
+                  <label>Cột Số hiệu chuyến</label>
+                  <input type="text" id="cfg-vias-flt" value="C">
+                </div>
+                <div class="input-field">
+                  <label>Cột Đăng ký tàu</label>
+                  <input type="text" id="cfg-vias-regs" value="D">
+                </div>
+                <div class="input-field">
+                  <label>Cột Chặng bay</label>
+                  <input type="text" id="cfg-vias-route" value="E">
+                </div>
+                <div class="input-field">
+                  <label>Dòng bắt đầu dữ liệu</label>
+                  <input type="number" id="cfg-vias-start" value="10">
+                </div>
+                <div class="input-field">
+                  <label>Dòng chứa tiêu đề</label>
+                  <input type="number" id="cfg-vias-header" value="9">
+                </div>
+              </div>
+            </div>
+
+            <!-- Cấu hình SKYPEC -->
+            <div class="config-group">
+              <div class="config-group-title">
+                <i class="fa-solid fa-circle-dot"></i> File Tra nạp SKYPEC (Nhân viên)
+              </div>
+              <div class="config-inputs" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
+                <div class="input-field">
+                  <label>Cột Chuyến bay</label>
+                  <input type="text" id="cfg-skypec-flt" value="Số hiệu chuyến bay">
+                </div>
+                <div class="input-field">
+                  <label>Cột Tàu bay</label>
+                  <input type="text" id="cfg-skypec-regs" value="Số hiệu tàu bay">
+                </div>
+                <div class="input-field">
+                  <label>Cột Tuyến bay</label>
+                  <input type="text" id="cfg-skypec-route" value="Tuyến bay">
+                </div>
+                <div class="input-field">
+                  <label>Cột Lái xe</label>
+                  <input type="text" id="cfg-skypec-driver" value="Lái xe tra nạp">
+                </div>
+                <div class="input-field">
+                  <label>Cột Thợ bơm</label>
+                  <input type="text" id="cfg-skypec-operator" value="Thợ bơm">
+                </div>
+                <div class="input-field">
+                  <label>Cột Số Kg</label>
+                  <input type="text" id="cfg-skypec-kg" value="Số Kg">
+                </div>
+                <div class="input-field">
+                  <label>Cột Số phiếu</label>
+                  <input type="text" id="cfg-skypec-ticket" value="Số phiếu xuất">
+                </div>
+                <div class="input-field">
+                  <label>Cột Số Receipt</label>
+                  <input type="text" id="cfg-skypec-receipt" value="Số Receipt">
+                </div>
+                <div class="input-field">
+                  <label>Dòng bắt đầu data</label>
+                  <input type="number" id="cfg-skypec-start" value="2">
+                </div>
+                <div class="input-field">
+                  <label>Dòng chứa tiêu đề</label>
+                  <input type="number" id="cfg-skypec-header" value="1">
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CỘT BÊN PHẢI: KẾT QUẢ ĐỐI SOÁT -->
+      <div class="right-col">
+        
+        <!-- CARD THẺ THỐNG KÊ (KPI) -->
+        <div class="glass-panel kpi-row" id="kpi-row" style="display: none;">
+          <div class="kpi-card blue">
+            <span class="kpi-num" id="kpi-total-vias">0</span>
+            <span class="kpi-label">Tổng KH VIAGS</span>
+          </div>
+          <div class="kpi-card purple">
+            <span class="kpi-num" id="kpi-total-skypec">0</span>
+            <span class="kpi-label">Tổng nạp Skypec</span>
+          </div>
+          <div class="kpi-card green">
+            <span class="kpi-num" id="kpi-matched">0</span>
+            <span class="kpi-label">Khớp hoàn toàn</span>
+          </div>
+          <div class="kpi-card red">
+            <span class="kpi-num" id="kpi-mismatched">0</span>
+            <span class="kpi-label">Sai lệch số tàu</span>
+          </div>
+        </div>
+
+        <!-- BẢNG BÁO CÁO CHI TIẾT SAI PHẠM -->
+        <div class="glass-panel result-area" style="flex: 1;">
+          <div class="result-header">
+            <h3><i class="fa-solid fa-triangle-exclamation" style="color: var(--red);"></i> Báo cáo Sai lệch Số hiệu tàu bay</h3>
+            <div style="display: flex; gap: 10px;">
+              <button id="btn-copy-report" class="btn-secondary" style="display: none;">
+                <i class="fa-solid fa-copy"></i> Sao chép báo cáo
+              </button>
+              <button id="btn-export-file" class="btn-secondary" style="display: none;">
+                <i class="fa-solid fa-file-export"></i> Xuất file (.txt)
+              </button>
+            </div>
+          </div>
+          
+          <div class="result-list" id="result-list-container">
+            <!-- Giao diện trống ban đầu -->
+            <div class="result-empty" id="result-empty-state">
+              <i class="fa-solid fa-folder-open"></i>
+              <p>Chưa có dữ liệu đối soát.<br>Hãy nạp file Vias, Skypec và bấm "Đối soát dữ liệu bay" để xem kết quả.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+      <p>© 2026 SkyEyes FlyClean. Công cụ chạy offline an toàn tuyệt đối, bảo mật dữ liệu bay.</p>
+    </footer>
+
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div class="toast" id="toast-el">Đang xử lý...</div>
+
+  <script>
+    // Quản lý file nạp
+    const filesState = {
+      vias: null,
+      skypec: null
+    };
+
+    // Toggle ẩn/hiện cấu hình hàng cột nâng cao
+    const configToggle = document.getElementById('config-toggle-btn');
+    const configBody = document.getElementById('config-body');
+    const chevronIcon = document.getElementById('config-chevron-icon');
+    let isConfigOpen = true;
+
+    configToggle.addEventListener('click', () => {
+      isConfigOpen = !isConfigOpen;
+      if (isConfigOpen) {
+        configBody.style.display = 'flex';
+        chevronIcon.style.transform = 'rotate(0deg)';
+      } else {
+        configBody.style.display = 'none';
+        chevronIcon.style.transform = 'rotate(-90deg)';
+      }
+    });
+
+    // Cấu hình Drag and Drop
+    function setupDragAndDrop(zoneId, inputId, stateKey) {
+      const zone = document.getElementById(zoneId);
+      const input = document.getElementById(inputId);
+
+      zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        zone.classList.add('dragover');
+      });
+
+      zone.addEventListener('dragleave', () => {
+        zone.classList.remove('dragover');
+      });
+
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+          handleFileSelection(e.dataTransfer.files[0], zone, stateKey);
+        }
+      });
+
+      input.addEventListener('change', () => {
+        if (input.files.length > 0) {
+          handleFileSelection(input.files[0], zone, stateKey);
+        }
+      });
+    }
+
+    function handleFileSelection(file, zone, stateKey) {
+      if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+        showToast('Chỉ chấp nhận file Excel (.xlsx hoặc .xls)!', 'red');
+        return;
+      }
+      
+      filesState[stateKey] = file;
+      zone.classList.add('file-selected');
+      
+      // Đổi text hiển thị
+      const title = zone.querySelector('.dropzone-title');
+      const sub = zone.querySelector('.dropzone-sub');
+      
+      title.textContent = file.name;
+      sub.textContent = `${(file.size / 1024).toFixed(1)} KB (Đã nhận)`;
+      
+      showToast(`Đã nhận file: ${file.name}`, 'green');
+    }
+
+    setupDragAndDrop('dropzone-vias', 'input-vias', 'vias');
+    setupDragAndDrop('dropzone-skypec', 'input-skypec', 'skypec');
+
+    // Nút đối soát dữ liệu
+    const btnRunAudit = document.getElementById('btn-run-audit');
+    let auditResponseData = null; // Lưu kết quả đối soát để copy và xuất file
+
+    btnRunAudit.addEventListener('click', async () => {
+      if (!filesState.vias) {
+        showToast('Vui lòng nạp file Kế hoạch VIAS!', 'red');
+        return;
+      }
+      if (!filesState.skypec) {
+        showToast('Vui lòng nạp file Tra nạp SKYPEC!', 'red');
+        return;
+      }
+
+      btnRunAudit.disabled = true;
+      btnRunAudit.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang đối soát dữ liệu...';
+      showToast('Đang phân tích và đối soát file...', 'primary');
+
+      // Lấy cấu hình hàng cột
+      const config = {
+        viasColFlight: document.getElementById('cfg-vias-flt').value,
+        viasColRegs: document.getElementById('cfg-vias-regs').value,
+        viasColRoute: document.getElementById('cfg-vias-route').value,
+        viasStartRow: parseInt(document.getElementById('cfg-vias-start').value),
+        viasHeaderRow: parseInt(document.getElementById('cfg-vias-header').value),
+
+        skypecColFlight: document.getElementById('cfg-skypec-flt').value,
+        skypecColRegs: document.getElementById('cfg-skypec-regs').value,
+        skypecColRoute: document.getElementById('cfg-skypec-route').value,
+        skypecColKg: document.getElementById('cfg-skypec-kg').value,
+        skypecColDriver: document.getElementById('cfg-skypec-driver').value,
+        skypecColOperator: document.getElementById('cfg-skypec-operator').value,
+        skypecColTicket: document.getElementById('cfg-skypec-ticket').value,
+        skypecColReceipt: document.getElementById('cfg-skypec-receipt').value,
+        skypecColDate: document.getElementById('cfg-skypec-date').value,
+        skypecColTimeEnd: document.getElementById('cfg-skypec-time-end').value,
+        skypecStartRow: parseInt(document.getElementById('cfg-skypec-start').value),
+        skypecHeaderRow: parseInt(document.getElementById('cfg-skypec-header').value)
+      };
+
+      const formData = new FormData();
+      formData.append('viasFile', filesState.vias);
+      formData.append('skypecFile', filesState.skypec);
+      formData.append('config', JSON.stringify(config));
+
+      try {
+        const res = await fetch('/api/compare', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Lỗi không xác định');
+        }
+
+        auditResponseData = data;
+        renderAuditResults(data);
+        showToast('Đối soát hoàn tất thành công!', 'green');
+
+      } catch (e) {
+        showToast(e.message, 'red');
+        console.error(e);
+      } finally {
+        btnRunAudit.disabled = false;
+        btnRunAudit.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Đối soát dữ liệu bay';
+      }
+    });
+
+    // Vẽ kết quả lên giao diện
+    function renderAuditResults(data) {
+      const { summary, results } = data;
+
+      // 1. Hiển thị thẻ KPI
+      document.getElementById('kpi-row').style.display = 'grid';
+      document.getElementById('kpi-total-vias').textContent = summary.totalVias;
+      document.getElementById('kpi-total-skypec').textContent = summary.totalSkypec;
+      document.getElementById('kpi-matched').textContent = summary.matchedCount;
+      document.getElementById('kpi-mismatched').textContent = summary.mismatchedCount;
+
+      // Hiện nút chức năng
+      document.getElementById('btn-copy-report').style.display = 'flex';
+      document.getElementById('btn-export-file').style.display = 'flex';
+
+      // 2. Vẽ danh sách sai phạm
+      const container = document.getElementById('result-list-container');
+      container.innerHTML = '';
+
+      if (results.mismatched.length === 0) {
+        container.innerHTML = `
+          <div class="result-empty" style="color: var(--green);">
+            <i class="fa-solid fa-circle-check" style="font-size: 3rem; color: var(--green);"></i>
+            <p style="font-weight: 600;">TUYỆT VỜI! KHÔNG CÓ SAI LỆCH SỐ TÀU BAY NÀO!</p>
+            <p style="font-size: 0.82rem; color: var(--text-muted);">Tất cả các phiếu nạp xăng dầu đều khớp 100% với kế hoạch bay chuẩn của VIAGS.</p>
+          </div>
+        `;
+        return;
+      }
+
+      results.mismatched.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'audit-card mismatch';
+        div.innerHTML = `
+          <div class="audit-card-title">
+            <span class="audit-flt"><i class="fa-solid fa-plane-departure"></i> ${item.vias.flightNoOriginal}</span>
+            <span class="audit-route">${item.vias.routeOriginal}</span>
+          </div>
+          <div class="audit-grid">
+            <div class="audit-col">
+              <span class="audit-label">Số tàu bay CHUẨN (VIAGS)</span>
+              <span class="audit-val correct"><i class="fa-solid fa-circle-check"></i> ${item.vias.regsOriginal}</span>
+            </div>
+            <div class="audit-col">
+              <span class="audit-label">Số tàu bay NHẬP SAI (Skypec)</span>
+              <span class="audit-val incorrect"><i class="fa-solid fa-circle-xmark"></i> ${item.skypec.regsOriginal}</span>
+            </div>
+            <div class="audit-col">
+              <span class="audit-label">Nhân viên chịu trách nhiệm</span>
+              <span class="audit-val highlight"><i class="fa-solid fa-user-gear"></i> Lái xe: ${item.skypec.driver}</span>
+              <span class="audit-val highlight" style="margin-top: 2px;"><i class="fa-solid fa-user-nurse"></i> Thợ bơm: ${item.skypec.operator}</span>
+            </div>
+            <div class="audit-col">
+              <span class="audit-label">Thông tin chứng từ</span>
+              <span class="audit-val" style="color: var(--text-muted);">Phiếu xuất: ${item.skypec.ticketNo}</span>
+              <span class="audit-val" style="color: var(--text-muted); margin-top: 2px;">Receipt: ${item.skypec.receiptNo}</span>
+              <span class="audit-val" style="color: var(--orange); margin-top: 2px; font-weight: 700;">Lượng nạp: ${item.skypec.kg.toLocaleString()} kg</span>
+            </div>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // Sinh nội dung báo cáo văn bản
+    function generateReportText(data) {
+      const { summary, results } = data;
+      let text = `==================================================\n`;
+      text += `BÁO CÁO SAI LỆCH SỐ HIỆU TÀU BAY - SKYEYES FLYCLEAN\n`;
+      text += `Lịch bay ngày: ${summary.date}\n`;
+      text += `==================================================\n`;
+      text += `- Tổng số chuyến bay kế hoạch VIAGS: ${summary.totalVias}\n`;
+      text += `- Tổng số phiếu nạp thực tế Skypec  : ${summary.totalSkypec}\n`;
+      text += `- Số chuyến bay khớp hoàn toàn      : ${summary.matchedCount}\n`;
+      text += `- Số trường hợp sai lệch số tàu bay : ${summary.mismatchedCount}\n`;
+      text += `--------------------------------------------------\n\n`;
+
+      if (results.mismatched.length === 0) {
+        text += `Không phát hiện trường hợp điền sai số hiệu tàu bay nào.\n`;
+      } else {
+        results.mismatched.forEach((item, idx) => {
+          text += `Trường hợp sai lệch #${idx + 1}:\n`;
+          text += `  ✈️ Chuyến bay: ${item.vias.flightNoOriginal} | Chặng: ${item.vias.routeOriginal} (Skypec ghi: ${item.skypec.routeOriginal})\n`;
+          text += `  ✅ Số tàu bay CHUẨN (VIAGS)   : ${item.vias.regsOriginal}\n`;
+          text += `  ❌ Số tàu bay NHẬP SAI (Skypec): ${item.skypec.regsOriginal}\n`;
+          text += `  📄 Chứng từ: Phiếu số ${item.skypec.ticketNo} | Receipt: ${item.skypec.receiptNo} | Nạp: ${item.skypec.kg.toLocaleString()} kg\n`;
+          text += `  👤 Nhân viên chịu trách nhiệm : Lái xe: ${item.skypec.driver} | Thợ bơm: ${item.skypec.operator}\n`;
+          text += `  --------------------------------------------------\n`;
+        });
+      }
+      return text;
+    }
+
+    // Sao chép nhanh báo cáo
+    const btnCopyReport = document.getElementById('btn-copy-report');
+    btnCopyReport.addEventListener('click', () => {
+      if (!auditResponseData) return;
+      const text = generateReportText(auditResponseData);
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Đã sao chép nội dung báo cáo thành công!', 'green');
+      }).catch(err => {
+        showToast('Lỗi khi sao chép: ' + err.message, 'red');
+      });
+    });
+
+    // Xuất báo cáo ra file .txt
+    const btnExportFile = document.getElementById('btn-export-file');
+    btnExportFile.addEventListener('click', () => {
+      if (!auditResponseData) return;
+      const text = generateReportText(auditResponseData);
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `FlyClean_BaoCao_${auditResponseData.summary.date.replace(/[\/]/g, '-')}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Đã xuất file báo cáo thành công!', 'green');
+    });
+
+    // Toast Notification
+    const toastEl = document.getElementById('toast-el');
+    let toastTimeout = null;
+
+    function showToast(msg, type = 'primary') {
+      if (toastTimeout) clearTimeout(toastTimeout);
+      
+      toastEl.textContent = msg;
+      toastEl.style.display = 'block';
+      
+      // Màu sắc theo loại
+      if (type === 'green') {
+        toastEl.style.borderLeftColor = 'var(--green)';
+      } else if (type === 'red') {
+        toastEl.style.borderLeftColor = 'var(--red)';
+      } else {
+        toastEl.style.borderLeftColor = 'var(--primary)';
+      }
+
+      toastTimeout = setTimeout(() => {
+        toastEl.style.display = 'none';
+      }, 3500);
+    }
+  </script>
+</body>
+</html>
