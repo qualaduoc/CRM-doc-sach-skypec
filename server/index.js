@@ -1207,11 +1207,33 @@ app.post('/api/admin/change-password', authenticateToken, async (req, res) => {
 // --- API QUẢN LÝ TẢI DẦU FMS VIETNAM AIRLINES ---
 // Cập nhật lịch bay trực ca (chỉ Admin)
 app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
+// Hàm tính toán ngày bay thực tế FMS dựa trên giờ tra nạp
+function calculateFmsDate(dateStr, timeStr) {
+  if (!timeStr || timeStr === '-') return dateStr;
+  try {
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+    if (match) {
+      const hour = parseInt(match[1]);
+      const minute = parseInt(match[2]);
+      // Nếu giờ nạp nằm trong nửa ca sau ca đêm (00h00 - 07h30 sáng)
+      if (hour < 7 || (hour === 7 && minute <= 30)) {
+        const d = new Date(dateStr + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().split('T')[0];
+      }
+    }
+  } catch (e) {
+    console.error('[calculateFmsDate Error]', e.message);
+  }
+  return dateStr;
+}
+
+app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
-  const { scheduleText, flights, mappings } = req.body;
+  const { scheduleText, flights, mappings, date } = req.body;
   if (!scheduleText && (!flights || flights.length === 0)) {
     return res.status(400).json({ success: false, error: 'Vui lòng cung cấp lịch bay hoặc danh sách chuyến bay' });
   }
@@ -1237,7 +1259,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
       }
     }
 
-    const todayDb = getVietnamDbDateStr();
+    const targetDate = date ? String(date).trim() : getVietnamDbDateStr();
     const schedules = [];
 
     if (flights && flights.length > 0) {
@@ -1304,18 +1326,19 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     }
 
     // Dọn dẹp dữ liệu lịch bay của các ngày hôm trước để tránh quá tải DB
-    await db.run('DELETE FROM fms_schedules WHERE date < ?', todayDb);
+    await db.run('DELETE FROM fms_schedules WHERE date < ?', targetDate);
 
     // Xóa lịch cũ của ngày hôm nay
-    await db.run('DELETE FROM fms_schedules WHERE date = ?', todayDb);
+    await db.run('DELETE FROM fms_schedules WHERE date = ?', targetDate);
 
     // Thêm lịch mới
     for (const item of schedules) {
+      const fmsDate = calculateFmsDate(targetDate, item.time_fuel || item.time_dep || item.time_arr);
       await db.run(`
         INSERT INTO fms_schedules (
           flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel, 
-          gate, truck_no, driver_name, operator_name, crew_info, crew_zalo_uids, notify_type, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          gate, truck_no, driver_name, operator_name, crew_info, crew_zalo_uids, notify_type, date, fms_date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         item.flight_no,
         item.ac_type,
@@ -1331,7 +1354,8 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
         item.crew_info,
         item.crew_zalo_uids || '',
         item.notify_type || 1,
-        todayDb
+        targetDate,
+        fmsDate
       );
     }
 

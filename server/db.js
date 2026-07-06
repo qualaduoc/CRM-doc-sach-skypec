@@ -84,6 +84,7 @@ async function getDb() {
       crew_zalo_uids TEXT,
       notify_type INTEGER DEFAULT 1,
       date TEXT NOT NULL,
+      fms_date TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -141,6 +142,7 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN operator_name TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN crew_zalo_uids TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN notify_type INTEGER DEFAULT 1;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN fms_date TEXT;`); } catch(e) {}
 
   // Thêm cột cảnh báo cho fms_fuel_orders của database cũ
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_ac_reg INTEGER DEFAULT 0;`); } catch(e) {}

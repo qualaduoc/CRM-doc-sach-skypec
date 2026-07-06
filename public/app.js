@@ -1655,16 +1655,7 @@ function renderFmsTable() {
     const crewText = r.crew_info || '-';
     const truckText = r.truck_no ? `<br><span style="color: var(--primary); font-size: 0.8rem; font-weight: bold;"><i class="fa-solid fa-truck-field"></i> Xe: ${r.truck_no}</span>` : '';
     
-    // Dropdown chọn hình thức báo Zalo trực tiếp trên bảng theo dõi chính
-    const notifyTypeDropdown = `
-      <div style="margin-top: 5px;">
-        <select class="fms-notify-type-select" data-flight="${r.flight_no}" data-date="${r.date || ''}" data-original-val="${r.notify_type || 1}" style="font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; border: 1px dashed rgba(56, 189, 248, 0.4); background: #0f172a; color: #38bdf8; cursor: pointer; max-width: 120px;">
-          <option value="1" ${r.notify_type == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
-          <option value="2" ${r.notify_type == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
-          <option value="3" ${r.notify_type == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
-        </select>
-      </div>
-    `;
+
     
     // 1. Tính toán hiệu ứng nhấp nháy cảnh báo (hết hạn nhấp nháy sau giờ tra nạp 15 phút)
     let blinkAcReg = false;
@@ -1760,7 +1751,7 @@ function renderFmsTable() {
     return `
       <tr>
         <td style="font-weight: 700; color: #38bdf8; font-size: 1rem;">${r.flight_no}</td>
-        <td class="hide-on-mobile">${crewText}${truckText}${notifyTypeDropdown}</td>
+        <td>${crewText}${truckText}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
         <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${gateHtml}</td>
         <td>${timesHtml}</td>
@@ -2061,6 +2052,14 @@ async function renderFmsPreviewContent(flights) {
   btnConfirm.disabled = false;
   btnConfirm.innerHTML = originalConfirmText;
 
+  // Điền ngày trực kế hoạch mặc định vào DatePicker trên modal preview
+  const todayStr = new Date().toLocaleDateString('en-CA'); 
+  const detectedDate = flights.length > 0 && flights[0].date ? flights[0].date : todayStr;
+  const dateInput = document.getElementById('fms-preview-date-input');
+  if (dateInput) {
+    dateInput.value = detectedDate;
+  }
+
   // 2. Render bảng chuyến bay kèm ô input cho phép sửa tên Lái xe - Thợ bơm trực tiếp (Đã xóa cột Báo Zalo)
   const tbody = document.getElementById('fms-preview-table-body');
   tbody.innerHTML = flights.map((f, index) => `
@@ -2180,6 +2179,9 @@ async function handleConfirmFmsPreview() {
     });
 
     // 3. Gọi API lưu lịch bay và mapping học hỏi
+    const dateInput = document.getElementById('fms-preview-date-input');
+    const selectedDate = dateInput ? dateInput.value : '';
+
     const res = await fetch('/api/fms/schedule', {
       method: 'POST',
       headers: {
@@ -2188,7 +2190,8 @@ async function handleConfirmFmsPreview() {
       },
       body: JSON.stringify({ 
         flights: finalFlights,
-        mappings: mappings
+        mappings: mappings,
+        date: selectedDate
       })
     });
     
@@ -2196,6 +2199,9 @@ async function handleConfirmFmsPreview() {
     if (data.success) {
       showToast(data.message, 'success', 'Thành công');
       document.getElementById('fms-preview-modal').classList.remove('active');
+      if (selectedDate) {
+        document.getElementById('fms-filter-date').value = selectedDate;
+      }
       loadFmsSchedules();
     } else {
       throw new Error(data.error);

@@ -289,8 +289,8 @@ async function syncFMSData() {
     }
 
     for (const targetDate of targetDates) {
-      // Lấy danh sách các chuyến bay cần theo dõi của ngày đang xét
-      const schedules = await db.all('SELECT DISTINCT flight_no FROM fms_schedules WHERE date = ?', targetDate);
+      // Lấy danh sách các chuyến bay cần theo dõi của ngày đang xét theo ngày bay thực tế FMS (fms_date)
+      const schedules = await db.all('SELECT DISTINCT flight_no FROM fms_schedules WHERE COALESCE(fms_date, date) = ?', targetDate);
       if (schedules.length === 0) continue;
 
       const flightNumbers = schedules.map(s => s.flight_no.toUpperCase().replace(/\s+/g, ''));
@@ -358,8 +358,8 @@ async function syncFMSData() {
           const shouldNotify = isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged;
 
           if (shouldNotify) {
-            // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày (kèm cấu hình Zalo)
-            const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type FROM fms_schedules WHERE flight_no = ? AND date = ?', cleanFltNo, targetDate);
+            // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày bay thực tế fms_date (kèm cấu hình Zalo)
+            const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type FROM fms_schedules WHERE flight_no = ? AND COALESCE(fms_date, date) = ?', cleanFltNo, targetDate);
             
             let title = '🔔 [FMS BÁO TẢI DẦU MỚI]';
             if (isNewStandby && !isNewFuelOrder) {
