@@ -144,30 +144,35 @@ function applyPermissionsUI() {
 // Áp dụng ẩn hiện trên màn hình User (Nhân viên C1, C2)
 function applyUserPermissionsUI() {
   const userRole = getUserRole();
-  const kpiGrid = document.querySelector('.kpi-grid');
+  const kpiGrid = document.querySelector('#user-screen .kpi-grid');
   const surveyNotice = document.getElementById('survey-notice-banner');
-  const sectionTitle = document.querySelector('.section-title');
+  const sectionTitle = document.querySelector('#user-screen .section-title');
   const classesTableContainer = document.getElementById('classes-table-body')?.closest('.table-container');
 
   if (userRole === 'nv_c1') {
     // Nhân viên C1: Hiện KPI, hiện bảng lớp học (để đọc sách), hiện bảng xem tải FMS
     if (kpiGrid) kpiGrid.style.display = 'grid';
     if (surveyNotice) surveyNotice.style.display = 'flex';
-    if (sectionTitle) sectionTitle.style.display = 'flex';
-    if (classesTableContainer) classesTableContainer.style.display = 'block';
-    
-    // Load FMS cho User
-    loadUserFmsSchedules();
+    if (sectionTitle) {
+      sectionTitle.style.setProperty('display', 'flex', 'important');
+    }
+    if (classesTableContainer) {
+      classesTableContainer.style.setProperty('display', 'block', 'important');
+    }
   } else {
     // Nhân viên C2: Ẩn sạch sẽ các phần liên quan đến học tập/đọc sách/KPI, chỉ để lại FMS
     if (kpiGrid) kpiGrid.style.display = 'none';
     if (surveyNotice) surveyNotice.style.display = 'none';
-    if (sectionTitle) sectionTitle.style.display = 'none';
-    if (classesTableContainer) classesTableContainer.style.display = 'none';
-    
-    // Load FMS cho User
-    loadUserFmsSchedules();
+    if (sectionTitle) {
+      sectionTitle.style.setProperty('display', 'none', 'important');
+    }
+    if (classesTableContainer) {
+      classesTableContainer.style.setProperty('display', 'none', 'important');
+    }
   }
+  
+  // Luôn load dữ liệu FMS cho User
+  loadUserFmsSchedules();
 }
 
 // Hiệu ứng nền vũ trụ động lấp lánh (Twinkling space background) cho màn hình đăng nhập

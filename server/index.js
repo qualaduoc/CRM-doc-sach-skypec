@@ -1443,11 +1443,8 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
   }
 });
 
-// Lấy danh sách lịch bay và dữ liệu tải dầu tương ứng (chỉ Admin)
+// Lấy danh sách lịch bay và dữ liệu tải dầu tương ứng (Cho phép tất cả người dùng đăng nhập xem)
 app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
-    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
-  }
 
   try {
     const db = await getDb();
