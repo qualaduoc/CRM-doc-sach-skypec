@@ -1859,6 +1859,28 @@ function handleExcelFileSelect(e) {
   reader.readAsArrayBuffer(file);
 }
 
+// Hàm chuyển đổi định dạng giờ Excel (số thập phân) sang HH:MM
+function formatExcelTime(val) {
+  if (val === undefined || val === null || String(val).trim() === '') return '';
+  const strVal = String(val).trim();
+  
+  if (strVal.includes(':')) {
+    return strVal;
+  }
+  
+  if (/^\d+(\.\d+)?$/.test(strVal)) {
+    const num = parseFloat(strVal);
+    if (!isNaN(num)) {
+      const decimalPart = num % 1;
+      const totalSeconds = Math.round(decimalPart * 24 * 60 * 60);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+  }
+  return strVal;
+}
+
 // Phân tích và bóc tách các dòng từ file Excel lịch trực (13 cột)
 function parseFmsExcel(rows) {
   const flights = [];
@@ -1878,9 +1900,9 @@ function parseFmsExcel(rows) {
         ac_reg: r[2] ? String(r[2]).trim() : '',
         flight_no: flightNo,
         route: r[4] ? String(r[4]).trim() : '',
-        time_arr: r[6] ? String(r[6]).trim() : '',
-        time_dep: r[7] ? String(r[7]).trim() : '',
-        time_fuel: r[8] ? String(r[8]).trim() : '',
+        time_arr: formatExcelTime(r[6]),
+        time_dep: formatExcelTime(r[7]),
+        time_fuel: formatExcelTime(r[8]),
         gate: r[9] ? String(r[9]).trim() : '',
         truck_no: r[10] ? String(r[10]).trim() : '',
         driver_name: r[11] ? String(r[11]).trim() : '',
