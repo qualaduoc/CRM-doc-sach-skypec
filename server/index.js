@@ -1207,7 +1207,7 @@ app.post('/api/admin/change-password', authenticateToken, async (req, res) => {
 // --- API QUẢN LÝ TẢI DẦU FMS VIETNAM AIRLINES ---
 // Cập nhật lịch bay trực ca (chỉ Admin)
 // Hàm tính toán ngày bay thực tế FMS dựa trên giờ tra nạp
-function calculateFmsDate(dateStr, timeStr) {
+function calculateFmsDate(dateStr, timeStr, hasNightFlights = false) {
   if (!timeStr || timeStr === '-') return dateStr;
   try {
     const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
@@ -1215,11 +1215,31 @@ function calculateFmsDate(dateStr, timeStr) {
       const hour = parseInt(match[1]);
       const minute = parseInt(match[2]);
       
-      // Khầy dạy: các dữ liệu từ 00h00 tới 5h55 phải lấy dữ liệu từ ngày hôm trước (date - 1)
-      if (hour < 5 || (hour === 5 && minute <= 55)) {
-        const d = new Date(dateStr + 'T00:00:00');
-        d.setDate(d.getDate() - 1);
-        return d.toISOString().split('T')[0];
+      // Nếu giờ nạp nằm trong khoảng sáng sớm (00h00 - 07h30)
+      if (hour < 7 || (hour === 7 && minute <= 30)) {
+        if (hasNightFlights) {
+          // Ca đêm vượt ngày: các chuyến sáng sớm bay vào ngày hôm sau (date + 1)
+          if (hour < 6) {
+            // Từ 00h00 đến 05h55 ngày hôm sau -> ngày FMS thực tế là chính ngày trực (date)
+            return dateStr;
+          } else {
+            // Từ 06h00 đến 07h30 ngày hôm sau -> ngày FMS thực tế là ngày hôm sau (date + 1)
+            const d = new Date(dateStr + 'T00:00:00');
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().split('T')[0];
+          }
+        } else {
+          // Lịch ca ngày/ca sáng riêng lẻ: các chuyến sáng sớm bay vào chính ngày trực (date)
+          if (hour < 6) {
+            // Từ 00h00 đến 05h55 chính ngày -> ngày FMS thực tế là ngày hôm trước (date - 1)
+            const d = new Date(dateStr + 'T00:00:00');
+            d.setDate(d.getDate() - 1);
+            return d.toISOString().split('T')[0];
+          } else {
+            // Từ 06h00 đến 07h30 chính ngày -> ngày FMS thực tế là chính ngày trực (date)
+            return dateStr;
+          }
+        }
       }
     }
   } catch (e) {
@@ -1261,6 +1281,23 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 
     const targetDate = date ? String(date).trim() : getVietnamDbDateStr();
     const schedules = [];
+
+    // Tự động nhận diện xem đây có phải ca trực đêm vượt ngày hay không
+    // (nếu có chuyến bay bay tối muộn từ 19h30 đến 23h59)
+    let hasNightFlights = false;
+    if (flights && flights.length > 0) {
+      hasNightFlights = flights.some(f => {
+        const timeStr = f.time_fuel || f.time_dep || f.time_arr;
+        if (!timeStr || timeStr === '-') return false;
+        const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+        if (match) {
+          const hour = parseInt(match[1]);
+          const minute = parseInt(match[2]);
+          return (hour > 19) || (hour === 19 && minute >= 30);
+        }
+        return false;
+      });
+    }
 
     if (flights && flights.length > 0) {
       // 1. Phân tích lịch bay dạng JSON mảng (từ file Excel)
@@ -1336,7 +1373,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 
     // Thêm lịch mới
     for (const item of schedules) {
-      const fmsDate = calculateFmsDate(targetDate, item.time_fuel || item.time_dep || item.time_arr);
+      const fmsDate = calculateFmsDate(targetDate, item.time_fuel || item.time_dep || item.time_arr, hasNightFlights);
       await db.run(`
         INSERT INTO fms_schedules (
           flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel, 
