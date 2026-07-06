@@ -174,8 +174,8 @@ function applyPermissionsUI() {
     
     // Load dữ liệu FMS & Zalo cho Điều hành
     loadFmsSchedules();
-    loadSkyOneSettings();
-    startSkyOnePolling();
+    loadSkyEyesSettings();
+    startSkyEyesPolling();
     return;
   }
 }
@@ -481,10 +481,10 @@ function setupEventListeners() {
       if (tabId === 'tab-fms') {
         loadFmsSchedules();
         loadGeminiKeys();
-        startSkyOnePolling();
-        loadSkyOneSettings();
+        startSkyEyesPolling();
+        loadSkyEyesSettings();
       } else {
-        stopSkyOnePolling();
+        stopSkyEyesPolling();
       }
     });
   });
@@ -543,36 +543,36 @@ function setupEventListeners() {
   // Xác nhận lưu lịch trực FMS từ preview
   document.getElementById('btn-fms-confirm-preview').addEventListener('click', handleConfirmFmsPreview);
 
-  // --- SỰ KIỆN TRỢ LÝ ZALO SKYONE ---
-  document.getElementById('btn-skyone-connect').addEventListener('click', handleSkyOneConnect);
-  document.getElementById('btn-skyone-send-test').addEventListener('click', handleSkyOneSendTest);
-  document.getElementById('btn-skyone-test-realtime').addEventListener('click', handleSkyOneTestRealtime);
-  document.getElementById('btn-skyone-logout').addEventListener('click', handleSkyOneLogout);
+  // --- SỰ KIỆN TRỢ LÝ ZALO SKYEYES ---
+  document.getElementById('btn-skyeyes-connect').addEventListener('click', handleSkyEyesConnect);
+  document.getElementById('btn-skyeyes-send-test').addEventListener('click', handleSkyEyesSendTest);
+  document.getElementById('btn-skyeyes-test-realtime').addEventListener('click', handleSkyEyesTestRealtime);
+  document.getElementById('btn-skyeyes-logout').addEventListener('click', handleSkyEyesLogout);
   // Toggle Custom Dropdown chọn nhiều nhóm
-  const displayBox = document.getElementById('skyone-groups-display');
+  const displayBox = document.getElementById('skyeyes-groups-display');
   if (displayBox) {
     displayBox.addEventListener('click', (e) => {
       e.stopPropagation();
-      const dropdown = document.getElementById('skyone-groups-dropdown');
+      const dropdown = document.getElementById('skyeyes-groups-dropdown');
       dropdown.style.display = dropdown.style.display === 'flex' ? 'none' : 'flex';
     });
   }
 
   // Đóng dropdown khi click ra ngoài
   document.addEventListener('click', (e) => {
-    const dropdown = document.getElementById('skyone-groups-dropdown');
-    const display = document.getElementById('skyone-groups-display');
+    const dropdown = document.getElementById('skyeyes-groups-dropdown');
+    const display = document.getElementById('skyeyes-groups-display');
     if (dropdown && display && !dropdown.contains(e.target) && !display.contains(e.target)) {
       dropdown.style.display = 'none';
     }
   });
 
   // Tìm kiếm lọc tên nhóm
-  const searchInput = document.getElementById('skyone-group-search');
+  const searchInput = document.getElementById('skyeyes-group-search');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       const q = e.target.value.toLowerCase().trim();
-      const items = document.querySelectorAll('#skyone-groups-list label');
+      const items = document.querySelectorAll('#skyeyes-groups-list label');
       items.forEach(item => {
         const name = item.textContent.toLowerCase();
         if (name.includes(q)) {
@@ -584,9 +584,9 @@ function setupEventListeners() {
     });
   }
 
-  document.getElementById('skyone-notify-enabled').addEventListener('change', handleSaveSkyOneSettings);
-  document.getElementById('skyone-template-presets').addEventListener('change', handleSkyOnePresetChange);
-  document.getElementById('skyone-template-input').addEventListener('blur', handleSaveSkyOneSettings);
+  document.getElementById('skyeyes-notify-enabled').addEventListener('change', handleSaveSkyEyesSettings);
+  document.getElementById('skyeyes-template-presets').addEventListener('change', handleSkyEyesPresetChange);
+  document.getElementById('skyeyes-template-input').addEventListener('blur', handleSaveSkyEyesSettings);
 
   // Lắng nghe sự kiện tìm kiếm và bộ lọc FMS
   const fmsSearchInput = document.getElementById('fms-search-input');
@@ -2667,29 +2667,29 @@ async function handleTestGeminiKeys() {
   }
 }
 
-// --- TRỢ LÝ ZALO SKYONE CLIENT-SIDE LOGIC ---
-let skyonePollInterval = null;
-let lastSkyOneStatus = '';
+// --- TRỢ LÝ ZALO SKYEYES CLIENT-SIDE LOGIC ---
+let skyeyesPollInterval = null;
+let lastSkyEyesStatus = '';
 
 // Bắt đầu vòng lặp polling lấy trạng thái Zalo
-function startSkyOnePolling() {
-  if (skyonePollInterval) return;
+function startSkyEyesPolling() {
+  if (skyeyesPollInterval) return;
   
   // Polling mỗi 2.5 giây
-  skyonePollInterval = setInterval(fetchSkyOneState, 2500);
-  fetchSkyOneState(); // Gọi ngay lập tức
+  skyeyesPollInterval = setInterval(fetchSkyEyesState, 2500);
+  fetchSkyEyesState(); // Gọi ngay lập tức
 }
 
 // Dừng vòng lặp polling
-function stopSkyOnePolling() {
-  if (skyonePollInterval) {
-    clearInterval(skyonePollInterval);
-    skyonePollInterval = null;
+function stopSkyEyesPolling() {
+  if (skyeyesPollInterval) {
+    clearInterval(skyeyesPollInterval);
+    skyeyesPollInterval = null;
   }
 }
 
-// Lấy trạng thái Zalo SkyOne từ server
-async function fetchSkyOneState() {
+// Lấy trạng thái Zalo SkyEyes từ server
+async function fetchSkyEyesState() {
   try {
     const res = await fetch('/api/fms/zalo/state', {
       method: 'GET',
@@ -2697,25 +2697,25 @@ async function fetchSkyOneState() {
     });
     const data = await res.json();
     if (data.success) {
-      updateSkyOneUI(data.state);
+      updateSkyEyesUI(data.state);
     }
   } catch (err) {
-    console.error('[SkyOne] Không thể lấy trạng thái Zalo:', err.message);
+    console.error('[SkyEyes] Không thể lấy trạng thái Zalo:', err.message);
   }
 }
 
-// Cập nhật giao diện Trợ lý SkyOne dựa trên trạng thái hiện tại
-async function updateSkyOneUI(botState) {
-  const statusEl = document.getElementById('skyone-bot-status');
-  const qrContainer = document.getElementById('skyone-qr-container');
-  const qrImg = document.getElementById('skyone-qr-img');
-  const btnConnect = document.getElementById('btn-skyone-connect');
-  const btnLogout = document.getElementById('btn-skyone-logout');
-  const groupsListDiv = document.getElementById('skyone-groups-list');
+// Cập nhật giao diện Trợ lý SkyEyes dựa trên trạng thái hiện tại
+async function updateSkyEyesUI(botState) {
+  const statusEl = document.getElementById('skyeyes-bot-status');
+  const qrContainer = document.getElementById('skyeyes-qr-container');
+  const qrImg = document.getElementById('skyeyes-qr-img');
+  const btnConnect = document.getElementById('btn-skyeyes-connect');
+  const btnLogout = document.getElementById('btn-skyeyes-logout');
+  const groupsListDiv = document.getElementById('skyeyes-groups-list');
 
-  if (botState.status !== lastSkyOneStatus) {
-    console.log(`[SkyOne] Trạng thái chuyển đổi: ${lastSkyOneStatus} -> ${botState.status}`);
-    lastSkyOneStatus = botState.status;
+  if (botState.status !== lastSkyEyesStatus) {
+    console.log(`[SkyEyes] Trạng thái chuyển đổi: ${lastSkyEyesStatus} -> ${botState.status}`);
+    lastSkyEyesStatus = botState.status;
   }
 
   switch (botState.status) {
@@ -2724,7 +2724,7 @@ async function updateSkyOneUI(botState) {
       statusEl.style.color = '#ef4444';
       qrContainer.style.display = 'none';
       btnConnect.style.display = 'block';
-      btnConnect.innerHTML = '<i class="fa-solid fa-qrcode"></i> Kết Nối SkyOne (Quét QR)';
+      btnConnect.innerHTML = '<i class="fa-solid fa-qrcode"></i> Kết Nối SkyEyes (Quét QR)';
       btnConnect.disabled = false;
       btnLogout.style.display = 'none';
       break;
@@ -2763,16 +2763,16 @@ async function updateSkyOneUI(botState) {
       break;
 
     case 'connected':
-      statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Đang hoạt động (${botState.botName || 'SkyOne'})`;
+      statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Đang hoạt động (${botState.botName || 'SkyEyes'})`;
       statusEl.style.color = '#10b981';
       qrContainer.style.display = 'none';
       btnConnect.style.display = 'none';
       btnLogout.style.display = 'block';
 
       // Tự động load danh sách nhóm nếu chưa được load
-      const hasGroupsLoaded = groupsListDiv && groupsListDiv.querySelectorAll('.skyone-group-checkbox').length > 0;
+      const hasGroupsLoaded = groupsListDiv && groupsListDiv.querySelectorAll('.skyeyes-group-checkbox').length > 0;
       if (!hasGroupsLoaded) {
-        loadSkyOneGroups();
+        loadSkyEyesGroups();
       }
       break;
 
@@ -2789,11 +2789,11 @@ async function updateSkyOneUI(botState) {
 }
 
 // Kết nối QR (hoặc đóng QR nếu đang chờ quét)
-async function handleSkyOneConnect() {
-  const btnConnect = document.getElementById('btn-skyone-connect');
-  if (lastSkyOneStatus === 'qr_ready' || lastSkyOneStatus === 'scanned') {
+async function handleSkyEyesConnect() {
+  const btnConnect = document.getElementById('btn-skyeyes-connect');
+  if (lastSkyEyesStatus === 'qr_ready' || lastSkyEyesStatus === 'scanned') {
     // Nhấp nút khi đang chờ quét -> Thực hiện đăng xuất để hủy phiên quét
-    await handleSkyOneLogout();
+    await handleSkyEyesLogout();
     return;
   }
 
@@ -2809,7 +2809,7 @@ async function handleSkyOneConnect() {
     if (!data.success) {
       showToast('Không thể tạo QR Code Zalo: ' + data.error, 'error', 'Tạo QR thất bại');
     } else {
-      startSkyOnePolling();
+      startSkyEyesPolling();
     }
   } catch (e) {
     showToast('Lỗi kết nối tạo QR: ' + e.message, 'error', 'Lỗi kết nối');
@@ -2817,8 +2817,8 @@ async function handleSkyOneConnect() {
 }
 
 // Đăng xuất Bot Zalo
-async function handleSkyOneLogout() {
-  if (!confirm('Bạn có chắc chắn muốn đăng xuất và ngắt kết nối Trợ lý Zalo SkyOne không?')) return;
+async function handleSkyEyesLogout() {
+  if (!confirm('Bạn có chắc chắn muốn đăng xuất và ngắt kết nối Trợ lý Zalo SkyEyes không?')) return;
   
   try {
     const res = await fetch('/api/fms/zalo/logout', {
@@ -2829,10 +2829,10 @@ async function handleSkyOneLogout() {
     if (data.success) {
       showToast('Đã ngắt kết nối Zalo thành công!', 'success', 'Đăng xuất thành công');
       // Reset dropdown nhóm
-      const groupsListDiv = document.getElementById('skyone-groups-list');
+      const groupsListDiv = document.getElementById('skyeyes-groups-list');
       if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Chưa tải danh sách nhóm</div>';
-      updateSkyOneGroupsDisplayText('');
-      fetchSkyOneState();
+      updateSkyEyesGroupsDisplayText('');
+      fetchSkyEyesState();
     } else {
       showToast(data.error, 'error', 'Đăng xuất thất bại');
     }
@@ -2842,7 +2842,7 @@ async function handleSkyOneLogout() {
 }
 
 // Tải cấu hình cài đặt Zalo từ server
-async function loadSkyOneSettings() {
+async function loadSkyEyesSettings() {
   try {
     const res = await fetch('/api/fms/zalo/settings', {
       method: 'GET',
@@ -2851,23 +2851,23 @@ async function loadSkyOneSettings() {
     const data = await res.json();
     if (data.success && data.settings) {
       const { targetGroupId, targetGroupName, notifyEnabled, messageTemplate } = data.settings;
-      document.getElementById('skyone-notify-enabled').checked = notifyEnabled;
-      document.getElementById('skyone-template-input').value = messageTemplate || '';
+      document.getElementById('skyeyes-notify-enabled').checked = notifyEnabled;
+      document.getElementById('skyeyes-template-input').value = messageTemplate || '';
       
       // Lưu lại các giá trị nhóm đã chọn để khi load group list sẽ check
       window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',').map(id => id.trim()) : [];
       window.savedTargetGroupName = targetGroupName || '';
       
-      updateSkyOneGroupsDisplayText(targetGroupName);
+      updateSkyEyesGroupsDisplayText(targetGroupName);
     }
   } catch (err) {
-    console.error('[SkyOne] Lỗi tải cấu hình Zalo:', err.message);
+    console.error('[SkyEyes] Lỗi tải cấu hình Zalo:', err.message);
   }
 }
 
 // Cập nhật text hiển thị trên nút chọn nhóm
-function updateSkyOneGroupsDisplayText(namesStr) {
-  const displayText = document.getElementById('skyone-groups-display-text');
+function updateSkyEyesGroupsDisplayText(namesStr) {
+  const displayText = document.getElementById('skyeyes-groups-display-text');
   if (displayText) {
     if (namesStr && namesStr.trim() !== '') {
       displayText.textContent = 'Đã chọn: ' + namesStr;
@@ -2880,23 +2880,23 @@ function updateSkyOneGroupsDisplayText(namesStr) {
 }
 
 // Lưu cấu hình nhóm nhận tin và checkbox bật/tắt
-async function handleSaveSkyOneSettings() {
-  const notifyEnabled = document.getElementById('skyone-notify-enabled').checked;
-  const messageTemplate = document.getElementById('skyone-template-input').value;
+async function handleSaveSkyEyesSettings() {
+  const notifyEnabled = document.getElementById('skyeyes-notify-enabled').checked;
+  const messageTemplate = document.getElementById('skyeyes-template-input').value;
   
   // Thu thập các ID và tên nhóm được tích chọn
-  const checkedBoxes = document.querySelectorAll('.skyone-group-checkbox:checked');
+  const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
   const targetGroupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
   const targetGroupName = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-name')).join(', ');
 
   // Lưu tạm vào biến global
   window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',') : [];
   window.savedTargetGroupName = targetGroupName;
-  updateSkyOneGroupsDisplayText(targetGroupName);
+  updateSkyEyesGroupsDisplayText(targetGroupName);
 
   if (!targetGroupId && notifyEnabled) {
     showToast('Vui lòng chọn ít nhất một nhóm Zalo trước khi bật thông báo!', 'warning', 'Lưu ý');
-    document.getElementById('skyone-notify-enabled').checked = false;
+    document.getElementById('skyeyes-notify-enabled').checked = false;
     return;
   }
 
@@ -2911,7 +2911,7 @@ async function handleSaveSkyOneSettings() {
     });
     const data = await res.json();
     if (data.success) {
-      showToast('Đã lưu cấu hình trợ lý SkyOne thành công!', 'success', 'Đã cập nhật');
+      showToast('Đã lưu cấu hình trợ lý SkyEyes thành công!', 'success', 'Đã cập nhật');
     } else {
       showToast(data.error, 'error', 'Lưu cấu hình thất bại');
     }
@@ -2921,9 +2921,9 @@ async function handleSaveSkyOneSettings() {
 }
 
 // Thay đổi mẫu tin nhắn từ mẫu soạn sẵn
-function handleSkyOnePresetChange(e) {
+function handleSkyEyesPresetChange(e) {
   const preset = e.target.value;
-  const templateInput = document.getElementById('skyone-template-input');
+  const templateInput = document.getElementById('skyeyes-template-input');
   
   const presets = {
     'preset-1': `{{status_change_title}}
@@ -2953,20 +2953,20 @@ function handleSkyOnePresetChange(e) {
 
   if (preset && presets[preset]) {
     templateInput.value = presets[preset];
-    handleSaveSkyOneSettings();
+    handleSaveSkyEyesSettings();
   }
 }
 
 // Gửi thử tin nhắn test
-async function handleSkyOneSendTest() {
-  const checkedBoxes = document.querySelectorAll('.skyone-group-checkbox:checked');
+async function handleSkyEyesSendTest() {
+  const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
   const groupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
   if (!groupId) {
     showToast('Vui lòng chọn ít nhất một nhóm Zalo nhận tin trước khi gửi thử!', 'warning', 'Lưu ý');
     return;
   }
 
-  const btn = document.getElementById('btn-skyone-send-test');
+  const btn = document.getElementById('btn-skyeyes-send-test');
   const originalHtml = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>...';
@@ -2980,7 +2980,7 @@ async function handleSkyOneSendTest() {
       },
       body: JSON.stringify({
         groupId,
-        message: '🤖 Trợ lý Zalo SkyOne xin kính chào Khầy Được! Kênh thông báo tải dầu FMS đã hoạt động tốt.'
+        message: '🤖 Trợ lý Zalo SkyEyes xin kính chào Khầy Được! Kênh thông báo tải dầu FMS đã hoạt động tốt.'
       })
     });
     const data = await res.json();
@@ -2998,15 +2998,15 @@ async function handleSkyOneSendTest() {
 }
 
 // Gửi tin nhắn test FMS thực tế
-async function handleSkyOneTestRealtime() {
-  const checkedBoxes = document.querySelectorAll('.skyone-group-checkbox:checked');
+async function handleSkyEyesTestRealtime() {
+  const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
   const groupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
   if (!groupId) {
     showToast('Vui lòng chọn ít nhất một nhóm Zalo nhận tin trước khi test thực tế!', 'warning', 'Lưu ý');
     return;
   }
 
-  const btn = document.getElementById('btn-skyone-test-realtime');
+  const btn = document.getElementById('btn-skyeyes-test-realtime');
   const originalHtml = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>...';
@@ -3034,8 +3034,8 @@ async function handleSkyOneTestRealtime() {
 }
 
 // Tải danh sách các nhóm Zalo từ tài khoản đăng nhập
-async function loadSkyOneGroups() {
-  const groupsListDiv = document.getElementById('skyone-groups-list');
+async function loadSkyEyesGroups() {
+  const groupsListDiv = document.getElementById('skyeyes-groups-list');
   if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải...</div>';
 
   try {
@@ -3068,24 +3068,24 @@ async function loadSkyOneGroups() {
           const isChecked = savedGroupIdsArray.includes(String(g.groupId).trim());
           return `
             <label style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; user-select: none; transition: background 0.2s; justify-content: flex-start; text-align: left; width: 100%;" class="group-item-hover">
-              <input type="checkbox" class="skyone-group-checkbox" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
+              <input type="checkbox" class="skyeyes-group-checkbox" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
               <span style="font-size: 0.78rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${g.groupName}</span>
             </label>
           `;
         }).join('');
 
         // Đăng ký sự kiện change cho các checkbox
-        document.querySelectorAll('.skyone-group-checkbox').forEach(cb => {
-          cb.addEventListener('change', handleSaveSkyOneSettings);
+        document.querySelectorAll('.skyeyes-group-checkbox').forEach(cb => {
+          cb.addEventListener('change', handleSaveSkyEyesSettings);
         });
       }
 
-      updateSkyOneGroupsDisplayText(savedGroupName);
+      updateSkyEyesGroupsDisplayText(savedGroupName);
     } else {
       if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Quét nhóm thất bại</div>';
     }
   } catch (err) {
-    console.error('[SkyOne] Lỗi tải danh sách nhóm:', err.message);
+    console.error('[SkyEyes] Lỗi tải danh sách nhóm:', err.message);
     if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Lỗi tải danh sách nhóm</div>';
   }
 }

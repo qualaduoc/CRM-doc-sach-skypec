@@ -11,7 +11,7 @@ const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
 const { syncFMSData, startFmsWorker, getVietnamDbDateStr } = require('./fmsService');
 const { performImageOCR, testSingleGeminiKey } = require('./ocrService');
-const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyOneMessage, sendSkyOnePrivateMessage, getBotState } = require('./zaloService');
+const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyEyesMessage, sendSkyEyesPrivateMessage, getBotState } = require('./zaloService');
 
 
 const app = express();
@@ -1516,7 +1516,7 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
   }
 });
 
-// --- CÁC ROUTE API QUẢN LÝ BOT ZALO SKYONE ---
+// --- CÁC ROUTE API QUẢN LÝ BOT ZALO SKYEYES ---
 
 // Lấy trạng thái của Bot Zalo hiện tại (chỉ Admin)
 app.get('/api/fms/zalo/state', authenticateToken, async (req, res) => {
@@ -1537,7 +1537,7 @@ app.post('/api/fms/zalo/qr', authenticateToken, async (req, res) => {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
   try {
-    startQRLogin().catch(err => console.error('[SkyOne] Lỗi sinh QR ngầm:', err.message));
+    startQRLogin().catch(err => console.error('[SkyEyes] Lỗi sinh QR ngầm:', err.message));
     res.json({ success: true, message: 'Đang bắt đầu tạo QR Code...' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -1609,7 +1609,7 @@ app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_notify_enabled', ?)", notifyEnabled ? 'true' : 'false');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_message_template', ?)", messageTemplate ? String(messageTemplate) : '');
 
-    res.json({ success: true, message: 'Đã lưu cấu hình trợ lý SkyOne thành công!' });
+    res.json({ success: true, message: 'Đã lưu cấu hình trợ lý SkyEyes thành công!' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1626,7 +1626,7 @@ app.post('/api/fms/zalo/send-test', authenticateToken, async (req, res) => {
   }
   try {
     const ids = String(groupId).split(',').map(id => id.trim()).filter(Boolean);
-    const promises = ids.map(id => sendSkyOneMessage(id, message));
+    const promises = ids.map(id => sendSkyEyesMessage(id, message));
     const responses = await Promise.all(promises);
     res.json({ success: true, message: `Đã gửi tin nhắn test tới ${ids.length} nhóm thành công!`, responses });
   } catch (err) {
@@ -1731,7 +1731,7 @@ app.post('/api/fms/zalo/test-realtime', authenticateToken, async (req, res) => {
     }
 
     const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
-    const promises = ids.map(id => sendSkyOneMessage(id, msg));
+    const promises = ids.map(id => sendSkyEyesMessage(id, msg));
     const responses = await Promise.all(promises);
     res.json({ success: true, message: `Đã bắn tin nhắn test thực tế tới ${ids.length} nhóm thành công!`, responses });
   } catch (err) {
@@ -1842,14 +1842,14 @@ app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) =>
 
         const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
         ids.forEach(id => {
-          sendSkyOneMessage(id, msgGroup, groupMentions).catch(err => console.error('[Zalo Gate Change Error] Group:', id, err.message));
+          sendSkyEyesMessage(id, msgGroup, groupMentions).catch(err => console.error('[Zalo Gate Change Error] Group:', id, err.message));
         });
       }
 
       // 2. Gửi inbox cá nhân riêng (notifyType === 2 || notifyType === 3)
       if ((notifyType === 2 || notifyType === 3) && uids.length > 0) {
         uids.forEach(uid => {
-          sendSkyOnePrivateMessage(uid, msg).catch(err => console.error('[Zalo Gate Change Private Error] UID:', uid, err.message));
+          sendSkyEyesPrivateMessage(uid, msg).catch(err => console.error('[Zalo Gate Change Private Error] UID:', uid, err.message));
         });
       }
     }
@@ -2127,6 +2127,6 @@ app.listen(PORT, async () => {
   // Khởi chạy tiến trình quét ngầm FMS (1.5 phút/90 giây một lần)
   startFmsWorker(1.5 * 60 * 1000);
 
-  // Tự động kết nối Zalo Bot SkyOne nếu đã có session cookies
-  initZaloBot().catch(err => console.error('[SkyOne] Khởi tạo Zalo tự động thất bại:', err.message));
+  // Tự động kết nối Zalo Bot SkyEyes nếu đã có session cookies
+  initZaloBot().catch(err => console.error('[SkyEyes] Khởi tạo Zalo tự động thất bại:', err.message));
 });
