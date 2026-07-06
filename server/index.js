@@ -1044,6 +1044,41 @@ app.post('/api/accounts/:username/permissions', authenticateToken, async (req, r
   }
 });
 
+// Cập nhật vai trò trực tiếp cho tài khoản (Admin, Điều hành, Nhân viên C1, Nhân viên C2)
+app.post('/api/accounts/:username/role', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { username } = req.params;
+  const { roleName } = req.body;
+
+  const validRoles = ['admin', 'dieu_hanh', 'nv_c1', 'nv_c2'];
+  if (!validRoles.includes(roleName)) {
+    return res.status(400).json({ success: false, error: 'Vai trò không hợp lệ' });
+  }
+
+  try {
+    const db = await getDb();
+    let query = '';
+
+    if (roleName === 'admin') {
+      query = `UPDATE accounts SET role = 'admin', perm_admin = 1, perm_fms = 1, perm_zalo = 1, perm_gemini = 1, perm_gate = 1 WHERE username = ?`;
+    } else if (roleName === 'dieu_hanh') {
+      query = `UPDATE accounts SET role = 'user', perm_admin = 0, perm_fms = 1, perm_zalo = 1, perm_gemini = 1, perm_gate = 1 WHERE username = ?`;
+    } else if (roleName === 'nv_c1') {
+      query = `UPDATE accounts SET role = 'user', perm_admin = 0, perm_fms = 0, perm_zalo = 0, perm_gemini = 1, perm_gate = 0 WHERE username = ?`;
+    } else if (roleName === 'nv_c2') {
+      query = `UPDATE accounts SET role = 'user', perm_admin = 0, perm_fms = 0, perm_zalo = 0, perm_gemini = 0, perm_gate = 0 WHERE username = ?`;
+    }
+
+    await db.run(query, username);
+    res.json({ success: true, message: `Đã cập nhật vai trò thành công!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Xóa tài khoản nhân viên ra khỏi LMS (Chỉ dành cho Admin hoặc người có quyền admin)
 app.delete('/api/accounts/:username', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1) return res.status(403).json({ success: false, error: 'Không có quyền thao tác' });

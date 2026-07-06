@@ -177,7 +177,7 @@
                 <th style="text-align: center;" class="hide-on-mobile">Trạng thái</th>
                 <th style="text-align: center;">Số lớp đang chạy</th>
                 <th>KPI Tiến độ</th>
-                <th style="text-align: center; width: 160px;">Quyền hạn</th>
+                <th style="text-align: center; width: 180px;">Vai trò</th>
                 <th style="text-align: center;">Thao tác</th>
               </tr>
             </thead>
@@ -475,6 +475,52 @@
           </tbody>
         </table>
       </div>
+
+      <!-- Bảng theo dõi tải dầu FMS dành cho nhân viên (C1, C2) chỉ xem -->
+      <div id="user-fms-section" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
+            <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
+          </h4>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="date" id="user-fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.85rem; font-weight: bold; cursor: pointer;">
+          </div>
+        </div>
+
+        <!-- Bộ lọc và tìm kiếm nhanh FMS -->
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px; margin-bottom: 10px;">
+          <div style="flex: 1; min-width: 250px; position: relative;">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
+            <input type="text" id="user-fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
+          </div>
+        </div>
+        
+        <div class="table-container" style="margin-top: 5px;">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Chuyến bay</th>
+                <th>Nhân viên / Xe trực</th>
+                <th style="text-align: center;">Tàu / Loại / Đường bay</th>
+                <th style="text-align: center;">Vị trí đỗ</th>
+                <th style="text-align: center;">Hạ / Cất / Tra nạp</th>
+                <th style="text-align: center;">Standby Fuel</th>
+                <th style="text-align: center;">Fuel Order</th>
+                <th style="text-align: center;" class="hide-on-mobile">Trip Fuel</th>
+                <th style="text-align: center;">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody id="user-fms-table-body">
+              <tr>
+                <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                  Chưa có lịch bay được phân công cho ngày hôm nay.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   </div>
 

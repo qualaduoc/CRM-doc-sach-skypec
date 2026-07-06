@@ -42,19 +42,23 @@ document.addEventListener('DOMContentLoaded', () => {
   initSpaceBackground();
 });
 
+function getUserRole() {
+  if (state.role === 'admin' || state.permissions?.perm_admin === 1) return 'admin';
+  if (state.permissions?.perm_fms === 1) return 'dieu_hanh';
+  if (state.permissions?.perm_gemini === 1) return 'nv_c1';
+  return 'nv_c2';
+}
+
 function initApp() {
   if (state.token) {
-    const hasAdminAccess = state.role === 'admin' || 
-                           state.permissions?.perm_admin === 1 || 
-                           state.permissions?.perm_fms === 1 || 
-                           state.permissions?.perm_zalo === 1 || 
-                           state.permissions?.perm_gemini === 1;
-    if (hasAdminAccess) {
+    const userRole = getUserRole();
+    if (userRole === 'admin' || userRole === 'dieu_hanh') {
       showScreen('admin-screen');
       applyPermissionsUI();
       loadAdminDashboard();
     } else {
       showScreen('user-screen');
+      applyUserPermissionsUI();
       loadUserDashboard();
     }
     startDashboardPolling();
@@ -75,60 +79,94 @@ function initApp() {
 
 // Áp dụng ẩn/hiện giao diện theo phân quyền của người dùng đăng nhập
 function applyPermissionsUI() {
+  const accountsTabBtn = document.querySelector('[data-tab="tab-accounts"]');
   const fmsTabBtn = document.getElementById('tab-btn-fms');
   const geminiCard = document.getElementById('card-gemini-settings');
   const zaloCard = document.getElementById('card-zalo-settings');
   
-  if (state.role === 'admin') {
-    // Tài khoản admin gốc mặc định có full quyền
+  const userRole = getUserRole();
+
+  if (userRole === 'admin') {
+    if (accountsTabBtn) accountsTabBtn.style.display = 'block';
     if (fmsTabBtn) fmsTabBtn.style.display = 'block';
     if (geminiCard) geminiCard.style.display = 'flex';
     if (zaloCard) zaloCard.style.display = 'flex';
+    
+    // Mặc định hiển thị tab-accounts cho Admin
+    const tabAccounts = document.getElementById('tab-accounts');
+    const tabFms = document.getElementById('tab-fms');
+    if (tabAccounts) tabAccounts.style.display = 'block';
+    if (tabFms) tabFms.style.display = 'none';
+    
+    // Reset active button tab
+    if (accountsTabBtn) {
+      accountsTabBtn.classList.add('active');
+      accountsTabBtn.style.color = 'var(--primary)';
+      accountsTabBtn.style.borderBottom = '2px solid var(--primary)';
+    }
+    if (fmsTabBtn) {
+      fmsTabBtn.classList.remove('active');
+      fmsTabBtn.style.color = 'var(--text-muted)';
+      fmsTabBtn.style.borderBottom = '2px solid transparent';
+    }
     return;
   }
 
-  // Đối với tài khoản nhân viên (user)
-  const perms = state.permissions || {};
-
-  // 1. Phân quyền xem tab Theo dõi Tải dầu FMS
-  const canFms = perms.perm_fms === 1 || perms.perm_admin === 1;
-  if (fmsTabBtn) {
-    fmsTabBtn.style.display = canFms ? 'block' : 'none';
-  }
-
-  // 2. Phân quyền xem cấu hình API Gemini Keys
-  const canGemini = perms.perm_gemini === 1 || perms.perm_admin === 1;
-  if (geminiCard) {
-    geminiCard.style.display = canGemini ? 'flex' : 'none';
-  }
-
-  // 3. Phân quyền xem cấu hình Trợ lý SkyOne (Zalo)
-  const canZalo = perms.perm_zalo === 1 || perms.perm_admin === 1;
-  if (zaloCard) {
-    zaloCard.style.display = canZalo ? 'flex' : 'none';
-  }
-
-  // Nếu không có quyền FMS mà đang ở tab FMS thì tự động chuyển về tab Accounts
-  if (!canFms) {
+  if (userRole === 'dieu_hanh') {
+    // Ẩn tab quản lý tài khoản
+    if (accountsTabBtn) accountsTabBtn.style.display = 'none';
+    if (fmsTabBtn) fmsTabBtn.style.display = 'block';
+    
+    // Ẩn card Gemini API keys, hiện card Zalo
+    if (geminiCard) geminiCard.style.display = 'none';
+    if (zaloCard) zaloCard.style.display = 'flex';
+    
+    // Mặc định kích hoạt và hiển thị tab-fms cho Điều hành
     const tabAccounts = document.getElementById('tab-accounts');
     const tabFms = document.getElementById('tab-fms');
-    if (tabFms && tabFms.style.display !== 'none') {
-      if (tabFms) tabFms.style.display = 'none';
-      if (tabAccounts) tabAccounts.style.display = 'block';
-      // Đổi active button tab
-      const tabBtns = document.querySelectorAll('.admin-tab-btn');
-      tabBtns.forEach(btn => {
-        if (btn.getAttribute('data-tab') === 'tab-accounts') {
-          btn.classList.add('active');
-          btn.style.color = 'var(--primary)';
-          btn.style.borderBottom = '2px solid var(--primary)';
-        } else {
-          btn.classList.remove('active');
-          btn.style.color = 'var(--text-muted)';
-          btn.style.borderBottom = '2px solid transparent';
-        }
-      });
+    if (tabAccounts) tabAccounts.style.display = 'none';
+    if (tabFms) tabFms.style.display = 'grid';
+    
+    if (fmsTabBtn) {
+      fmsTabBtn.classList.add('active');
+      fmsTabBtn.style.color = 'var(--primary)';
+      fmsTabBtn.style.borderBottom = '2px solid var(--primary)';
     }
+    
+    // Load dữ liệu FMS & Zalo cho Điều hành
+    loadFmsSchedules();
+    loadSkyOneSettings();
+    startSkyOnePolling();
+    return;
+  }
+}
+
+// Áp dụng ẩn hiện trên màn hình User (Nhân viên C1, C2)
+function applyUserPermissionsUI() {
+  const userRole = getUserRole();
+  const kpiGrid = document.querySelector('.kpi-grid');
+  const surveyNotice = document.getElementById('survey-notice-banner');
+  const sectionTitle = document.querySelector('.section-title');
+  const classesTableContainer = document.getElementById('classes-table-body')?.closest('.table-container');
+
+  if (userRole === 'nv_c1') {
+    // Nhân viên C1: Hiện KPI, hiện bảng lớp học (để đọc sách), hiện bảng xem tải FMS
+    if (kpiGrid) kpiGrid.style.display = 'grid';
+    if (surveyNotice) surveyNotice.style.display = 'flex';
+    if (sectionTitle) sectionTitle.style.display = 'flex';
+    if (classesTableContainer) classesTableContainer.style.display = 'block';
+    
+    // Load FMS cho User
+    loadUserFmsSchedules();
+  } else {
+    // Nhân viên C2: Ẩn sạch sẽ các phần liên quan đến học tập/đọc sách/KPI, chỉ để lại FMS
+    if (kpiGrid) kpiGrid.style.display = 'none';
+    if (surveyNotice) surveyNotice.style.display = 'none';
+    if (sectionTitle) sectionTitle.style.display = 'none';
+    if (classesTableContainer) classesTableContainer.style.display = 'none';
+    
+    // Load FMS cho User
+    loadUserFmsSchedules();
   }
 }
 
@@ -207,9 +245,18 @@ function startDashboardPolling() {
   dashboardInterval = setInterval(() => {
     const activeScreen = document.querySelector('.screen.active');
     if (activeScreen && activeScreen.id === 'user-screen') {
-      loadUserDashboard(state.selectedUser ? state.selectedUser.username : null, true);
+      const userRole = getUserRole();
+      if (userRole === 'nv_c1') {
+        loadUserDashboard(state.selectedUser ? state.selectedUser.username : null, true);
+      }
+      loadUserFmsSchedules(true);
     } else if (activeScreen && activeScreen.id === 'admin-screen') {
       loadAdminDashboard(true);
+      
+      const activeTabBtn = document.querySelector('.admin-tab-btn.active');
+      if (activeTabBtn && activeTabBtn.getAttribute('data-tab') === 'tab-fms') {
+        loadFmsSchedules(true);
+      }
     }
   }, 10000); // 10 giây một lần
 }
@@ -391,6 +438,16 @@ function setupEventListeners() {
 
   // Sự kiện thay đổi ngày lọc lịch bay FMS
   document.getElementById('fms-filter-date').addEventListener('change', () => loadFmsSchedules(false));
+
+  // Sự kiện cho bảng FMS ở màn hình nhân viên (chỉ xem)
+  const userFmsDate = document.getElementById('user-fms-filter-date');
+  if (userFmsDate) {
+    userFmsDate.addEventListener('change', () => loadUserFmsSchedules(false));
+  }
+  const userFmsSearch = document.getElementById('user-fms-search-input');
+  if (userFmsSearch) {
+    userFmsSearch.addEventListener('input', () => renderUserFmsTable());
+  }
 
   // Đóng Modal Preview FMS
   document.getElementById('btn-close-fms-preview-modal').addEventListener('click', () => {
@@ -721,35 +778,17 @@ async function loadAdminDashboard(isPolling = false) {
         kpiBorder = 'rgba(245, 158, 11, 0.2)';
       }
 
-      const permAdminChecked = acc.perm_admin === 1 ? 'checked' : '';
-      const permFmsChecked = acc.perm_fms === 1 ? 'checked' : '';
-      const permZaloChecked = acc.perm_zalo === 1 ? 'checked' : '';
-      const permGeminiChecked = acc.perm_gemini === 1 ? 'checked' : '';
-      const permGateChecked = acc.perm_gate === 1 ? 'checked' : '';
+      const currentRole = (acc.role === 'admin' || acc.perm_admin === 1) ? 'admin' :
+                          (acc.perm_fms === 1) ? 'dieu_hanh' :
+                          (acc.perm_gemini === 1) ? 'nv_c1' : 'nv_c2';
 
       const permissionsHtml = `
-        <div style="display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;">
-          <label title="Full quyền Admin" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
-            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="admin" ${permAdminChecked} style="cursor: pointer; width: 13px; height: 13px;">
-            <span style="font-size: 0.72rem;">👑</span>
-          </label>
-          <label title="Xem Tải dầu FMS" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
-            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="fms" ${permFmsChecked} style="cursor: pointer; width: 13px; height: 13px;">
-            <span style="font-size: 0.72rem;">⛽</span>
-          </label>
-          <label title="Cấu hình Zalo SkyOne" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
-            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="zalo" ${permZaloChecked} style="cursor: pointer; width: 13px; height: 13px;">
-            <span style="font-size: 0.72rem;">💬</span>
-          </label>
-          <label title="Cấu hình API Gemini" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
-            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="gemini" ${permGeminiChecked} style="cursor: pointer; width: 13px; height: 13px;">
-            <span style="font-size: 0.72rem;">🔑</span>
-          </label>
-          <label title="Sửa Vị trí đỗ FMS" style="cursor: pointer; display: flex; align-items: center; gap: 2px;">
-            <input type="checkbox" class="perm-checkbox" data-username="${acc.username}" data-perm="gate" ${permGateChecked} style="cursor: pointer; width: 13px; height: 13px;">
-            <span style="font-size: 0.72rem;">📍</span>
-          </label>
-        </div>
+        <select class="role-select" data-username="${acc.username}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600; cursor: pointer; outline: none; font-size: 0.82rem; width: 100%; box-sizing: border-box;">
+          <option value="admin" ${currentRole === 'admin' ? 'selected' : ''}>👑 Admin</option>
+          <option value="dieu_hanh" ${currentRole === 'dieu_hanh' ? 'selected' : ''}>✈️ Điều hành</option>
+          <option value="nv_c1" ${currentRole === 'nv_c1' ? 'selected' : ''}>👤 Nhân viên C1</option>
+          <option value="nv_c2" ${currentRole === 'nv_c2' ? 'selected' : ''}>👤 Nhân viên C2</option>
+        </select>
       `;
 
       return `
@@ -788,13 +827,12 @@ async function loadAdminDashboard(isPolling = false) {
       `;
     }).join('');
 
-    // Đăng ký sự kiện thay đổi phân quyền
-    document.querySelectorAll('.perm-checkbox').forEach(cb => {
-      cb.addEventListener('change', async (e) => {
+    // Đăng ký sự kiện thay đổi vai trò
+    document.querySelectorAll('.role-select').forEach(sel => {
+      sel.addEventListener('change', async (e) => {
         const username = e.target.getAttribute('data-username');
-        const perm = e.target.getAttribute('data-perm');
-        const val = e.target.checked;
-        await updateAccountPermission(username, perm, val);
+        const roleName = e.target.value;
+        await updateAccountRole(username, roleName);
       });
     });
 
@@ -831,6 +869,25 @@ async function updateAccountPermission(username, perm, value) {
     }
   } catch (e) {
     showToast('Lỗi cập nhật quyền: ' + e.message, 'error', 'Lỗi kết nối');
+  }
+}
+
+// Cập nhật vai trò tài khoản trực tiếp
+async function updateAccountRole(username, roleName) {
+  try {
+    const res = await fetch(`/api/accounts/${username}/role`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ roleName })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    showToast(`Đã chuyển vai trò tài khoản ${username} thành công!`, 'success', 'Cập nhật vai trò');
+  } catch (e) {
+    showToast('Lỗi khi cập nhật vai trò: ' + e.message, 'error', 'Thất bại');
   }
 }
 
@@ -1762,6 +1819,101 @@ function renderFmsTable() {
           <span class="status-tag ${statusClass}">
             ${statusText}
           </span>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Lọc và vẽ bảng FMS ở màn hình nhân viên (chỉ xem)
+let cachedUserFmsRows = [];
+async function loadUserFmsSchedules(isSilent = false) {
+  try {
+    const filterInput = document.getElementById('user-fms-filter-date');
+    if (filterInput && !filterInput.value) {
+      const vnDate = new Date();
+      const utc = vnDate.getTime() + (vnDate.getTimezoneOffset() * 60000);
+      const vnTime = new Date(utc + (3600000 * 7));
+      filterInput.value = vnTime.toISOString().split('T')[0];
+    }
+    const selectedDate = filterInput ? filterInput.value : '';
+
+    const res = await fetch(`/api/fms/schedules?date=${selectedDate}`, {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error);
+    }
+
+    const rows = data.data || [];
+    cachedUserFmsRows = rows;
+    renderUserFmsTable();
+  } catch (err) {
+    console.error('Lỗi tải danh sách FMS nhân viên:', err.message);
+  }
+}
+
+function renderUserFmsTable() {
+  const searchInput = document.getElementById('user-fms-search-input');
+  const query = searchInput ? searchInput.value.trim().toUpperCase() : '';
+  const tbody = document.getElementById('user-fms-table-body');
+  
+  if (!tbody) return;
+
+  const filteredRows = cachedUserFmsRows.filter(r => {
+    if (query) {
+      const flightNo = (r.flight_no || '').toUpperCase();
+      const acReg = (r.ac_reg || '').toUpperCase();
+      const crewInfo = (r.crew_info || '').toUpperCase();
+      const route = (r.route || '').toUpperCase();
+      return flightNo.includes(query) || acReg.includes(query) || crewInfo.includes(query) || route.includes(query);
+    }
+    return true;
+  });
+
+  if (filteredRows.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
+          Không tìm thấy chuyến bay nào khớp với điều kiện lọc.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filteredRows.map(r => {
+    let statusClass = 'review-pending';
+    let statusText = 'Chờ cập nhật';
+    if (r.fuel_order > 0) {
+      statusClass = 'review-finished';
+      statusText = 'Đã có số liệu';
+    }
+
+    return `
+      <tr>
+        <td style="font-weight: 700; color: #38bdf8; font-size: 1rem;">${r.flight_no}</td>
+        <td><span style="font-weight: 600; color: #fb923c;">${r.crew_info || '-'}</span> ${r.truck_no && r.truck_no !== '-' ? `<span style="font-size: 0.85em; color: var(--primary);"> (Xe ${r.truck_no})</span>` : ''}</td>
+        <td style="text-align: center;">
+          <span style="font-weight: bold; color: #fff;">${r.ac_reg || '-'}</span>
+          <span style="color: var(--text-muted); font-size: 0.8em;"> (${r.ac_type || '-'})</span>
+          <br>
+          <span style="color: #60a5fa; font-size: 0.85em;">${r.route || '-'}</span>
+        </td>
+        <td style="text-align: center; font-weight: bold; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
+        <td>
+          <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
+            ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
+            ${r.time_dep ? `<div>Cất: <span>${r.time_dep}</span></div>` : ''}
+            ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+          </div>
+        </td>
+        <td style="text-align: center; font-weight: 600; color: #a3e635;">${r.standby_fuel ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</td>
+        <td style="text-align: center; font-weight: 700; color: #f97316; font-size: 1.05rem;">${r.fuel_order ? parseInt(r.fuel_order).toLocaleString() + ' kg' : '-'}</td>
+        <td style="text-align: center; color: var(--text-muted);" class="hide-on-mobile">${r.trip_fuel ? parseInt(r.trip_fuel).toLocaleString() + ' kg' : '-'}</td>
+        <td style="text-align: center;">
+          <span class="status-tag ${statusClass}">${statusText}</span>
         </td>
       </tr>
     `;
