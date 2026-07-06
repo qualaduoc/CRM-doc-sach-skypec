@@ -183,31 +183,37 @@ function applyPermissionsUI() {
 // Áp dụng ẩn hiện trên màn hình User (Nhân viên C1, C2)
 function applyUserPermissionsUI() {
   const userRole = getUserRole();
-  const kpiGrid = document.querySelector('#user-screen .kpi-grid');
-  const surveyNotice = document.getElementById('survey-notice-banner');
-  const sectionTitle = document.querySelector('#user-screen .section-title');
-  const classesTableContainer = document.getElementById('classes-table-body')?.closest('.table-container');
+  const tabNavbar = document.getElementById('user-tab-navbar');
+  const elearningSec = document.getElementById('user-elearning-section');
+  const fmsSec = document.getElementById('user-fms-section');
+  
+  const fmsTabBtn = document.querySelector('[data-user-tab="tab-user-fms"]');
+  const elearningTabBtn = document.getElementById('user-tab-btn-elearning');
 
   if (userRole === 'nv_c1') {
-    // Nhân viên C1: Hiện KPI, hiện bảng lớp học (để đọc sách), hiện bảng xem tải FMS
-    if (kpiGrid) kpiGrid.style.display = 'grid';
-    if (surveyNotice) surveyNotice.style.display = 'flex';
-    if (sectionTitle) {
-      sectionTitle.style.setProperty('display', 'flex', 'important');
+    // Nhân viên C1: Hiện Navbar chuyển đổi tab
+    if (tabNavbar) tabNavbar.style.setProperty('display', 'flex', 'important');
+    if (elearningTabBtn) elearningTabBtn.style.setProperty('display', 'flex', 'important');
+
+    // Mặc định chọn tab FMS, ẩn Elearning
+    if (fmsTabBtn) {
+      fmsTabBtn.classList.add('active');
+      fmsTabBtn.style.color = 'var(--primary)';
+      fmsTabBtn.style.borderBottom = '2px solid var(--primary)';
     }
-    if (classesTableContainer) {
-      classesTableContainer.style.setProperty('display', 'block', 'important');
+    if (elearningTabBtn) {
+      elearningTabBtn.classList.remove('active');
+      elearningTabBtn.style.color = 'var(--text-muted)';
+      elearningTabBtn.style.borderBottom = '2px solid transparent';
     }
+
+    if (fmsSec) fmsSec.style.setProperty('display', 'flex', 'important');
+    if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
   } else {
-    // Nhân viên C2: Ẩn sạch sẽ các phần liên quan đến học tập/đọc sách/KPI, chỉ để lại FMS
-    if (kpiGrid) kpiGrid.style.display = 'none';
-    if (surveyNotice) surveyNotice.style.display = 'none';
-    if (sectionTitle) {
-      sectionTitle.style.setProperty('display', 'none', 'important');
-    }
-    if (classesTableContainer) {
-      classesTableContainer.style.setProperty('display', 'none', 'important');
-    }
+    // Nhân viên C2: Ẩn hoàn toàn Navbar và phần Elearning, chỉ hiển thị FMS
+    if (tabNavbar) tabNavbar.style.setProperty('display', 'none', 'important');
+    if (fmsSec) fmsSec.style.setProperty('display', 'flex', 'important');
+    if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
   }
   
   // Luôn load dữ liệu FMS cho User
@@ -420,6 +426,36 @@ function setupEventListeners() {
       exploreState.page++;
       loadExploreClasses();
     }
+  });
+
+  // Lắng nghe sự kiện chuyển đổi tab ở màn hình User (nhân viên)
+  document.querySelectorAll('.user-tab-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.user-tab-btn').forEach(b => {
+        b.classList.remove('active');
+        b.style.color = 'var(--text-muted)';
+        b.style.borderBottom = '2px solid transparent';
+      });
+      
+      const targetBtn = e.currentTarget;
+      targetBtn.classList.add('active');
+      targetBtn.style.color = 'var(--primary)';
+      targetBtn.style.borderBottom = '2px solid var(--primary)';
+      
+      const tabId = targetBtn.getAttribute('data-user-tab');
+      const elearningSec = document.getElementById('user-elearning-section');
+      const fmsSec = document.getElementById('user-fms-section');
+      
+      if (tabId === 'tab-user-fms') {
+        if (fmsSec) fmsSec.style.setProperty('display', 'flex', 'important');
+        if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
+        loadUserFmsSchedules();
+      } else {
+        if (fmsSec) fmsSec.style.setProperty('display', 'none', 'important');
+        if (elearningSec) elearningSec.style.setProperty('display', 'flex', 'important');
+        loadUserDashboard();
+      }
+    });
   });
 
   // --- SỰ KIỆN TAB ADMIN & QUẢN LÝ FMS ---

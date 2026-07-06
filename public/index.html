@@ -419,61 +419,74 @@
         </button>
       </div>
 
-      <!-- KPI cá nhân từ Skypec -->
-      <div class="kpi-grid">
-        <div class="glass-panel kpi-card blue">
-          <span class="kpi-num" id="kpi-user-total-classes">0</span>
-          <span class="kpi-label">Lớp đang học</span>
-        </div>
-        <div class="glass-panel kpi-card orange">
-          <span class="kpi-num" id="kpi-user-kpi">0%</span>
-          <span class="kpi-label" id="kpi-user-kpi-detail">KPI: 0/0 giờ</span>
-        </div>
-        <div class="glass-panel kpi-card purple">
-          <span class="kpi-num" id="kpi-user-running-classes">0</span>
-          <span class="kpi-label">Đang treo máy</span>
-        </div>
-        <div class="glass-panel kpi-card green">
-          <span class="kpi-num" id="kpi-user-certificates">0</span>
-          <span class="kpi-label">Chứng chỉ đã cấp</span>
-        </div>
+      <!-- Tab Menu chuyển đổi của màn hình User (Navbar) -->
+      <div id="user-tab-navbar" class="glass-panel" style="padding: 10px; display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap;">
+        <button class="user-tab-btn active" data-user-tab="tab-user-fms" style="background: none; border: none; color: var(--primary); font-size: 0.95rem; font-weight: bold; cursor: pointer; padding: 8px 16px; border-bottom: 2px solid var(--primary); transition: all 0.3s; display: flex; align-items: center; gap: 8px; outline: none;">
+          <i class="fa-solid fa-calendar-days"></i> Theo dõi lịch làm việc
+        </button>
+        <button id="user-tab-btn-elearning" class="user-tab-btn" data-user-tab="tab-user-elearning" style="background: none; border: none; color: var(--text-muted); font-size: 0.95rem; font-weight: bold; cursor: pointer; padding: 8px 16px; border-bottom: 2px solid transparent; transition: all 0.3s; display: flex; align-items: center; gap: 8px; outline: none;">
+          <i class="fa-solid fa-graduation-cap"></i> Học E-learning
+        </button>
       </div>
 
-      <!-- Banner thông báo khảo sát màu cam -->
-      <div id="survey-notice-banner" class="glass-panel" style="margin-bottom: 20px; border-color: rgba(249, 115, 22, 0.3); background: rgba(249, 115, 22, 0.05); display: flex; align-items: center; gap: 15px; padding: 15px 20px;">
-        <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.5rem; color: #f97316;"></i>
-        <div style="font-size: 0.95rem; color: #fdba74; font-weight: 500; line-height: 1.5;">
-          <span style="color: #f97316; font-weight: 700; text-transform: uppercase;">Chú ý:</span> 
-          Hãy bấm <strong style="color: #fff; background: rgba(255, 255, 255, 0.1); padding: 2px 6px; border-radius: 4px; font-weight: 600;">"Đồng bộ tiến độ từ Skypec"</strong> để hệ thống Tự động khảo sát mọi bài học cho bạn!
+      <!-- Group các nội dung liên quan tới E-learning (Học tập) để dễ quản lý ẩn/hiện -->
+      <div id="user-elearning-section" style="display: none; flex-direction: column; gap: 20px;">
+        <!-- KPI cá nhân từ Skypec -->
+        <div class="kpi-grid">
+          <div class="glass-panel kpi-card blue">
+            <span class="kpi-num" id="kpi-user-total-classes">0</span>
+            <span class="kpi-label">Lớp đang học</span>
+          </div>
+          <div class="glass-panel kpi-card orange">
+            <span class="kpi-num" id="kpi-user-kpi">0%</span>
+            <span class="kpi-label" id="kpi-user-kpi-detail">KPI: 0/0 giờ</span>
+          </div>
+          <div class="glass-panel kpi-card purple">
+            <span class="kpi-num" id="kpi-user-running-classes">0</span>
+            <span class="kpi-label">Đang treo máy</span>
+          </div>
+          <div class="glass-panel kpi-card green">
+            <span class="kpi-num" id="kpi-user-certificates">0</span>
+            <span class="kpi-label">Chứng chỉ đã cấp</span>
+          </div>
         </div>
-      </div>
 
-      <div class="section-title">
-        <h3>Tiến độ Học tập Chi tiết</h3>
-        <div style="display: flex; gap: 10px;">
-          <button id="btn-explore-classes" class="btn-glow" style="padding: 10px 16px; width: auto; font-size: 0.9rem; margin-top: 0;">
-            <i class="fa-solid fa-compass"></i> Khám phá khóa học
-          </button>
-          <button id="btn-sync-progress" class="btn-secondary">
-            <i class="fa-solid fa-rotate"></i> Đồng bộ tiến độ từ Skypec
-          </button>
+        <!-- Banner thông báo khảo sát màu cam -->
+        <div id="survey-notice-banner" class="glass-panel" style="margin-bottom: 20px; border-color: rgba(249, 115, 22, 0.3); background: rgba(249, 115, 22, 0.05); display: flex; align-items: center; gap: 15px; padding: 15px 20px;">
+          <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.5rem; color: #f97316;"></i>
+          <div style="font-size: 0.95rem; color: #fdba74; font-weight: 500; line-height: 1.5;">
+            <span style="color: #f97316; font-weight: 700; text-transform: uppercase;">Chú ý:</span> 
+            Hãy bấm <strong style="color: #fff; background: rgba(255, 255, 255, 0.1); padding: 2px 6px; border-radius: 4px; font-weight: 600;">"Đồng bộ tiến độ từ Skypec"</strong> để hệ thống Tự động khảo sát mọi bài học cho bạn!
+          </div>
         </div>
-      </div>
 
-      <div class="glass-panel table-container">
-        <table class="crm-table">
-          <thead>
-            <tr>
-              <th>Lớp học</th>
-              <th style="text-align: center; width: 200px;">Tiến độ tích lũy</th>
-              <th style="text-align: center; width: 120px;">Trạng thái</th>
-              <th style="text-align: center; width: 120px;">Tự học ngầm</th>
-            </tr>
-          </thead>
-          <tbody id="classes-table-body">
-            <!-- Render động từ JS -->
-          </tbody>
-        </table>
+        <div class="section-title">
+          <h3>Tiến độ Học tập Chi tiết</h3>
+          <div style="display: flex; gap: 10px;">
+            <button id="btn-explore-classes" class="btn-glow" style="padding: 10px 16px; width: auto; font-size: 0.9rem; margin-top: 0;">
+              <i class="fa-solid fa-compass"></i> Khám phá khóa học
+            </button>
+            <button id="btn-sync-progress" class="btn-secondary">
+              <i class="fa-solid fa-rotate"></i> Đồng bộ tiến độ từ Skypec
+            </button>
+          </div>
+        </div>
+
+        <div class="glass-panel table-container">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Lớp học</th>
+                <th style="text-align: center; width: 200px;">Tiến độ tích lũy</th>
+                <th style="text-align: center; width: 120px;">Trạng thái</th>
+                <th style="text-align: center; width: 120px;">Tự học ngầm</th>
+              </tr>
+            </thead>
+            <tbody id="classes-table-body">
+              <!-- Render động từ JS -->
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Bảng theo dõi tải dầu FMS dành cho nhân viên (C1, C2) chỉ xem -->
