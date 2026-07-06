@@ -1894,7 +1894,11 @@ function parseFmsExcel(rows) {
     // Cột 4 (index 3) là Flight No (Số hiệu chuyến bay)
     const flightNo = r[3] ? String(r[3]).trim().toUpperCase().replace(/\s+/g, '') : '';
 
-    if (!isNaN(stt) && flightNo) {
+    // Loại bỏ dòng chỉ số cột (dòng 1, 2, 3, 4, 5...) và đảm bảo flightNo hợp lệ
+    const isHeaderRow = r[0] == 1 && r[1] == 2 && r[2] == 3 && r[3] == 4;
+    const isNumericFlight = /^\d+$/.test(flightNo);
+
+    if (!isNaN(stt) && flightNo && !isHeaderRow && !isNumericFlight) {
       flights.push({
         ac_type: r[1] ? String(r[1]).trim() : '',
         ac_reg: r[2] ? String(r[2]).trim() : '',
