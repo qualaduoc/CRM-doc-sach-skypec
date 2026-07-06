@@ -2312,30 +2312,55 @@ async function renderFmsPreviewContent(flights) {
     dateInput.value = detectedDate;
   }
 
-  // 2. Render bảng chuyến bay kèm nút Xóa ở cột đầu tiên
+  // 2. Render bảng chuyến bay kèm nút Xóa ở cột đầu tiên (Gộp cột chống cuộn ngang)
   const tbody = document.getElementById('fms-preview-table-body');
-  tbody.innerHTML = flights.map((f, index) => `
-    <tr data-index="${index}">
-      <td style="text-align: center; vertical-align: middle; padding: 4px;">
-        <span class="btn-delete-preview-flight" data-index="${index}" style="font-weight: 900; font-size: 1.25rem; color: #ef4444; cursor: pointer; user-select: none; transition: transform 0.2s; display: inline-block;" title="Xóa chuyến bay này">X</span>
-      </td>
-      <td style="font-weight: 700; color: var(--primary);">${f.flight_no}</td>
-      <td style="color: var(--text-muted);">${f.ac_type || '-'}</td>
-      <td>${f.ac_reg || '-'}</td>
-      <td style="color: #60a5fa;">${f.route || '-'}</td>
-      <td style="text-align: center;">${f.time_arr || '-'}</td>
-      <td style="text-align: center;">${f.time_dep || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: #fb923c;">${f.time_fuel || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: #f59e0b;">${f.gate || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: var(--primary);">${f.truck_no || '-'}</td>
-      <td>
-        <input type="text" class="fms-preview-driver-input" data-index="${index}" value="${f.driver_name || ''}" style="width: 100%; min-width: 110px; padding: 4px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600;">
-      </td>
-      <td>
-        <input type="text" class="fms-preview-operator-input" data-index="${index}" value="${f.operator_name || ''}" style="width: 100%; min-width: 110px; padding: 4px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600;">
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = flights.map((f, index) => {
+    const timesHtml = `
+      <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
+        ${f.time_arr ? `<div>Hạ: <span style="color: var(--text-muted);">${f.time_arr}</span></div>` : ''}
+        ${f.time_dep ? `<div>Cất: <span style="color: var(--text-muted);">${f.time_dep}</span></div>` : ''}
+        ${f.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${f.time_fuel}</strong></div>` : ''}
+      </div>
+    `;
+
+    const positionHtml = `
+      <div style="font-size: 0.85rem; line-height: 1.4; text-align: center;">
+        <div>Gate: <strong style="color: #f59e0b;">${f.gate || '-'}</strong></div>
+        <div style="margin-top: 2px; color: var(--primary);">Xe: <strong>${f.truck_no || '-'}</strong></div>
+      </div>
+    `;
+
+    const staffHtml = `
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 0.78rem; color: var(--text-muted); min-width: 42px;">Lái xe:</span>
+          <input type="text" class="fms-preview-driver-input" data-index="${index}" value="${f.driver_name || ''}" style="width: 100px; padding: 3px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600; font-size: 0.8rem; outline: none;">
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 0.78rem; color: var(--text-muted); min-width: 42px;">Bơm:</span>
+          <input type="text" class="fms-preview-operator-input" data-index="${index}" value="${f.operator_name || ''}" style="width: 100px; padding: 3px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600; font-size: 0.8rem; outline: none;">
+        </div>
+      </div>
+    `;
+
+    return `
+      <tr data-index="${index}">
+        <td style="text-align: center; vertical-align: middle; padding: 4px;">
+          <span class="btn-delete-preview-flight" data-index="${index}" style="font-weight: 900; font-size: 1.25rem; color: #ef4444; cursor: pointer; user-select: none; transition: transform 0.2s; display: inline-block;" title="Xóa chuyến bay này">X</span>
+        </td>
+        <td>
+          <strong style="color: #38bdf8; font-size: 1.05rem;">${f.flight_no}</strong>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+            ${f.ac_type || '-'} (${f.ac_reg || '-'})
+          </div>
+          <div style="font-size: 0.82rem; color: #60a5fa; margin-top: 2px; font-weight: 600;">${f.route || '-'}</div>
+        </td>
+        <td>${timesHtml}</td>
+        <td>${positionHtml}</td>
+        <td>${staffHtml}</td>
+      </tr>
+    `;
+  }).join('');
 
   // Lắng nghe sự thay đổi tên nhân viên để cập nhật realtime các bảng Zalo Mapping & Crew Notify
   const updatePreviewInputs = () => {
