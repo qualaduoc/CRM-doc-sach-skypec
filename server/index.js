@@ -1063,13 +1063,13 @@ app.post('/api/accounts/:username/role', authenticateToken, async (req, res) => 
     let query = '';
 
     if (roleName === 'admin') {
-      query = `UPDATE accounts SET role = 'admin', perm_admin = 1, perm_fms = 1, perm_zalo = 1, perm_gemini = 1, perm_gate = 1 WHERE username = ?`;
+      query = `UPDATE accounts SET perm_admin = 1, perm_fms = 1, perm_zalo = 1, perm_gemini = 1, perm_gate = 1 WHERE username = ?`;
     } else if (roleName === 'dieu_hanh') {
-      query = `UPDATE accounts SET role = 'user', perm_admin = 0, perm_fms = 1, perm_zalo = 1, perm_gemini = 1, perm_gate = 1 WHERE username = ?`;
+      query = `UPDATE accounts SET perm_admin = 0, perm_fms = 1, perm_zalo = 1, perm_gemini = 1, perm_gate = 1 WHERE username = ?`;
     } else if (roleName === 'nv_c1') {
-      query = `UPDATE accounts SET role = 'user', perm_admin = 0, perm_fms = 0, perm_zalo = 0, perm_gemini = 1, perm_gate = 0 WHERE username = ?`;
+      query = `UPDATE accounts SET perm_admin = 0, perm_fms = 0, perm_zalo = 0, perm_gemini = 1, perm_gate = 0 WHERE username = ?`;
     } else if (roleName === 'nv_c2') {
-      query = `UPDATE accounts SET role = 'user', perm_admin = 0, perm_fms = 0, perm_zalo = 0, perm_gemini = 0, perm_gate = 0 WHERE username = ?`;
+      query = `UPDATE accounts SET perm_admin = 0, perm_fms = 0, perm_zalo = 0, perm_gemini = 0, perm_gate = 0 WHERE username = ?`;
     }
 
     await db.run(query, username);
