@@ -1206,7 +1206,6 @@ app.post('/api/admin/change-password', authenticateToken, async (req, res) => {
 
 // --- API QUẢN LÝ TẢI DẦU FMS VIETNAM AIRLINES ---
 // Cập nhật lịch bay trực ca (chỉ Admin)
-app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 // Hàm tính toán ngày bay thực tế FMS dựa trên giờ tra nạp
 function calculateFmsDate(dateStr, timeStr) {
   if (!timeStr || timeStr === '-') return dateStr;
