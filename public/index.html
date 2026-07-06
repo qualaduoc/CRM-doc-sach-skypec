@@ -655,7 +655,7 @@
 
   <!-- ================= MODAL XEM TRƯỚC LỊCH BAY EXCEL (FMS) ================= -->
   <div id="fms-preview-modal" class="modal">
-    <div class="glass-panel modal-card" style="max-width: 98%; width: 1480px;">
+    <div class="glass-panel modal-card" style="max-width: 98%; width: 1780px;">
       <div class="modal-header">
         <h3><i class="fa-solid fa-file-invoice"></i> Xác nhận lịch trực bóc tách từ Excel</h3>
         <button class="close-btn" id="btn-close-fms-preview-modal"><i class="fa-solid fa-xmark"></i></button>
@@ -671,12 +671,12 @@
         <span style="font-size: 0.8rem; color: var(--text-muted);">(Lưu ý: Đối với ca đêm vượt ngày, hãy chọn Ngày bắt đầu ca trực để theo dõi đồng bộ)</span>
       </div>
       
-      <!-- Layout Dàn Ngang 2 Khối Lớn (Nửa Trái - Nửa Phải 50-50) -->
+      <!-- Layout Dàn Ngang 3 Cột Lớn Mở Rộng Tối Đa (Không Gò Bó) -->
       <div style="display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; width: 100%;">
         
-        <!-- Nửa Trái: Kế hoạch bay (Bảng chuyến bay) -->
-        <div style="flex: 1.1; min-width: 680px;">
-          <div class="table-container" style="max-height: 520px; overflow-y: auto; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+        <!-- Cột 1: Kế hoạch bay (Bảng chuyến bay) -->
+        <div style="flex: 1.4; min-width: 700px;">
+          <div class="table-container" style="max-height: 680px; overflow-y: auto; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
             <table class="crm-table">
               <thead>
                 <tr>
@@ -694,56 +694,51 @@
           </div>
         </div>
 
-        <!-- Nửa Phải: Chứa 2 Cấu hình Zalo xếp cạnh nhau -->
-        <div style="flex: 1; min-width: 600px; display: flex; gap: 16px; align-items: flex-start;">
-          
-          <!-- Cấu hình thông báo theo Cặp trực ban -->
-          <div id="fms-crew-notify-section" class="glass-panel" style="flex: 1; min-width: 290px; padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.01); display: none; margin-top: 0; align-self: stretch;">
-            <h4 style="margin-bottom: 5px; color: #fb923c; display: flex; align-items: center; gap: 8px; font-size: 1rem;">
-              <i class="fa-solid fa-comments"></i> Cài Đặt Báo Zalo Theo Cặp
-            </h4>
-            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;">
-              Chọn hình thức gửi tin nhắn báo Zalo cho từng Cặp trực ban.
-            </div>
-            <div class="table-container" style="max-height: 480px; overflow-y: auto;">
-              <table class="crm-table" style="font-size: 0.85rem;">
-                <thead>
-                  <tr>
-                    <th>Cặp trực</th>
-                    <th>Xe nạp</th>
-                    <th style="width: 130px; text-align: center;">Hình thức</th>
-                  </tr>
-                </thead>
-                <tbody id="fms-crew-notify-table-body">
-                  <!-- Render động các Cặp trực từ JS -->
-                </tbody>
-              </table>
-            </div>
+        <!-- Cột 2: Cấu hình thông báo theo Cặp trực ban -->
+        <div id="fms-crew-notify-section" class="glass-panel" style="flex: 1; min-width: 400px; padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.01); display: none; margin-top: 0; align-self: stretch;">
+          <h4 style="margin-bottom: 5px; color: #fb923c; display: flex; align-items: center; gap: 8px; font-size: 1.1rem; font-weight: 700;">
+            <i class="fa-solid fa-comments"></i> Cài Đặt Báo Zalo Theo Cặp
+          </h4>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+            Chọn hình thức gửi tin nhắn báo Zalo cho từng Cặp trực ban.
           </div>
-
-          <!-- Bảng ánh xạ Zalo bổ sung -->
-          <div id="fms-zalo-mapping-section" class="glass-panel" style="flex: 1; min-width: 290px; padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.01); display: none; margin-top: 0; align-self: stretch;">
-            <h4 style="margin-bottom: 5px; color: var(--primary); display: flex; align-items: center; gap: 8px; font-size: 1rem;">
-              <i class="fa-solid fa-user-tag"></i> Liên Kết Zalo Trực Ca
-            </h4>
-            <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;">
-              Chọn tài khoản Zalo tương ứng cho các nhân viên trên lịch trực.
-            </div>
-            <div class="table-container" style="max-height: 480px; overflow-y: auto;">
-              <table class="crm-table" style="font-size: 0.85rem;">
-                <thead>
-                  <tr>
-                    <th>Nhân viên</th>
-                    <th>Tài khoản Zalo</th>
-                  </tr>
-                </thead>
-                <tbody id="fms-zalo-mapping-table-body">
-                  <!-- Render động nhân viên từ JS -->
-                </tbody>
-              </table>
-            </div>
+          <div class="table-container" style="max-height: 640px; overflow-y: auto;">
+            <table class="crm-table" style="font-size: 0.88rem;">
+              <thead>
+                <tr>
+                  <th>Cặp trực</th>
+                  <th>Xe nạp</th>
+                  <th style="width: 140px; text-align: center;">Hình thức</th>
+                </tr>
+              </thead>
+              <tbody id="fms-crew-notify-table-body">
+                <!-- Render động các Cặp trực từ JS -->
+              </tbody>
+            </table>
           </div>
+        </div>
 
+        <!-- Cột 3: Bảng ánh xạ Zalo bổ sung -->
+        <div id="fms-zalo-mapping-section" class="glass-panel" style="flex: 1; min-width: 400px; padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.01); display: none; margin-top: 0; align-self: stretch;">
+          <h4 style="margin-bottom: 5px; color: var(--primary); display: flex; align-items: center; gap: 8px; font-size: 1.1rem; font-weight: 700;">
+            <i class="fa-solid fa-user-tag"></i> Liên Kết Zalo Trực Ca
+          </h4>
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">
+            Chọn tài khoản Zalo tương ứng cho các nhân viên trên lịch trực.
+          </div>
+          <div class="table-container" style="max-height: 640px; overflow-y: auto;">
+            <table class="crm-table" style="font-size: 0.88rem;">
+              <thead>
+                <tr>
+                  <th>Nhân viên</th>
+                  <th>Tài khoản Zalo</th>
+                </tr>
+              </thead>
+              <tbody id="fms-zalo-mapping-table-body">
+                <!-- Render động nhân viên từ JS -->
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>
