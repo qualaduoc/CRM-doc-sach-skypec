@@ -254,9 +254,13 @@ async function syncFMSData() {
 
     // Dọn dẹp dữ liệu lịch bay và kế hoạch trực ca cũ của những ngày trước để tránh quá tải DB
     try {
-      const deletedRows = await db.run('DELETE FROM fms_schedules WHERE date < ?', todayDb);
+      // Chỉ dọn dẹp lịch bay cũ hơn ngày hôm trước (date < todayDb - 1 ngày) để giữ lại ca đêm hôm trước
+      const todayDateObj = new Date(todayDb + 'T00:00:00');
+      const limitDateObj = new Date(todayDateObj.getTime() - 24 * 60 * 60 * 1000);
+      const limitDateStr = limitDateObj.toISOString().split('T')[0];
+      const deletedRows = await db.run('DELETE FROM fms_schedules WHERE date < ?', limitDateStr);
       if (deletedRows && deletedRows.changes > 0) {
-        log(`[Dọn dẹp DB] Đã xóa ${deletedRows.changes} dòng lịch bay cũ của các ngày hôm trước.`);
+        log(`[Dọn dẹp DB] Đã xóa ${deletedRows.changes} dòng lịch bay cũ (cũ hơn ngày hôm trước).`);
       }
     } catch (cleanupErr) {
       console.error('[Dọn dẹp DB] Lỗi khi dọn dẹp lịch bay cũ:', cleanupErr.message);

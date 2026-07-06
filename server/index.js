@@ -1344,8 +1344,11 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Không tìm thấy chuyến bay hợp lệ trong dữ liệu gửi lên' });
     }
 
-    // Dọn dẹp dữ liệu lịch bay của các ngày hôm trước để tránh quá tải DB
-    await db.run('DELETE FROM fms_schedules WHERE date < ?', targetDate);
+    // Chỉ dọn dẹp lịch bay cũ hơn ngày hôm trước (date < targetDate - 1 ngày) để giữ lại ca đêm hôm trước
+    const targetDateObj = new Date(targetDate + 'T00:00:00');
+    const limitDateObj = new Date(targetDateObj.getTime() - 24 * 60 * 60 * 1000);
+    const limitDateStr = limitDateObj.toISOString().split('T')[0];
+    await db.run('DELETE FROM fms_schedules WHERE date < ?', limitDateStr);
 
     // Xóa lịch cũ của ngày hôm nay
     await db.run('DELETE FROM fms_schedules WHERE date = ?', targetDate);
@@ -1433,7 +1436,7 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         fo.updated_at
       FROM fms_schedules s
       LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no) = UPPER(fo.flight_no)
-      WHERE s.date = ?
+      WHERE COALESCE(s.fms_date, s.date) = ?
       ORDER BY s.id ASC
     `, targetDate);
 
