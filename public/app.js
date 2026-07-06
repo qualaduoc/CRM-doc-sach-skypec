@@ -180,7 +180,7 @@ function applyPermissionsUI() {
   }
 }
 
-// Áp dụng ẩn hiện trên màn hình User (Nhân viên C1, C2)
+// Áp dụng ẩn hiện trên màn hình User (Nhân viên C1, C2 hoặc Admin/Điều hành xem hộ)
 function applyUserPermissionsUI() {
   const userRole = getUserRole();
   const tabNavbar = document.getElementById('user-tab-navbar');
@@ -190,25 +190,27 @@ function applyUserPermissionsUI() {
   const fmsTabBtn = document.querySelector('[data-user-tab="tab-user-fms"]');
   const elearningTabBtn = document.getElementById('user-tab-btn-elearning');
 
-  if (userRole === 'nv_c1') {
-    // Nhân viên C1: Hiện Navbar chuyển đổi tab
+  // Nếu là Admin/Điều hành đang xem hộ (impersonate), hoặc là Nhân viên C1
+  if (state.selectedUser || userRole === 'nv_c1') {
+    // Hiện Navbar chuyển đổi tab
     if (tabNavbar) tabNavbar.style.setProperty('display', 'flex', 'important');
     if (elearningTabBtn) elearningTabBtn.style.setProperty('display', 'flex', 'important');
 
-    // Mặc định chọn tab FMS, ẩn Elearning
-    if (fmsTabBtn) {
-      fmsTabBtn.classList.add('active');
-      fmsTabBtn.style.color = 'var(--primary)';
-      fmsTabBtn.style.borderBottom = '2px solid var(--primary)';
+    // Chỉ reset tab FMS mặc định nếu không phải Admin đang xem hộ
+    if (!state.selectedUser) {
+      if (fmsTabBtn) {
+        fmsTabBtn.classList.add('active');
+        fmsTabBtn.style.color = 'var(--primary)';
+        fmsTabBtn.style.borderBottom = '2px solid var(--primary)';
+      }
+      if (elearningTabBtn) {
+        elearningTabBtn.classList.remove('active');
+        elearningTabBtn.style.color = 'var(--text-muted)';
+        elearningTabBtn.style.borderBottom = '2px solid transparent';
+      }
+      if (fmsSec) fmsSec.style.setProperty('display', 'flex', 'important');
+      if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
     }
-    if (elearningTabBtn) {
-      elearningTabBtn.classList.remove('active');
-      elearningTabBtn.style.color = 'var(--text-muted)';
-      elearningTabBtn.style.borderBottom = '2px solid transparent';
-    }
-
-    if (fmsSec) fmsSec.style.setProperty('display', 'flex', 'important');
-    if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
   } else {
     // Nhân viên C2: Ẩn hoàn toàn Navbar và phần Elearning, chỉ hiển thị FMS
     if (tabNavbar) tabNavbar.style.setProperty('display', 'none', 'important');
@@ -453,7 +455,7 @@ function setupEventListeners() {
       } else {
         if (fmsSec) fmsSec.style.setProperty('display', 'none', 'important');
         if (elearningSec) elearningSec.style.setProperty('display', 'flex', 'important');
-        loadUserDashboard();
+        loadUserDashboard(state.selectedUser?.username);
       }
     });
   });
@@ -987,6 +989,25 @@ function viewStaffDetails(username, displayName, department) {
   document.getElementById('user-title-dept').textContent = department + ` (Tài khoản: ${username})`;
 
   showScreen('user-screen');
+
+  // Mặc định kích hoạt tab E-learning cho Admin xem tiến độ học tập
+  const elearningTabBtn = document.getElementById('user-tab-btn-elearning');
+  if (elearningTabBtn) {
+    document.querySelectorAll('.user-tab-btn').forEach(b => {
+      b.classList.remove('active');
+      b.style.color = 'var(--text-muted)';
+      b.style.borderBottom = '2px solid transparent';
+    });
+    elearningTabBtn.classList.add('active');
+    elearningTabBtn.style.color = 'var(--primary)';
+    elearningTabBtn.style.borderBottom = '2px solid var(--primary)';
+
+    const elearningSec = document.getElementById('user-elearning-section');
+    const fmsSec = document.getElementById('user-fms-section');
+    if (fmsSec) fmsSec.style.setProperty('display', 'none', 'important');
+    if (elearningSec) elearningSec.style.setProperty('display', 'flex', 'important');
+  }
+
   loadUserDashboard(username);
 }
 
@@ -1045,9 +1066,14 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
     console.error('Lỗi khi tải thông tin KPI tài khoản:', e.message);
   }
 
-  if (!targetUsername) {
+  if (!targetUsername && !state.selectedUser) {
     document.getElementById('btn-back-to-admin').classList.add('hidden');
     document.getElementById('back-bar').classList.add('hidden');
+  }
+
+  if (state.selectedUser) {
+    document.getElementById('btn-back-to-admin').classList.remove('hidden');
+    document.getElementById('back-bar').classList.remove('hidden');
   }
 
   if (!isSilent) {
