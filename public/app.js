@@ -555,11 +555,51 @@ function setupEventListeners() {
   // Xác nhận lưu lịch trực FMS từ preview
   document.getElementById('btn-fms-confirm-preview').addEventListener('click', handleConfirmFmsPreview);
 
+  // Sự kiện thay đổi ca trực trên Modal Preview
+  const previewShiftSelect = document.getElementById('fms-preview-shift-input');
+  if (previewShiftSelect) {
+    previewShiftSelect.addEventListener('change', (e) => {
+      if (!state.fmsRawParsedFlights || state.fmsRawParsedFlights.length === 0) return;
+      const newShift = e.target.value;
+      const filtered = filterFlightsByShift(state.fmsRawParsedFlights, newShift);
+      state.fmsPreviewFlights = filtered;
+      renderFmsPreviewContent(filtered, false); // false để giữ nguyên ngày/ca đã chọn trên modal
+    });
+  }
+
   // --- SỰ KIỆN TRỢ LÝ ZALO SKYEYES ---
   document.getElementById('btn-skyeyes-connect').addEventListener('click', handleSkyEyesConnect);
   document.getElementById('btn-skyeyes-send-test').addEventListener('click', handleSkyEyesSendTest);
   document.getElementById('btn-skyeyes-test-realtime').addEventListener('click', handleSkyEyesTestRealtime);
   document.getElementById('btn-skyeyes-logout').addEventListener('click', handleSkyEyesLogout);
+  
+  // Sự kiện mở/đóng và tương tác trên Modal Quản Lý Zalo Mappings
+  const btnManageMappings = document.getElementById('btn-skyeyes-manage-mappings');
+  if (btnManageMappings) {
+    btnManageMappings.addEventListener('click', openZaloMappingsModal);
+  }
+  const btnCloseMappingsModal = document.getElementById('btn-close-zalo-mappings-modal');
+  if (btnCloseMappingsModal) {
+    btnCloseMappingsModal.addEventListener('click', () => {
+      document.getElementById('zalo-mappings-modal').classList.remove('active');
+    });
+  }
+  const searchMappingInput = document.getElementById('search-zalo-mapping');
+  if (searchMappingInput) {
+    searchMappingInput.addEventListener('input', renderZaloMappingsListTable);
+  }
+  const searchMemberInput = document.getElementById('search-zalo-member');
+  if (searchMemberInput) {
+    searchMemberInput.addEventListener('input', renderZaloGroupMembersTable);
+  }
+  const btnRefreshMembers = document.getElementById('btn-refresh-zalo-members');
+  if (btnRefreshMembers) {
+    btnRefreshMembers.addEventListener('click', loadZaloGroupMembers);
+  }
+  const btnSaveSingleMapping = document.getElementById('btn-save-single-mapping');
+  if (btnSaveSingleMapping) {
+    btnSaveSingleMapping.addEventListener('click', handleSaveSingleMapping);
+  }
   // Toggle Custom Dropdown chọn nhiều nhóm
   const displayBox = document.getElementById('skyeyes-groups-display');
   if (displayBox) {
@@ -2254,10 +2294,11 @@ function parseFmsExcel(rows) {
   }
 
   // Lưu lịch bay bóc tách tạm thời vào state để xác nhận sau
+  state.fmsRawParsedFlights = flights;
   state.fmsPreviewFlights = filteredFlights;
 
   // Hiển thị bảng xem trước (Preview) và Zalo Mapping lên modal
-  renderFmsPreviewContent(filteredFlights);
+  renderFmsPreviewContent(filteredFlights, true);
 }
 
 // Gửi xác nhận lưu lịch trực bay từ Modal Preview
@@ -2387,7 +2428,7 @@ function renderCrewNotifyTable(flights) {
 
 // Gửi xác nhận lưu lịch trực bay từ Modal Preview
 // Render dữ liệu nhận diện ảnh/Excel lên preview modal (kèm cấu hình Zalo Mapping)
-async function renderFmsPreviewContent(flights) {
+async function renderFmsPreviewContent(flights, shouldResetInputs = true) {
   state.fmsPreviewFlights = flights;
   
   // 1. Tải danh sách thành viên Zalo và mapping (nếu chưa tải)
@@ -2402,14 +2443,23 @@ async function renderFmsPreviewContent(flights) {
     btnConfirm.innerHTML = originalConfirmText;
   }
 
-  // Điền ngày trực kế hoạch mặc định vào DatePicker trên modal preview
-  const extDateInput = document.getElementById('fms-schedule-date');
-  const extDate = extDateInput ? extDateInput.value : '';
-  const todayStr = new Date().toLocaleDateString('en-CA'); 
-  const defaultDate = extDate ? extDate : (flights.length > 0 && flights[0].date ? flights[0].date : todayStr);
-  const dateInput = document.getElementById('fms-preview-date-input');
-  if (dateInput) {
-    dateInput.value = defaultDate;
+  // Điền ngày và ca trực kế hoạch mặc định khi mở modal lần đầu
+  if (shouldResetInputs) {
+    const extDateInput = document.getElementById('fms-schedule-date');
+    const extDate = extDateInput ? extDateInput.value : '';
+    const todayStr = new Date().toLocaleDateString('en-CA'); 
+    const defaultDate = extDate ? extDate : (flights.length > 0 && flights[0].date ? flights[0].date : todayStr);
+    const dateInput = document.getElementById('fms-preview-date-input');
+    if (dateInput) {
+      dateInput.value = defaultDate;
+    }
+
+    const extShiftSelect = document.getElementById('fms-filter-shift');
+    const extShift = extShiftSelect ? extShiftSelect.value : 'all';
+    const shiftSelect = document.getElementById('fms-preview-shift-input');
+    if (shiftSelect) {
+      shiftSelect.value = extShift;
+    }
   }
 
   // 2. Render bảng chuyến bay kèm nút Xóa ở cột đầu tiên (Gộp cột chống cuộn ngang)
@@ -2693,14 +2743,17 @@ async function handleImageFileSelect(e) {
       const data = await res.json();
       if (data.success) {
         showToast('Bóc tách ảnh lịch trực thành công! Vui lòng duyệt xem trước.', 'success', 'Nhận diện thành công');
+        const rawFlights = data.flights || [];
+        state.fmsRawParsedFlights = rawFlights;
         const shiftSelect = document.getElementById('fms-filter-shift');
         const selectedShift = shiftSelect ? shiftSelect.value : 'all';
-        const filteredFlights = filterFlightsByShift(data.flights || [], selectedShift);
+        const filteredFlights = filterFlightsByShift(rawFlights, selectedShift);
         
         if (filteredFlights.length === 0) {
           showToast('Không có chuyến bay nào thuộc ca trực đã chọn trong ảnh lịch trực!', 'warning', 'Không có dữ liệu ca trực');
           return;
         }
+        state.fmsPreviewFlights = filteredFlights;
         renderOcrPreview(filteredFlights);
       } else {
         throw new Error(data.error);
@@ -2717,7 +2770,7 @@ async function handleImageFileSelect(e) {
 
 // Render dữ liệu nhận diện ảnh lên preview modal giống Excel
 function renderOcrPreview(flights) {
-  renderFmsPreviewContent(flights);
+  renderFmsPreviewContent(flights, true);
 }
 
 // Kiểm thử đồng thời danh sách API Keys Gemini
@@ -3201,5 +3254,220 @@ async function loadSkyEyesGroups() {
   } catch (err) {
     console.error('[SkyEyes] Lỗi tải danh sách nhóm:', err.message);
     if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Lỗi tải danh sách nhóm</div>';
+  }
+}
+
+// --- LOGIC QUẢN LÝ ZALO MAPPINGS VÀ THÀNH VIÊN NHÓM ---
+async function openZaloMappingsModal() {
+  const modal = document.getElementById('zalo-mappings-modal');
+  if (!modal) return;
+  modal.classList.add('active');
+
+  await Promise.all([
+    loadZaloMappingsList(),
+    loadZaloGroupMembers()
+  ]);
+}
+
+async function loadZaloMappingsList() {
+  try {
+    const res = await fetch('/api/fms/zalo/mappings', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      state.zaloMappings = data.mappings || [];
+      renderZaloMappingsListTable();
+    }
+  } catch (err) {
+    console.error('Lỗi tải danh sách mappings:', err.message);
+  }
+}
+
+function renderZaloMappingsListTable() {
+  const tbody = document.getElementById('zalo-mappings-list-tbody');
+  const searchInput = document.getElementById('search-zalo-mapping');
+  const query = searchInput ? searchInput.value.trim().toUpperCase() : '';
+
+  if (!tbody) return;
+
+  const filtered = state.zaloMappings.filter(m => {
+    if (query) {
+      const scheduleName = (m.schedule_name || '').toUpperCase();
+      const zaloName = (m.zalo_name || '').toUpperCase();
+      return scheduleName.includes(query) || zaloName.includes(query);
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 15px;">Không tìm thấy liên kết nào</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(m => {
+    return `
+      <tr>
+        <td style="font-weight: 700; color: #fb923c;">${m.schedule_name}</td>
+        <td><span style="font-weight: bold; color: #fff;">${m.zalo_name || '-'}</span><br><span style="font-size: 0.72rem; color: var(--text-muted);">${m.zalo_uid}</span></td>
+        <td style="text-align: center;">
+          <div style="display: flex; gap: 6px; justify-content: center;">
+            <button class="btn-edit-mapping" data-name="${m.schedule_name}" data-uid="${m.zalo_uid}" style="padding: 3px 6px; font-size: 0.7rem; margin-top: 0; background: rgba(56, 189, 248, 0.1); border-color: rgba(56, 189, 248, 0.3); color: #38bdf8; cursor: pointer; border-radius: 4px;">Sửa</button>
+            <button class="btn-delete-mapping" data-name="${m.schedule_name}" style="padding: 3px 6px; font-size: 0.7rem; margin-top: 0; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #ef4444; cursor: pointer; border-radius: 4px;">Xóa</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // Đăng ký sự kiện nút sửa/xóa
+  tbody.querySelectorAll('.btn-edit-mapping').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const name = e.target.getAttribute('data-name');
+      const uid = e.target.getAttribute('data-uid');
+      document.getElementById('mapping-schedule-name').value = name;
+      const select = document.getElementById('mapping-zalo-uid');
+      if (select) select.value = uid;
+    });
+  });
+
+  tbody.querySelectorAll('.btn-delete-mapping').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const name = e.target.getAttribute('data-name');
+      if (confirm(`Bạn có chắc chắn muốn xóa liên kết của nhân viên ${name}?`)) {
+        try {
+          const res = await fetch('/api/fms/zalo/mappings', {
+            method: 'DELETE',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.token}` 
+            },
+            body: JSON.stringify({ scheduleName: name })
+          });
+          const data = await res.json();
+          if (data.success) {
+            showToast(data.message, 'success', 'Thành công');
+            loadZaloMappingsList();
+          } else {
+            throw new Error(data.error);
+          }
+        } catch (err) {
+          showToast(err.message, 'error', 'Xóa thất bại');
+        }
+      }
+    });
+  });
+}
+
+async function loadZaloGroupMembers() {
+  try {
+    const res = await fetch('/api/fms/zalo/group-members', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      state.zaloMembers = data.members || [];
+      
+      const select = document.getElementById('mapping-zalo-uid');
+      if (select) {
+        let optionsHtml = '<option value="">-- Chọn thành viên Zalo --</option>';
+        state.zaloMembers.forEach(mem => {
+          optionsHtml += `<option value="${mem.uid}">${mem.displayName}</option>`;
+        });
+        select.innerHTML = optionsHtml;
+      }
+
+      renderZaloGroupMembersTable();
+    }
+  } catch (err) {
+    console.error('Lỗi tải danh sách thành viên Zalo:', err.message);
+  }
+}
+
+function renderZaloGroupMembersTable() {
+  const tbody = document.getElementById('zalo-group-members-tbody');
+  const searchInput = document.getElementById('search-zalo-member');
+  const query = searchInput ? searchInput.value.trim().toUpperCase() : '';
+
+  if (!tbody) return;
+
+  const filtered = state.zaloMembers.filter(mem => {
+    if (query) {
+      const displayName = (mem.displayName || '').toUpperCase();
+      const uid = (mem.uid || '').toUpperCase();
+      return displayName.includes(query) || uid.includes(query);
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: var(--text-muted); padding: 15px;">Không tìm thấy thành viên nào</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(mem => {
+    return `
+      <tr class="zalo-member-row-click" data-uid="${mem.uid}" style="cursor: pointer; transition: background 0.2s;">
+        <td style="font-weight: 700; color: #38bdf8;">${mem.displayName}</td>
+        <td style="color: var(--text-muted); font-size: 0.72rem;">${mem.uid}</td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.querySelectorAll('.zalo-member-row-click').forEach(row => {
+    row.addEventListener('mouseenter', () => row.style.background = 'rgba(255,255,255,0.05)');
+    row.addEventListener('mouseleave', () => row.style.background = 'transparent');
+    row.addEventListener('click', (e) => {
+      const tr = e.currentTarget;
+      const uid = tr.getAttribute('data-uid');
+      const select = document.getElementById('mapping-zalo-uid');
+      if (select) {
+        select.value = uid;
+      }
+    });
+  });
+}
+
+async function handleSaveSingleMapping() {
+  const nameInput = document.getElementById('mapping-schedule-name');
+  const select = document.getElementById('mapping-zalo-uid');
+  
+  const scheduleName = nameInput ? nameInput.value.trim() : '';
+  const zaloUid = select ? select.value : '';
+  const zaloName = select && select.selectedIndex > 0 ? select.options[select.selectedIndex].text : '';
+
+  if (!scheduleName || !zaloUid) {
+    showToast('Vui lòng điền đầy đủ Tên trên lịch trực và chọn Tài khoản Zalo!', 'error', 'Thiếu thông tin');
+    return;
+  }
+
+  const btn = document.getElementById('btn-save-single-mapping');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang lưu...';
+
+  try {
+    const res = await fetch('/api/fms/zalo/mappings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ scheduleName, zaloUid, zaloName })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success', 'Thành công');
+      nameInput.value = '';
+      if (select) select.value = '';
+      await loadZaloMappingsList();
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (err) {
+    showToast(err.message, 'error', 'Lưu thất bại');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
   }
 }

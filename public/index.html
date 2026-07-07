@@ -334,6 +334,9 @@
                     <button id="btn-skyeyes-logout" class="btn-secondary" style="margin-top: 0; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(239, 68, 68, 0.3); color: #ef4444; display: none; width: 100%;">
                       <i class="fa-solid fa-power-off"></i> Đăng Xuất
                     </button>
+                    <button id="btn-skyeyes-manage-mappings" class="btn-glow" style="margin-top: 6px; width: 100%; font-size: 0.8rem; padding: 8px 12px; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); border: none;">
+                      <i class="fa-solid fa-user-tag"></i> Quản Lý Liên Kết Zalo Mappings
+                    </button>
                   </div>
                 </div>
               </div>
@@ -680,10 +683,21 @@
         Hệ thống tự động phát hiện danh sách chuyến bay bên dưới. Vui lòng kiểm tra kỹ trước khi bấm lưu.
       </div>
       
-      <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
-        <span style="font-weight: bold; color: #fb923c;"><i class="fa-solid fa-calendar-day"></i> Ngày Trực Kế Hoạch:</span>
-        <input type="date" id="fms-preview-date-input" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: bold; cursor: pointer; outline: none;">
-        <span style="font-size: 0.8rem; color: var(--text-muted);">(Lưu ý: Đối với ca đêm vượt ngày, hãy chọn Ngày bắt đầu ca trực để theo dõi đồng bộ)</span>
+      <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-weight: bold; color: #fb923c;"><i class="fa-solid fa-calendar-day"></i> Ngày Trực Kế Hoạch:</span>
+          <input type="date" id="fms-preview-date-input" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: bold; cursor: pointer; outline: none;">
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-weight: bold; color: var(--warning);"><i class="fa-solid fa-clock"></i> Ca Trực Kế Hoạch:</span>
+          <select id="fms-preview-shift-input" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: bold; cursor: pointer; outline: none;">
+            <option value="all">Tất cả cả ngày</option>
+            <option value="day">Ca ngày (07:30 - 19:30)</option>
+            <option value="evening">Ca tối (19:30 - 23:59)</option>
+            <option value="night">Ca đêm (23:59 - 07:30 ngày mai)</option>
+          </select>
+        </div>
+        <span style="font-size: 0.8rem; color: var(--text-muted); flex-grow: 1;">(Lưu ý: Ca đêm vượt ngày sẽ theo dõi đồng bộ theo ngày bắt đầu ca trực)</span>
       </div>
       
       <!-- Layout Dàn Ngang 3 Cột Lớn Mở Rộng Tối Đa (Không Gò Bó) -->
@@ -763,6 +777,94 @@
         <button id="btn-fms-confirm-preview" class="btn-glow" style="width: auto; padding: 10px 25px; margin-top: 0;">
           <i class="fa-solid fa-floppy-disk"></i> Xác Nhận Lưu Lịch Trực
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL QUẢN LÝ LIÊN KẾT ZALO MAPPINGS ================= -->
+  <div id="zalo-mappings-modal" class="modal">
+    <div class="glass-panel modal-card" style="max-width: 90%; width: 1000px;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-user-tag"></i> Quản Lý Liên Kết Zalo & Thành Viên Nhóm</h3>
+        <button class="close-btn" id="btn-close-zalo-mappings-modal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; width: 100%; margin-top: 10px;">
+        <!-- Cột bên trái: Danh sách mappings hiện tại và Form thêm mới -->
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+          <!-- Form thêm mới/cập nhật mapping -->
+          <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+            <h4 style="margin: 0 0 10px 0; color: var(--primary); font-size: 0.95rem;"><i class="fa-solid fa-plus"></i> Thêm / Cập Nhật Liên Kết</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 0.75rem; color: var(--text-muted);">Tên trên lịch trực (Ví dụ: THÀNH):</label>
+                <input type="text" id="mapping-schedule-name" placeholder="Nhập tên viết hoa không dấu..." style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; outline: none; font-size: 0.85rem; box-sizing: border-box;">
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 0.75rem; color: var(--text-muted);">Tài khoản Zalo tương ứng:</label>
+                <select id="mapping-zalo-uid" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; outline: none; font-size: 0.85rem; cursor: pointer; box-sizing: border-box;">
+                  <!-- Populate động thành viên nhóm -->
+                </select>
+              </div>
+            </div>
+            <button id="btn-save-single-mapping" class="btn-glow" style="margin-top: 12px; width: auto; font-size: 0.8rem; padding: 6px 15px; float: right;">
+              <i class="fa-solid fa-floppy-disk"></i> Lưu Liên Kết
+            </button>
+            <div style="clear: both;"></div>
+          </div>
+
+          <!-- Bảng danh sách mappings -->
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h4 style="margin: 0; color: #fb923c; font-size: 0.95rem;"><i class="fa-solid fa-list"></i> Danh Sách Đã Ghi Nhớ</h4>
+              <input type="text" id="search-zalo-mapping" placeholder="Tìm kiếm nhanh..." style="width: 150px; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white; font-size: 0.75rem; outline: none;">
+            </div>
+            <div class="table-container" style="max-height: 380px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+              <table class="crm-table" style="font-size: 0.8rem;">
+                <thead>
+                  <tr>
+                    <th>Tên lịch trực</th>
+                    <th>Tên hiển thị Zalo</th>
+                    <th style="width: 70px; text-align: center;">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="zalo-mappings-list-tbody">
+                  <!-- Render động -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cột bên phải: Danh sách thành viên nhóm Zalo -->
+        <div style="display: flex; flex-direction: column; gap: 10px; border-left: 1px dashed rgba(255,255,255,0.1); padding-left: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h4 style="margin: 0; color: #38bdf8; font-size: 0.95rem;"><i class="fa-solid fa-users"></i> Thành Viên Nhóm Chat Zalo</h4>
+            <button id="btn-refresh-zalo-members" class="btn-secondary" style="margin-top: 0; padding: 3px 8px; font-size: 0.72rem; border-color: rgba(56, 189, 248, 0.3); color: #38bdf8;">
+              <i class="fa-solid fa-arrows-rotate"></i> Làm mới
+            </button>
+          </div>
+          <div style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.3; margin-bottom: 5px;">
+            Dưới đây là danh sách thành viên hiện tại trong nhóm Zalo đã cấu hình. Nhấp vào tên thành viên để điền nhanh vào Form liên kết!
+          </div>
+          <div style="position: relative; margin-bottom: 5px;">
+            <input type="text" id="search-zalo-member" placeholder="Tìm thành viên nhóm..." style="width: 100%; padding: 6px 10px 6px 30px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.25); color: white; font-size: 0.8rem; outline: none; box-sizing: border-box;">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.8rem;"></i>
+          </div>
+          <div class="table-container" style="max-height: 480px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+            <table class="crm-table" style="font-size: 0.8rem;">
+              <thead>
+                <tr>
+                  <th>Tên Zalo</th>
+                  <th>Zalo UID</th>
+                </tr>
+              </thead>
+              <tbody id="zalo-group-members-tbody">
+                <!-- Render động -->
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </div>

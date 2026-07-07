@@ -2119,6 +2119,26 @@ app.post('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   }
 });
 
+// API xóa mapping Zalo (chỉ Admin hoặc người có quyền Zalo)
+app.delete('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { scheduleName } = req.body;
+  if (!scheduleName) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp Tên lịch trực cần xóa!' });
+  }
+
+  try {
+    const db = await getDb();
+    await db.run('DELETE FROM zalo_user_mappings WHERE UPPER(schedule_name) = UPPER(?)', String(scheduleName).trim());
+    res.json({ success: true, message: `Đã xóa liên kết của nhân viên ${scheduleName} thành công!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // --- KHỞI ĐỘNG HỆ THỐNG ---
 app.listen(PORT, async () => {
   console.log(`[LMS] Máy chủ đang chạy tại: http://localhost:${PORT}`);
