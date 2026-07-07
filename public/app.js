@@ -497,6 +497,9 @@ function setupEventListeners() {
   // Quét FMS ngay lập tức
   document.getElementById('btn-fms-sync-now').addEventListener('click', handleSyncFmsNow);
 
+  // Xuất lịch trực ra file Excel mẫu chuẩn
+  document.getElementById('btn-fms-export-excel').addEventListener('click', exportFmsScheduleToExcel);
+
   // Trigger chọn file Excel FMS
   document.getElementById('btn-fms-upload-excel').addEventListener('click', () => {
     document.getElementById('fms-file-input').value = ''; // Reset file input
@@ -3470,4 +3473,124 @@ async function handleSaveSingleMapping() {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
   }
+}
+
+// Helper lấy ngày trực theo chuỗi tiếng Việt dài
+function getVNDateLongString(dateStr) {
+  const days = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  const dayName = days[d.getDay()];
+  return `${dayName}, ngày ${parts[2]} tháng ${parts[1]} năm ${parts[0]}`;
+}
+
+// Hàm xuất Excel lịch trực chuẩn định dạng lichtruc.xlsx của Skypec
+function exportFmsScheduleToExcel() {
+  if (!cachedFmsRows || cachedFmsRows.length === 0) {
+    showToast('Không có dữ liệu lịch trực để xuất Excel!', 'warning', 'Không có dữ liệu');
+    return;
+  }
+
+  const dateInput = document.getElementById('fms-filter-date');
+  const selectedDate = dateInput ? dateInput.value : '';
+
+  const excelRows = [];
+  
+  // Dòng 0-2: Tiêu đề theo chuẩn Skypec
+  excelRows.push(['CÔNG TY TNHH MTV NHIÊN LIỆU HÀNG KHÔNG VIỆT NAM (SKYPEC)', '', '', '', '', '', '', 'KẾ HOẠCH TRA NẠP NHIÊN LIỆU']);
+  excelRows.push(['CHI NHÁNH SKYPEC KHU VỰC MIỀN BẮC', '', '', '', '', '', '', getVNDateLongString(selectedDate)]);
+  excelRows.push(['     ĐƠN VỊ: TRUNG TÂM KHAI THÁC', '', '', '', '', '', '', 'KẾ HOẠCH PHÂN CÔNG CHI TIẾT']);
+  excelRows.push([]); // Dòng trống 3
+  
+  // Dòng 4-6: Header gộp ô và chỉ số cột theo mẫu chuẩn
+  excelRows.push(['STT', 'LOẠI TÀU BAY', 'THÔNG TIN CHUYẾN BAY', '', '', 'SẢN LƯỢNG DỰ KIẾN (KG)', 'THỜI GIAN DỰ KIẾN', '', '', 'VỊ TRÍ', 'SỐ HIỆU XE TRA NẠP', 'NGƯỜI THỰC HIỆN', '', '', 'GHI CHÚ']);
+  excelRows.push(['', '', 'SỐ HIỆU TÀU BAY', 'SỐ HIỆU CHUYẾN BAY', 'ĐƯỜNG BAY', '', 'HẠ CÁNH', 'CẤT CÁNH', 'TRA NẠP', '', '', 'LÁI XE', 'NHÂN VIÊN TRA NẠP', 'TRỰC CHỈ HUY']);
+  excelRows.push([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+  
+  // Dòng 7 trở đi: Dữ liệu lịch trực
+  cachedFmsRows.forEach((r, idx) => {
+    let driver = '';
+    let operator = '';
+    if (r.crew_info) {
+      const parts = r.crew_info.split('-');
+      if (parts.length === 2) {
+        driver = parts[0].trim();
+        operator = parts[1].trim();
+      } else {
+        driver = r.crew_info;
+      }
+    }
+    
+    // Định dạng số hiệu chuyến bay dạng "VN 1549" thay vì viết liền
+    let formattedFltNo = r.flight_no || '';
+    const fltMatch = formattedFltNo.match(/^([A-Za-z]+)(\d+)$/);
+    if (fltMatch) {
+      formattedFltNo = `${fltMatch[1]} ${fltMatch[2]}`;
+    }
+    
+    excelRows.push([
+      idx + 1,
+      r.ac_type || '',
+      r.ac_reg || '',
+      formattedFltNo,
+      r.route || '',
+      r.fuel_order ? parseInt(r.fuel_order) : '',
+      r.time_arr || '',
+      r.time_dep || '',
+      r.time_fuel || '',
+      r.gate || '',
+      r.truck_no || '',
+      driver,
+      operator,
+      '',
+      r.status || ''
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(excelRows);
+
+  // Merges cells
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+    { s: { r: 0, c: 7 }, e: { r: 0, c: 14 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+    { s: { r: 1, c: 7 }, e: { r: 1, c: 14 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 6 } },
+    { s: { r: 2, c: 7 }, e: { r: 2, c: 14 } },
+    
+    { s: { r: 4, c: 0 }, e: { r: 5, c: 0 } },
+    { s: { r: 4, c: 1 }, e: { r: 5, c: 1 } },
+    { s: { r: 4, c: 2 }, e: { r: 4, c: 4 } },
+    { s: { r: 4, c: 5 }, e: { r: 5, c: 5 } },
+    { s: { r: 4, c: 6 }, e: { r: 4, c: 8 } },
+    { s: { r: 4, c: 9 }, e: { r: 5, c: 9 } },
+    { s: { r: 4, c: 10 }, e: { r: 5, c: 10 } },
+    { s: { r: 4, c: 11 }, e: { r: 4, c: 13 } },
+    { s: { r: 4, c: 14 }, e: { r: 5, c: 14 } }
+  ];
+
+  // Chiều rộng cột
+  ws['!cols'] = [
+    { wch: 6 },  // STT
+    { wch: 15 }, // Loại tàu bay
+    { wch: 15 }, // Số hiệu tàu bay
+    { wch: 15 }, // Số hiệu chuyến bay
+    { wch: 12 }, // Đường bay
+    { wch: 15 }, // Sản lượng dự kiến
+    { wch: 10 }, // Hạ cánh
+    { wch: 10 }, // Cất cánh
+    { wch: 10 }, // Tra nạp
+    { wch: 8 },  // Vị trí
+    { wch: 12 }, // Số hiệu xe
+    { wch: 12 }, // Lái xe
+    { wch: 18 }, // Nhân viên tra nạp
+    { wch: 15 }, // Trực chỉ huy
+    { wch: 15 }  // Ghi chú
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  XLSX.writeFile(wb, `Lich_truc_Skypec_${selectedDate}.xlsx`);
+  showToast('Xuất file Excel lịch trực thành công!', 'success', 'Thành công');
 }
