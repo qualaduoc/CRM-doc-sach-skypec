@@ -2075,9 +2075,21 @@ async function handleSyncFmsNow() {
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang gửi yêu cầu...';
 
   try {
+    const dateInput = document.getElementById('fms-filter-date');
+    const shiftSelect = document.getElementById('fms-filter-shift');
+    const selectedDate = dateInput ? dateInput.value : '';
+    const selectedShift = shiftSelect ? shiftSelect.value : 'all';
+
     const res = await fetch('/api/fms/sync', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${state.token}` }
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({
+        date: selectedDate,
+        shift: selectedShift
+      })
     });
     const data = await res.json();
     if (data.success) {

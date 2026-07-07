@@ -1745,8 +1745,10 @@ app.post('/api/fms/sync', authenticateToken, async (req, res) => {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
+  const { date, shift } = req.body;
+
   try {
-    syncFMSData().catch(err => console.error('[FMS] Lỗi quét thủ công:', err.message));
+    syncFMSData(date, shift).catch(err => console.error('[FMS] Lỗi quét thủ công:', err.message));
     res.json({ success: true, message: 'Đã bắt đầu tiến trình quét tải dầu FMS chạy ngầm...' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

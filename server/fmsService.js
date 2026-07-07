@@ -241,13 +241,13 @@ function convertDbDateToFmsDate(dbDateStr) {
 let isSyncing = false;
 
 // Thực hiện đồng bộ hóa toàn bộ chuyến bay trong lịch trực từ FMS
-async function syncFMSData() {
+async function syncFMSData(forceDate = null, forceShift = null) {
   if (isSyncing) {
     log('Chu kỳ quét trước vẫn đang chạy. Bỏ qua chu kỳ này để tránh tranh chấp dữ liệu.');
     return;
   }
   isSyncing = true;
-  log('Bắt đầu chu kỳ quét tải dầu FMS...');
+  log(`Bắt đầu chu kỳ quét tải dầu FMS (ForceDate: ${forceDate || 'Không'}, ForceShift: ${forceShift || 'Không'})...`);
   try {
     const db = await getDb();
     const todayDb = getVietnamDbDateStr();
@@ -265,21 +265,36 @@ async function syncFMSData() {
     } catch (cleanupErr) {
       console.error('[Dọn dẹp DB] Lỗi khi dọn dẹp lịch bay cũ:', cleanupErr.message);
     }
-    // 1. Quét dải 3 ngày liên tiếp: Hôm trước, Hôm nay, Hôm sau để tránh lệch múi giờ và bắt chuyến rạng sáng (00h00 - 07h00)
-    const todayDate = new Date();
-    // Chuyển múi giờ Việt Nam GMT+7
-    const utc = todayDate.getTime() + (todayDate.getTimezoneOffset() * 60000);
-    const vnTime = new Date(utc + (3600000 * 7));
 
-    // Ngày hôm trước
-    const yesterdayDate = new Date(vnTime.getTime() - 24 * 60 * 60 * 1000);
-    const yesterdayDb = yesterdayDate.toISOString().split('T')[0];
+    let targetDates = [];
+    if (forceDate) {
+      const selectedDateStr = String(forceDate).trim();
+      if (forceShift === 'night') {
+        // Ca đêm vượt ngày: các chuyến rạng sáng bay vào ngày hôm sau, do đó cần quét cả 2 ngày
+        const d = new Date(selectedDateStr + 'T00:00:00');
+        d.setDate(d.getDate() + 1);
+        const nextDayStr = d.toISOString().split('T')[0];
+        targetDates = [selectedDateStr, nextDayStr];
+      } else {
+        targetDates = [selectedDateStr];
+      }
+    } else {
+      // 1. Quét dải 3 ngày liên tiếp: Hôm trước, Hôm nay, Hôm sau để tránh lệch múi giờ và bắt chuyến rạng sáng (00h00 - 07h00)
+      const todayDate = new Date();
+      // Chuyển múi giờ Việt Nam GMT+7
+      const utc = todayDate.getTime() + (todayDate.getTimezoneOffset() * 60000);
+      const vnTime = new Date(utc + (3600000 * 7));
 
-    // Ngày hôm sau
-    const tomorrowDate = new Date(vnTime.getTime() + 24 * 60 * 60 * 1000);
-    const tomorrowDb = tomorrowDate.toISOString().split('T')[0];
+      // Ngày hôm trước
+      const yesterdayDate = new Date(vnTime.getTime() - 24 * 60 * 60 * 1000);
+      const yesterdayDb = yesterdayDate.toISOString().split('T')[0];
 
-    const targetDates = [yesterdayDb, todayDb, tomorrowDb];
+      // Ngày hôm sau
+      const tomorrowDate = new Date(vnTime.getTime() + 24 * 60 * 60 * 1000);
+      const tomorrowDb = tomorrowDate.toISOString().split('T')[0];
+
+      targetDates = [yesterdayDb, todayDb, tomorrowDb];
+    }
     
     log(`Các ngày sẽ thực hiện quét FMS: ${targetDates.join(', ')}`);
 
@@ -294,10 +309,48 @@ async function syncFMSData() {
 
     for (const targetDate of targetDates) {
       // Lấy danh sách các chuyến bay cần theo dõi của ngày đang xét theo ngày bay thực tế FMS (fms_date)
-      const schedules = await db.all('SELECT DISTINCT flight_no FROM fms_schedules WHERE COALESCE(fms_date, date) = ?', targetDate);
+      const schedules = await db.all('SELECT DISTINCT flight_no, time_fuel, time_dep, time_arr FROM fms_schedules WHERE COALESCE(fms_date, date) = ?', targetDate);
       if (schedules.length === 0) continue;
 
-      const flightNumbers = schedules.map(s => s.flight_no.toUpperCase().replace(/\s+/g, ''));
+      // Lọc theo ca trực nếu được chỉ định
+      let filteredSchedules = schedules;
+      if (forceShift && forceShift !== 'all') {
+        filteredSchedules = schedules.filter(s => {
+          const timeStr = s.time_fuel || s.time_dep || s.time_arr || '';
+          if (!timeStr || timeStr === '-') return false;
+          
+          try {
+            const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+            if (!match) return false;
+            
+            const hour = parseInt(match[1]);
+            const minute = parseInt(match[2]);
+            const minutes = hour * 60 + minute;
+            
+            const m_0730 = 7 * 60 + 30;
+            const m_1930 = 19 * 60 + 30;
+            const m_2359 = 23 * 60 + 59;
+            
+            if (forceShift === 'day') {
+              return minutes >= m_0730 && minutes < m_1930;
+            } else if (forceShift === 'evening') {
+              return minutes >= m_1930 && minutes <= m_2359;
+            } else if (forceShift === 'night') {
+              return minutes >= m_2359 || minutes < m_0730;
+            }
+          } catch (e) {
+            console.error('[Backend Shift Filter Error]', e.message);
+          }
+          return false;
+        });
+      }
+
+      if (filteredSchedules.length === 0) {
+        log(`[Ngày ${targetDate}] Không có chuyến bay nào khớp với ca trực ${forceShift}. Bỏ qua.`);
+        continue;
+      }
+
+      const flightNumbers = filteredSchedules.map(s => s.flight_no.toUpperCase().replace(/\s+/g, ''));
       log(`[Ngày ${targetDate}] Danh sách chuyến bay cần theo dõi (${flightNumbers.length} chuyến): ${flightNumbers.join(', ')}`);
 
       // Tải danh sách chuyến bay từ FMS cho ngày này
