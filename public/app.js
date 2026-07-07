@@ -524,6 +524,16 @@ function setupEventListeners() {
   // Sự kiện thay đổi ngày lọc lịch bay FMS
   document.getElementById('fms-filter-date').addEventListener('change', () => loadFmsSchedules(false));
 
+  // Sự kiện thay đổi ngày trực ca FMS (cột bên trái - Nhập lịch trực)
+  document.getElementById('fms-schedule-date').addEventListener('change', (e) => {
+    const val = e.target.value;
+    const filterInput = document.getElementById('fms-filter-date');
+    if (filterInput) {
+      filterInput.value = val;
+    }
+    loadFmsSchedules(false);
+  });
+
   // Sự kiện cho bảng FMS ở màn hình nhân viên (chỉ xem)
   const userFmsDate = document.getElementById('user-fms-filter-date');
   if (userFmsDate) {
@@ -1636,12 +1646,17 @@ function formatDateVN(dateStr) {
 async function loadFmsSchedules(isSilent = false) {
   try {
     const filterInput = document.getElementById('fms-filter-date');
+    const scheduleDateInput = document.getElementById('fms-schedule-date');
+    const vnDate = new Date();
+    const utc = vnDate.getTime() + (vnDate.getTimezoneOffset() * 60000);
+    const vnTime = new Date(utc + (3600000 * 7));
+    const todayStr = vnTime.toISOString().split('T')[0];
+
     if (filterInput && !filterInput.value) {
-      const vnDate = new Date();
-      // Chuyển múi giờ Việt Nam GMT+7
-      const utc = vnDate.getTime() + (vnDate.getTimezoneOffset() * 60000);
-      const vnTime = new Date(utc + (3600000 * 7));
-      filterInput.value = vnTime.toISOString().split('T')[0];
+      filterInput.value = todayStr;
+    }
+    if (scheduleDateInput && !scheduleDateInput.value) {
+      scheduleDateInput.value = todayStr;
     }
     const selectedDate = filterInput ? filterInput.value : '';
 
@@ -2075,7 +2090,7 @@ async function handleSyncFmsNow() {
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang gửi yêu cầu...';
 
   try {
-    const dateInput = document.getElementById('fms-filter-date');
+    const dateInput = document.getElementById('fms-schedule-date');
     const shiftSelect = document.getElementById('fms-filter-shift');
     const selectedDate = dateInput ? dateInput.value : '';
     const selectedShift = shiftSelect ? shiftSelect.value : 'all';
@@ -2388,7 +2403,7 @@ async function renderFmsPreviewContent(flights) {
   }
 
   // Điền ngày trực kế hoạch mặc định vào DatePicker trên modal preview
-  const extDateInput = document.getElementById('fms-filter-date');
+  const extDateInput = document.getElementById('fms-schedule-date');
   const extDate = extDateInput ? extDateInput.value : '';
   const todayStr = new Date().toLocaleDateString('en-CA'); 
   const defaultDate = extDate ? extDate : (flights.length > 0 && flights[0].date ? flights[0].date : todayStr);
@@ -2586,7 +2601,10 @@ async function handleConfirmFmsPreview() {
       showToast(data.message, 'success', 'Thành công');
       document.getElementById('fms-preview-modal').classList.remove('active');
       if (selectedDate) {
-        document.getElementById('fms-filter-date').value = selectedDate;
+        const schedInput = document.getElementById('fms-schedule-date');
+        const filtInput = document.getElementById('fms-filter-date');
+        if (schedInput) schedInput.value = selectedDate;
+        if (filtInput) filtInput.value = selectedDate;
       }
       loadFmsSchedules();
     } else {
