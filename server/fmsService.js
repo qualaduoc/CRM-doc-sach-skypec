@@ -2,7 +2,7 @@ const http = require('http');
 const https = require('https');
 const querystring = require('querystring');
 const { getDb } = require('./db');
-const { sendSkyOneMessage, sendSkyOnePrivateMessage } = require('./zaloService');
+const { sendSkyEyesMessage, sendSkyEyesPrivateMessage } = require('./zaloService');
 
 const HOST = 'fms.vietnamairlines.com';
 
@@ -390,7 +390,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
           const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo);
+          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo + '_' + targetDate);
 
           const cleanACREG = flt.ACREG ? flt.ACREG.trim() : '';
           const oldStandby = oldOrder ? (parseInt(oldOrder.standby_fuel) || 0) : 0;
@@ -567,7 +567,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
 
               const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
               groupIds.forEach(id => {
-                sendSkyOneMessage(id, msgGroup, groupMentions)
+                sendSkyEyesMessage(id, msgGroup, groupMentions)
                   .then(() => log(`[SkyOne] Đã gửi thông báo trực tiếp cho chuyến bay ${cleanFltNo} tới nhóm ${id} thành công!`))
                   .catch(err => console.error(`[SkyOne] Gửi tới nhóm ${id} thất bại:`, err.message));
               });
@@ -576,7 +576,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             // Nếu cần gửi inbox cá nhân riêng (notifyType === 2 hoặc 3)
             if ((notifyType === 2 || notifyType === 3) && uids.length > 0) {
               uids.forEach(uid => {
-                sendSkyOnePrivateMessage(uid, msg)
+                sendSkyEyesPrivateMessage(uid, msg)
                   .then(() => log(`[SkyOne] Đã gửi tin nhắn riêng cho chuyến bay ${cleanFltNo} tới UID ${uid} thành công!`))
                   .catch(err => console.error(`[SkyOne] Gửi tin nhắn riêng tới UID ${uid} thất bại:`, err.message));
               });
@@ -642,7 +642,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               old_fuel_order = excluded.old_fuel_order,
               updated_at = CURRENT_TIMESTAMP
           `, 
-            cleanFltNo,
+            cleanFltNo + '_' + targetDate,
             flt.ACREG ? flt.ACREG.trim() : '',
             flt.ACTYPE ? flt.ACTYPE.trim() : '',
             `${flt.DEP_AP_SCHED || ''} - ${flt.ARR_AP_SCHED || ''}`,
