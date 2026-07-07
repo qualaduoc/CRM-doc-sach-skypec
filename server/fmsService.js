@@ -412,7 +412,8 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const isAcRegChanged = oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
                                  (String(oldOrder.ac_reg).trim() !== cleanACREG);
 
-          const shouldNotify = isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged;
+          // Nhận diện lần quét đầu tiên khi import lịch trực: nếu oldOrder chưa tồn tại trong DB, không bắn thông báo Zalo
+          const shouldNotify = oldOrder ? (isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged) : false;
 
           if (shouldNotify) {
             // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày bay thực tế fms_date (kèm cấu hình Zalo)
