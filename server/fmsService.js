@@ -82,6 +82,17 @@ function getVietnamDbDateStr() {
   return `${year}-${month}-${day}`;
 }
 
+// Lấy ngày giờ hiện tại dạng HH:MM DD/MM/YYYY theo múi giờ Việt Nam (GMT+7)
+function getVietnamDateTimeStr() {
+  const vnTime = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
+  const hour = String(vnTime.getUTCHours()).padStart(2, '0');
+  const minute = String(vnTime.getUTCMinutes()).padStart(2, '0');
+  const day = String(vnTime.getUTCDate()).padStart(2, '0');
+  const month = String(vnTime.getUTCMonth() + 1).padStart(2, '0');
+  const year = vnTime.getUTCFullYear();
+  return `${hour}:${minute} ${day}/${month}/${year}`;
+}
+
 // Biến lưu cookie đăng nhập FMS trong bộ nhớ cache
 let cachedFmsCookie = null;
 
@@ -390,13 +401,21 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
           const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo + '_' + targetDate);
+          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, gate, warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo + '_' + targetDate);
+
+          // Lấy lịch trực để so sánh bến đỗ trước khi check thay đổi
+          const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type FROM fms_schedules WHERE flight_no = ? AND COALESCE(fms_date, date) = ?', cleanFltNo, targetDate);
 
           const cleanACREG = flt.ACREG ? flt.ACREG.trim() : '';
           const oldStandby = oldOrder ? (parseInt(oldOrder.standby_fuel) || 0) : 0;
           const oldFuelOrder = oldOrder ? (parseInt(oldOrder.fuel_order) || 0) : 0;
           const newStandby = parseInt(detail.standby_fuel) || 0;
           const newFuelOrder = parseInt(detail.fuel_order) || 0;
+
+          // So sánh vị trí đỗ
+          const oldGate = oldOrder ? (oldOrder.gate || '') : '';
+          const newGate = sched ? (sched.gate || '') : '';
+          const isGateChanged = oldOrder && oldGate && newGate && (oldGate.trim() !== newGate.trim());
 
           // Báo tin khi mới xuất hiện standby_fuel lần đầu
           const isNewStandby = newStandby > 0 && oldStandby <= 0;
@@ -413,12 +432,9 @@ async function syncFMSData(forceDate = null, forceShift = null) {
                                  (String(oldOrder.ac_reg).trim() !== cleanACREG);
 
           // Nhận diện lần quét đầu tiên khi import lịch trực: nếu oldOrder chưa tồn tại trong DB, không bắn thông báo Zalo
-          const shouldNotify = oldOrder ? (isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged) : false;
+          const shouldNotify = oldOrder ? (isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged || isGateChanged) : false;
 
           if (shouldNotify) {
-            // Lấy thông tin lịch trực bay chi tiết (tổ lái - thợ bơm, số xe, vị trí đỗ) đúng theo ngày bay thực tế fms_date (kèm cấu hình Zalo)
-            const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type FROM fms_schedules WHERE flight_no = ? AND COALESCE(fms_date, date) = ?', cleanFltNo, targetDate);
-            
             let title = '🔔 [FMS BÁO TẢI DẦU MỚI]';
             if (isNewStandby && !isNewFuelOrder) {
               title = '🔔 [FMS BÁO TẢI DẦU STANDBY MỚI]';
@@ -428,6 +444,8 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               title = '🔄 [FMS CẬP NHẬT SỐ LIỆU TẢI DẦU]';
             } else if (isAcRegChanged) {
               title = '🛩️ [FMS CẢNH BÁO THAY ĐỔI TÀU BAY]';
+            } else if (isGateChanged) {
+              title = '📍 [FMS CẢNH BÁO THAY ĐỔI VỊ TRÍ ĐỖ]';
             }
             
             // Lấy giá trị cũ phục vụ template
@@ -450,7 +468,8 @@ async function syncFMSData(forceDate = null, forceShift = null) {
 ⛽ Tải dầu Standby (CFP): {{standby_fuel}} kg
 ⛽ Tải dầu Chính thức: {{fuel_order}} kg
 ⏰ Giờ Tra nạp: {{time_fuel}}
-⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}`;
+⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}
+📢 Giờ thông báo: {{notify_time}}`;
             }
 
             // Đảm bảo dòng Chuyến bay luôn có định dạng {{flight_no}} - {{ac_reg}} để nhận diện
@@ -480,7 +499,8 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               old_fuel_order: oldFuelOrderVal,
               time_fuel: sched && sched.time_fuel ? sched.time_fuel : '-',
               time_arr: sched && sched.time_arr ? sched.time_arr : '-',
-              time_dep: sched && sched.time_dep ? sched.time_dep : '-'
+              time_dep: sched && sched.time_dep ? sched.time_dep : '-',
+              notify_time: getVietnamDateTimeStr()
             };
 
             let msg = template;
@@ -509,6 +529,11 @@ async function syncFMSData(forceDate = null, forceShift = null) {
                 return !!(isNewFuelOrder || isFuelOrderChanged);
               }
 
+              // 4. Dòng chứa Vị trí đỗ: Chỉ hiển thị khi vị trí đỗ có thay đổi
+              if (lower.includes('vị trí đỗ') || lower.includes('gate') || lower.includes('vị trí:')) {
+                return !!isGateChanged;
+              }
+
               return true;
             });
 
@@ -520,6 +545,11 @@ async function syncFMSData(forceDate = null, forceShift = null) {
                 return true;
               })
               .join('\n');
+
+            // Đảm bảo tin nhắn luôn có dòng Giờ thông báo ở cuối
+            if (!msg.includes('Giờ thông báo')) {
+              msg += `\n📢 Giờ thông báo: ${replacements.notify_time}`;
+            }
 
           // Lấy cấu hình gửi tin nhắn trực tiếp qua Bot SkyOne từ settings
           const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
@@ -620,9 +650,9 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
               trip_fuel, trip_time, taxi_fuel, alternate, status,
               warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at,
-              old_ac_reg, old_standby_fuel, old_fuel_order,
+              old_ac_reg, old_standby_fuel, old_fuel_order, gate,
               updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(flight_no) DO UPDATE SET
               ac_reg = excluded.ac_reg,
               ac_type = excluded.ac_type,
@@ -641,6 +671,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               old_ac_reg = excluded.old_ac_reg,
               old_standby_fuel = excluded.old_standby_fuel,
               old_fuel_order = excluded.old_fuel_order,
+              gate = excluded.gate,
               updated_at = CURRENT_TIMESTAMP
           `, 
             cleanFltNo + '_' + targetDate,
@@ -660,7 +691,8 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             warnUpdatedAtVal,
             finalOldAcReg,
             finalOldStandby,
-            finalOldFuelOrder
+            finalOldFuelOrder,
+            newGate
           );
         log(`[Hoàn tất quét] Chuyến bay ${cleanFltNo}: Fuel Order = ${detail.fuel_order} kg, Trạng thái = ${status}`);
       } catch (fltErr) {
