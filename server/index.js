@@ -1308,7 +1308,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
-  const { scheduleText, flights, mappings, date } = req.body;
+  const { scheduleText, flights, mappings, date, shift } = req.body;
   if (!scheduleText && (!flights || flights.length === 0)) {
     return res.status(400).json({ success: false, error: 'Vui lòng cung cấp lịch bay hoặc danh sách chuyến bay' });
   }
@@ -1337,10 +1337,10 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     const targetDate = date ? String(date).trim() : getVietnamDbDateStr();
     const schedules = [];
 
-    // Tự động nhận diện xem đây có phải ca trực đêm vượt ngày hay không
-    // (nếu có chuyến bay bay tối muộn từ 19h30 đến 23h59)
-    let hasNightFlights = false;
-    if (flights && flights.length > 0) {
+    // Xác định xem đây có phải ca trực đêm vượt ngày hay không
+    // (Nếu shift === 'night' thì mặc định là ca đêm, ngược lại tự động dò tìm giờ bay tối muộn)
+    let hasNightFlights = shift === 'night';
+    if (!hasNightFlights && flights && flights.length > 0) {
       hasNightFlights = flights.some(f => {
         const timeStr = f.time_fuel || f.time_dep || f.time_arr;
         if (!timeStr || timeStr === '-') return false;

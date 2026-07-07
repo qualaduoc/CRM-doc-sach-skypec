@@ -198,6 +198,21 @@
               <h4 style="margin: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 10px;">
                 <i class="fa-solid fa-file-import"></i> Nhập Lịch Bay Trực Ca
               </h4>
+              <div style="display: flex; flex-direction: column; gap: 12px; padding: 10px; background: rgba(0,0,0,0.15); border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px;">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label for="fms-filter-date" style="font-size: 0.8rem; font-weight: bold; color: var(--primary);">📅 Chọn ngày trực:</label>
+                  <input type="date" id="fms-filter-date" style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; outline: none; font-size: 0.9rem;">
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label for="fms-filter-shift" style="font-size: 0.8rem; font-weight: bold; color: var(--warning);">⏰ Chọn ca trực:</label>
+                  <select id="fms-filter-shift" style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: #131d35; color: #fff; outline: none; font-size: 0.9rem; cursor: pointer;">
+                    <option value="all" selected>Tất cả cả ngày</option>
+                    <option value="day">Ca ngày (07:30 - 19:30)</option>
+                    <option value="evening">Ca tối (19:30 - 23:59)</option>
+                    <option value="night">Ca đêm (23:59 - 07:30 ngày mai)</option>
+                  </select>
+                </div>
+              </div>
               <div style="display: flex; flex-direction: column; gap: 8px;">
                 <button id="btn-fms-upload-image" class="btn-glow" style="margin-top: 0; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); border: none; width: 100%; font-size: 0.9rem;">
                   <i class="fa-solid fa-camera"></i> Nhận Diện Từ Ảnh Lịch Trực

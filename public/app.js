@@ -2142,6 +2142,41 @@ function formatExcelTime(val) {
   return strVal;
 }
 
+// Hàm lọc danh sách chuyến bay theo ca trực đã chọn
+function filterFlightsByShift(flights, shift) {
+  if (!shift || shift === 'all') return flights;
+
+  return flights.filter(f => {
+    const timeStr = f.time_fuel || f.time_dep || f.time_arr || '';
+    if (!timeStr || timeStr === '-') return false;
+
+    try {
+      const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+      if (!match) return false;
+
+      const hour = parseInt(match[1]);
+      const minute = parseInt(match[2]);
+      const minutes = hour * 60 + minute;
+
+      const m_0730 = 7 * 60 + 30;
+      const m_1930 = 19 * 60 + 30;
+      const m_2359 = 23 * 60 + 59;
+
+      if (shift === 'day') {
+        return minutes >= m_0730 && minutes < m_1930;
+      } else if (shift === 'evening') {
+        return minutes >= m_1930 && minutes <= m_2359;
+      } else if (shift === 'night') {
+        // Ca đêm: từ 23h59 ngày N đến 07h30 sáng ngày N+1
+        return minutes >= m_2359 || minutes < m_0730;
+      }
+    } catch (e) {
+      console.error('[Shift Filter Error]', e.message);
+    }
+    return false;
+  });
+}
+
 // Phân tích và bóc tách các dòng từ file Excel lịch trực (13 cột)
 function parseFmsExcel(rows) {
   const flights = [];
@@ -2181,11 +2216,21 @@ function parseFmsExcel(rows) {
     return;
   }
 
+  // Lọc theo ca trực đã chọn ở giao diện
+  const shiftSelect = document.getElementById('fms-filter-shift');
+  const selectedShift = shiftSelect ? shiftSelect.value : 'all';
+  const filteredFlights = filterFlightsByShift(flights, selectedShift);
+
+  if (filteredFlights.length === 0) {
+    showToast('Không có chuyến bay nào thuộc ca trực đã chọn trong file Excel!', 'warning', 'Không có dữ liệu ca trực');
+    return;
+  }
+
   // Lưu lịch bay bóc tách tạm thời vào state để xác nhận sau
-  state.fmsPreviewFlights = flights;
+  state.fmsPreviewFlights = filteredFlights;
 
   // Hiển thị bảng xem trước (Preview) và Zalo Mapping lên modal
-  renderFmsPreviewContent(flights);
+  renderFmsPreviewContent(filteredFlights);
 }
 
 // Gửi xác nhận lưu lịch trực bay từ Modal Preview
@@ -2331,11 +2376,13 @@ async function renderFmsPreviewContent(flights) {
   }
 
   // Điền ngày trực kế hoạch mặc định vào DatePicker trên modal preview
+  const extDateInput = document.getElementById('fms-filter-date');
+  const extDate = extDateInput ? extDateInput.value : '';
   const todayStr = new Date().toLocaleDateString('en-CA'); 
-  const detectedDate = flights.length > 0 && flights[0].date ? flights[0].date : todayStr;
+  const defaultDate = extDate ? extDate : (flights.length > 0 && flights[0].date ? flights[0].date : todayStr);
   const dateInput = document.getElementById('fms-preview-date-input');
-  if (dateInput && !dateInput.value) {
-    dateInput.value = detectedDate;
+  if (dateInput) {
+    dateInput.value = defaultDate;
   }
 
   // 2. Render bảng chuyến bay kèm nút Xóa ở cột đầu tiên (Gộp cột chống cuộn ngang)
@@ -2505,6 +2552,8 @@ async function handleConfirmFmsPreview() {
     // 3. Gọi API lưu lịch bay và mapping học hỏi
     const dateInput = document.getElementById('fms-preview-date-input');
     const selectedDate = dateInput ? dateInput.value : '';
+    const shiftSelect = document.getElementById('fms-filter-shift');
+    const selectedShift = shiftSelect ? shiftSelect.value : 'all';
 
     const res = await fetch('/api/fms/schedule', {
       method: 'POST',
@@ -2515,7 +2564,8 @@ async function handleConfirmFmsPreview() {
       body: JSON.stringify({ 
         flights: finalFlights,
         mappings: mappings,
-        date: selectedDate
+        date: selectedDate,
+        shift: selectedShift
       })
     });
     
@@ -2613,7 +2663,15 @@ async function handleImageFileSelect(e) {
       const data = await res.json();
       if (data.success) {
         showToast('Bóc tách ảnh lịch trực thành công! Vui lòng duyệt xem trước.', 'success', 'Nhận diện thành công');
-        renderOcrPreview(data.flights);
+        const shiftSelect = document.getElementById('fms-filter-shift');
+        const selectedShift = shiftSelect ? shiftSelect.value : 'all';
+        const filteredFlights = filterFlightsByShift(data.flights || [], selectedShift);
+        
+        if (filteredFlights.length === 0) {
+          showToast('Không có chuyến bay nào thuộc ca trực đã chọn trong ảnh lịch trực!', 'warning', 'Không có dữ liệu ca trực');
+          return;
+        }
+        renderOcrPreview(filteredFlights);
       } else {
         throw new Error(data.error);
       }
