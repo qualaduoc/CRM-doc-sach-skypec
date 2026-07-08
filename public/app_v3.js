@@ -3706,6 +3706,30 @@ window.showUserFmsDetailModal = function(period) {
     return;
   }
 
+  // Tự động tạo period tabs bằng JS nếu bị cache HTML cũ
+  let tabsContainer = document.querySelector('.fms-modal-period-tabs');
+  if (!tabsContainer) {
+    tabsContainer = document.createElement('div');
+    tabsContainer.className = 'fms-modal-period-tabs';
+    tabsContainer.style.cssText = 'display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap;';
+    tabsContainer.innerHTML = `
+      <button id="btn-fms-period-today" class="btn-secondary" onclick="switchFmsModalPeriod('today')" style="margin: 0; padding: 6px 16px; font-size: 0.8rem; border-radius: 20px; font-weight: 600; width: auto; background: none; color: var(--text-muted); border-color: var(--border);">
+        <i class="fa-solid fa-calendar-day"></i> Hôm nay
+      </button>
+      <button id="btn-fms-period-month" class="btn-secondary active" onclick="switchFmsModalPeriod('month')" style="margin: 0; padding: 6px 16px; font-size: 0.8rem; border-radius: 20px; font-weight: 600; width: auto; background: #34d399; color: #fff; border-color: #34d399;">
+        <i class="fa-solid fa-calendar-week"></i> Tháng này
+      </button>
+      <button id="btn-fms-period-last-month" class="btn-secondary" onclick="switchFmsModalPeriod('last-month')" style="margin: 0; padding: 6px 16px; font-size: 0.8rem; border-radius: 20px; font-weight: 600; width: auto; background: none; color: var(--text-muted); border-color: var(--border);">
+        <i class="fa-solid fa-calendar-minus"></i> Tháng trước
+      </button>
+    `;
+    
+    const filterToolbar = document.querySelector('.fms-filter-toolbar');
+    if (filterToolbar && filterToolbar.parentNode) {
+      filterToolbar.parentNode.insertBefore(tabsContainer, filterToolbar);
+    }
+  }
+
   // Đồng bộ trạng thái tab
   syncFmsPeriodTabUI(period);
 
