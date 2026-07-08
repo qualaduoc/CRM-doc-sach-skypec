@@ -1525,6 +1525,64 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
   }
 });
 
+// Hàm bỏ dấu tiếng Việt để so khớp mềm
+function removeAccents(str) {
+  if (!str) return '';
+  return str.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toUpperCase();
+}
+
+// Hàm sinh danh sách các biến thể tên viết tắt khả dĩ của nhân viên
+async function getPossibleNames(db, displayName) {
+  if (!displayName) return [];
+  const names = new Set();
+  const upperDisplay = displayName.trim().toUpperCase();
+  names.add(upperDisplay);
+  
+  const cleanName = displayName.trim().replace(/\s+/g, ' ');
+  const parts = cleanName.split(' ');
+  if (parts.length > 0) {
+    const lastName = parts[parts.length - 1].toUpperCase();
+    names.add(lastName);
+    
+    if (parts.length >= 2) {
+      const firstCharHọ = parts[0][0].toUpperCase();
+      names.add(`${firstCharHọ}.${lastName}`);
+      
+      const firstCharĐệm = parts[parts.length - 2][0].toUpperCase();
+      names.add(`${firstCharĐệm}.${lastName}`);
+      
+      if (parts.length >= 3) {
+        names.add(`${firstCharHọ}.${firstCharĐệm}.${lastName}`);
+      }
+    }
+  }
+  
+  // Truy vấn thêm từ bảng zalo_user_mappings để lấy các schedule_name tương ứng
+  try {
+    const mappings = await db.all('SELECT schedule_name, zalo_name FROM zalo_user_mappings');
+    const displayMain = removeAccents(parts[parts.length - 1]);
+    
+    if (mappings) {
+      for (const m of mappings) {
+        if (m.zalo_name && m.schedule_name) {
+          const zaloParts = m.zalo_name.trim().replace(/\s+/g, ' ').split(' ');
+          const zaloMain = removeAccents(zaloParts[zaloParts.length - 1]);
+          if (zaloMain === displayMain) {
+            names.add(m.schedule_name.trim().toUpperCase());
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[getPossibleNames mappings error]', e.message);
+  }
+  
+  return Array.from(names);
+}
+
 // Lấy chỉ số thống kê số chuyến ước tính cho nhân viên (Hôm nay, Tháng này, Tháng trước)
 app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
   try {
@@ -1568,7 +1626,33 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
     const lastMonthStr = formatMonth(lastMonthYear, lastMonth);
     const todayStr = getVietnamDbDateStr();
 
-    // 3. Truy vấn database lấy toàn bộ lịch trực có phân công cho nhân viên này trong 3 mốc thời gian
+    // 3. Lấy danh sách các biến thể tên viết tắt khả dĩ
+    const possibleNames = await getPossibleNames(db, displayName);
+    if (possibleNames.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          todayCount: 0,
+          monthCount: 0,
+          lastMonthCount: 0,
+          todayFlights: [],
+          monthFlights: [],
+          lastMonthFlights: []
+        }
+      });
+    }
+
+    // Tạo danh sách placeholders cho SQL IN clause
+    const placeholders = possibleNames.map(() => '?').join(', ');
+    const queryParams = [
+      ...possibleNames,
+      ...possibleNames,
+      todayStr,
+      thisMonthStr,
+      lastMonthStr
+    ];
+
+    // 4. Truy vấn database lấy toàn bộ lịch trực có phân công cho nhân viên này trong 3 mốc thời gian
     const rows = await db.all(`
       SELECT 
         s.id,
@@ -1590,14 +1674,14 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
         fo.standby_fuel
       FROM fms_schedules s
       LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no || '_' || COALESCE(s.fms_date, s.date)) = UPPER(fo.flight_no)
-      WHERE (s.driver_name = ? OR s.operator_name = ?)
+      WHERE (UPPER(s.driver_name) IN (${placeholders}) OR UPPER(s.operator_name) IN (${placeholders}))
         AND (
           COALESCE(s.fms_date, s.date) = ?
           OR strftime('%Y-%m', COALESCE(s.fms_date, s.date)) = ?
           OR strftime('%Y-%m', COALESCE(s.fms_date, s.date)) = ?
         )
       ORDER BY COALESCE(s.fms_date, s.date) DESC, s.id ASC
-    `, displayName, displayName, todayStr, thisMonthStr, lastMonthStr);
+    `, ...queryParams);
 
     // 4. Lọc trùng chuyến bay (multi-truck)
     const todayFlights = [];
