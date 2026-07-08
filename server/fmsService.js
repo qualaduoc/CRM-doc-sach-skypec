@@ -1094,8 +1094,8 @@ async function syncFmsSkypecLive(forceDate = null) {
       await db.run(`
         INSERT INTO fms_flights_live (
           flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel,
-          gate, driver_name, operator_name, standby_fuel, fuel_order, status, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          gate, truck_no, driver_name, operator_name, standby_fuel, fuel_order, status, date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(flight_no, date) DO UPDATE SET
           ac_type = excluded.ac_type,
           ac_reg = excluded.ac_reg,
@@ -1104,6 +1104,7 @@ async function syncFmsSkypecLive(forceDate = null) {
           time_dep = excluded.time_dep,
           time_fuel = excluded.time_fuel,
           gate = excluded.gate,
+          truck_no = excluded.truck_no,
           driver_name = excluded.driver_name,
           operator_name = excluded.operator_name,
           standby_fuel = excluded.standby_fuel,
@@ -1113,7 +1114,7 @@ async function syncFmsSkypecLive(forceDate = null) {
       `, 
         flight.flight_no, flight.ac_type, flight.ac_reg, flight.route, 
         flight.time_arr, flight.time_dep, flight.time_fuel, flight.gate, 
-        flight.driver_name, flight.operator_name, flight.standby_fuel, 
+        flight.truck_no || '', flight.driver_name, flight.operator_name, flight.standby_fuel, 
         flight.fuel_order, flight.status, flight.date
       );
       insertCount++;

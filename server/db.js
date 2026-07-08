@@ -132,6 +132,7 @@ async function getDb() {
       time_dep TEXT,
       time_fuel TEXT,
       gate TEXT,
+      truck_no TEXT,
       driver_name TEXT,
       operator_name TEXT,
       standby_fuel TEXT,
@@ -180,6 +181,7 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN etd TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN old_etd TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_etd INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN truck_no TEXT;`); } catch(e) {}
 
   // Thêm cột phân quyền cho accounts của database cũ
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_admin INTEGER DEFAULT 0;`); } catch(e) {}
