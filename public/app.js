@@ -577,7 +577,7 @@ function setupEventListeners() {
   const btnLogout = document.getElementById('btn-skyeyes-logout');
   if (btnLogout) btnLogout.addEventListener('click', handleSkyEyesLogout);
   
-  // 5 Nút test kịch bản giả lập
+  // Các Nút test kịch bản giả lập
   const btnTestNewFuel = document.getElementById('btn-test-zalo-new-fuel');
   if (btnTestNewFuel) btnTestNewFuel.addEventListener('click', () => runZaloTestScenario('new-fuel'));
   
@@ -592,6 +592,9 @@ function setupEventListeners() {
   
   const btnTestChangeEtd = document.getElementById('btn-test-zalo-change-etd');
   if (btnTestChangeEtd) btnTestChangeEtd.addEventListener('click', () => runZaloTestScenario('change-etd'));
+
+  const btnTestRemindSchedule = document.getElementById('btn-test-zalo-remind-schedule');
+  if (btnTestRemindSchedule) btnTestRemindSchedule.addEventListener('click', () => runZaloTestScenario('remind-schedule'));
   
   // Sự kiện mở/đóng và tương tác trên Modal Quản Lý Zalo Mappings
   const btnManageMappings = document.getElementById('btn-skyeyes-manage-mappings');
@@ -3177,6 +3180,7 @@ async function runZaloTestScenario(scenario) {
   else if (scenario === 'change-ac') btnId = 'btn-test-zalo-change-ac';
   else if (scenario === 'change-gate') btnId = 'btn-test-zalo-change-gate';
   else if (scenario === 'change-etd') btnId = 'btn-test-zalo-change-etd';
+  else if (scenario === 'remind-schedule') btnId = 'btn-test-zalo-remind-schedule';
 
   const btn = document.getElementById(btnId);
   const originalHtml = btn ? btn.innerHTML : '';

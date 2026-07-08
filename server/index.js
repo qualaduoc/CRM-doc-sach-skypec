@@ -1748,6 +1748,20 @@ app.post('/api/fms/zalo/test-realtime', authenticateToken, async (req, res) => {
   }
 });
 
+// Các câu nhắc nhở hài hước khi thiếu lịch trực ca mới
+const WARNING_MESSAGES = [
+  "🤖 Ca trực mới đã bắt đầu, Nv.Điều hành vui lòng import lịch trực mới cho anh em được nhờ!",
+  "Ối giời ơi! Sếp điều hành tải lịch trực mới lên đi cho anh em ca sau được nhờ!",
+  "Cán bộ cấp cao nào đang trực điều hành thì tải lịch lên App đê! Anh em giao ca xong rồi kìa!...",
+  "Thông báo từ bộ chỉ huy chiến khu: Điều hành chưa tải lịch mới lên app! Phạt chạy 10 vòng quanh kho N2! 🏃‍♂️💨",
+  "Loa loa loa! Giờ lành đã điểm, ca mới đã lên. Kính mời sếp điều hành bắn cho xin cái lịch trực mới lên hệ thống với ạ! 🙏",
+  "Alo điều hành nghe rõ trả lời! Anh em tra nạp đang ngóng lịch trực như ngóng mẹ đi chợ về. Tải lịch ngay đê! 🥺",
+  "Cảnh báo cấp độ 1: Phát hiện điều hành đang 'quên' tải lịch trực ca mới. Đề nghị sếp đặt ly trà đá xuống và import lịch ngay nhé! ☕",
+  "Báo cáo sếp điều hành, máy quét FMS đang chạy roda nhưng chưa thấy lịch trực đâu cả. Tải lịch lên kẻo Bot dỗi không quét đâu đấy! 🤖💢",
+  "Anh em giao ca đứng chờ đỏ mắt, mà lịch trực ca mới vẫn biệt vô âm tín. Điều hành ơi, cứu net tải lịch lên app đi ạ! 🆘",
+  "Tin khẩn từ tổ bay: Đề nghị Điều hành trực ca nhanh chóng cập nhật lịch trực mới lên CRM để anh em điều phối xe nạp dầu kịp thời!"
+];
+
 // Giả lập kịch bản test Zalo Bot (chỉ Admin hoặc người có quyền Zalo)
 app.post('/api/fms/zalo/test-scenario', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
@@ -1841,6 +1855,9 @@ Mới: 52
 ⛽ Giờ bay ETD (dự kiến) mới: 12:35'
 Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [THÀNH - CƯỜNG] check chéo thông tin.
 📢 Giờ thông báo: ${nowStr}`;
+    } else if (scenario === 'remind-schedule') {
+      const randomMsg = WARNING_MESSAGES[Math.floor(Math.random() * WARNING_MESSAGES.length)];
+      msg = randomMsg;
     } else {
       return res.status(400).json({ success: false, error: 'Kịch bản test không hợp lệ!' });
     }
@@ -2259,25 +2276,12 @@ function startScheduleWarningWorker() {
   console.log('[Scheduler] Đã kích hoạt tiến trình kiểm tra thiếu lịch trực tự động.');
   let lastCheckedKey = ''; // Định dạng 'YYYY-MM-DD HH:MM'
 
-  const warningMessages = [
-    "🤖 Ca trực mới đã bắt đầu, Nv.Điều hành vui lòng import lịch trực mới cho anh em được nhờ!",
-    "Ối giời ơi! Sếp điều hành tải lịch trực mới lên đi cho anh em ca sau được nhờ!",
-    "Cán bộ cấp cao nào đang trực điều hành thì tải lịch lên App đê! Anh em giao ca xong rồi kìa!...",
-    "Thông báo từ bộ chỉ huy chiến khu: Điều hành chưa tải lịch mới lên app! Phạt chạy 10 vòng quanh kho N2! 🏃‍♂️💨",
-    "Loa loa loa! Giờ lành đã điểm, ca mới đã lên. Kính mời sếp điều hành bắn cho xin cái lịch trực mới lên hệ thống với ạ! 🙏",
-    "Alo điều hành nghe rõ trả lời! Anh em tra nạp đang ngóng lịch trực như ngóng mẹ đi chợ về. Tải lịch ngay đê! 🥺",
-    "Cảnh báo cấp độ 1: Phát hiện điều hành đang 'quên' tải lịch trực ca mới. Đề nghị sếp đặt ly trà đá xuống và import lịch ngay nhé! ☕",
-    "Báo cáo sếp điều hành, máy quét FMS đang chạy roda nhưng chưa thấy lịch trực đâu cả. Tải lịch lên kẻo Bot dỗi không quét đâu đấy! 🤖💢",
-    "Anh em giao ca đứng chờ đỏ mắt, mà lịch trực ca mới vẫn biệt vô âm tín. Điều hành ơi, cứu net tải lịch lên app đi ạ! 🆘",
-    "Tin khẩn từ tổ bay: Đề nghị Điều hành trực ca nhanh chóng cập nhật lịch trực mới lên CRM để anh em điều phối xe nạp dầu kịp thời!"
-  ];
-
   const checkAndWarnMissingSchedule = async (targetDate) => {
     try {
       const db = await getDb();
       const row = await db.get("SELECT COUNT(*) as count FROM fms_schedules WHERE date = ?", targetDate);
       if (!row || row.count === 0) {
-        const randomMsg = warningMessages[Math.floor(Math.random() * warningMessages.length)];
+        const randomMsg = WARNING_MESSAGES[Math.floor(Math.random() * WARNING_MESSAGES.length)];
         const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
         const targetGroupId = groupSetting ? groupSetting.value : null;
         if (targetGroupId) {
