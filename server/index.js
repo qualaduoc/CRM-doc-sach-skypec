@@ -1423,6 +1423,12 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     const limitDateStr = limitDateObj.toISOString().split('T')[0];
     await db.run('DELETE FROM fms_schedules WHERE date < ?', limitDateStr);
 
+    // Xóa tải dầu FMS cũ của các ngày trước ngày import (date < targetDate) để tránh báo tin nhầm lẫn
+    await db.run("DELETE FROM fms_fuel_orders WHERE flight_no LIKE '%_%' AND substr(flight_no, instr(flight_no, '_') + 1) < ?", targetDate);
+
+    // Xóa tải dầu FMS của ngày được import để quét lại từ đầu, tránh so sánh nhầm số liệu cũ và tránh spam Zalo lần đầu
+    await db.run("DELETE FROM fms_fuel_orders WHERE flight_no LIKE '%_%' AND substr(flight_no, instr(flight_no, '_') + 1) = ?", targetDate);
+
     // Xóa lịch cũ của ngày hôm nay
     await db.run('DELETE FROM fms_schedules WHERE date = ?', targetDate);
 
