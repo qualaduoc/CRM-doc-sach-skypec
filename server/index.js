@@ -2254,6 +2254,76 @@ app.delete('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   }
 });
 
+// Tiến trình tự động cảnh báo Zalo nếu bắt đầu ca trực mới mà chưa import lịch trực mới
+function startScheduleWarningWorker() {
+  console.log('[Scheduler] Đã kích hoạt tiến trình kiểm tra thiếu lịch trực tự động.');
+  let lastCheckedKey = ''; // Định dạng 'YYYY-MM-DD HH:MM'
+
+  const warningMessages = [
+    "🤖 Ca trực mới đã bắt đầu, Nv.Điều hành vui lòng import lịch trực mới cho anh em được nhờ!",
+    "Ối giời ơi! Sếp điều hành tải lịch trực mới lên đi cho anh em ca sau được nhờ!",
+    "Cán bộ cấp cao nào đang trực điều hành thì tải lịch lên App đê! Anh em giao ca xong rồi kìa!...",
+    "Thông báo từ bộ chỉ huy chiến khu: Điều hành chưa tải lịch mới lên app! Phạt chạy 10 vòng quanh kho N2! 🏃‍♂️💨",
+    "Loa loa loa! Giờ lành đã điểm, ca mới đã lên. Kính mời sếp điều hành 'bố thí' cho xin cái lịch trực mới lên hệ thống với ạ! 🙏",
+    "Alo điều hành nghe rõ trả lời! Anh em cặp tra nạp đang ngóng lịch trực như ngóng mẹ đi chợ về. Tải lịch ngay Khầy ơi! 🥺",
+    "Cảnh báo cấp độ 1: Phát hiện điều hành đang 'quên' tải lịch trực ca mới. Đề nghị sếp đặt ly trà đá xuống và import lịch ngay nhé! ☕",
+    "Báo cáo sếp điều hành, máy quét FMS đang chạy roda nhưng chưa thấy lịch trực đâu cả. Tải lịch lên kẻo Bot dỗi không quét đâu đấy! 🤖💢",
+    "Anh em giao ca đứng chờ đỏ mắt, mà lịch trực ca mới vẫn biệt vô âm tín. Điều hành ơi, cứu net tải lịch lên app đi ạ! 🆘",
+    "Tin khẩn từ tổ bay: Đề nghị Điều hành trực ca nhanh chóng cập nhật lịch trực mới lên CRM để anh em điều phối xe nạp dầu kịp thời!"
+  ];
+
+  const checkAndWarnMissingSchedule = async (targetDate) => {
+    try {
+      const db = await getDb();
+      const row = await db.get("SELECT COUNT(*) as count FROM fms_schedules WHERE date = ?", targetDate);
+      if (!row || row.count === 0) {
+        const randomMsg = warningMessages[Math.floor(Math.random() * warningMessages.length)];
+        const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+        const targetGroupId = groupSetting ? groupSetting.value : null;
+        if (targetGroupId) {
+          const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+          console.log(`[Scheduler] Phát hiện thiếu lịch trực ngày ${targetDate}. Tiến hành gửi Zalo cảnh báo...`);
+          for (const id of ids) {
+            await sendSkyEyesMessage(id, randomMsg).catch(e => console.error('[Scheduler Zalo Send Error]', e.message));
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Scheduler Error]', err.message);
+    }
+  };
+
+  setInterval(() => {
+    const now = new Date();
+    const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    
+    const year = vnTime.getUTCFullYear();
+    const month = String(vnTime.getUTCMonth() + 1).padStart(2, '0');
+    const dateVal = String(vnTime.getUTCDate()).padStart(2, '0');
+    const hours = vnTime.getUTCHours();
+    const minutes = vnTime.getUTCMinutes();
+    
+    const timeKey = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    const dateStr = `${year}-${month}-${dateVal}`;
+    const checkKey = `${dateStr} ${timeKey}`;
+    
+    if (checkKey === lastCheckedKey) return;
+    
+    if (timeKey === '07:30' || timeKey === '19:30') {
+      lastCheckedKey = checkKey;
+      checkAndWarnMissingSchedule(dateStr);
+    } else if (timeKey === '00:00') {
+      lastCheckedKey = checkKey;
+      const yesterday = new Date(vnTime.getTime() - 24 * 60 * 60 * 1000);
+      const yYear = yesterday.getUTCFullYear();
+      const yMonth = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
+      const yDate = String(yesterday.getUTCDate()).padStart(2, '0');
+      const yesterdayStr = `${yYear}-${yMonth}-${yDate}`;
+      checkAndWarnMissingSchedule(yesterdayStr);
+    }
+  }, 30000);
+}
+
 // --- KHỞI ĐỘNG HỆ THỐNG ---
 app.listen(PORT, async () => {
   console.log(`[LMS] Máy chủ đang chạy tại: http://localhost:${PORT}`);
@@ -2263,6 +2333,9 @@ app.listen(PORT, async () => {
 
   // Khởi chạy tiến trình quét ngầm FMS (1.5 phút/90 giây một lần)
   startFmsWorker(1.5 * 60 * 1000);
+
+  // Khởi chạy tiến trình cảnh báo thiếu lịch trực ca mới
+  startScheduleWarningWorker();
 
   // Tự động kết nối Zalo Bot SkyEyes nếu đã có session cookies
   initZaloBot().catch(err => console.error('[SkyEyes] Khởi tạo Zalo tự động thất bại:', err.message));
