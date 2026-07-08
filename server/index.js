@@ -1748,6 +1748,112 @@ app.post('/api/fms/zalo/test-realtime', authenticateToken, async (req, res) => {
   }
 });
 
+// Giả lập kịch bản test Zalo Bot (chỉ Admin hoặc người có quyền Zalo)
+app.post('/api/fms/zalo/test-scenario', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const { scenario } = req.body;
+  if (!scenario) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp kịch bản test!' });
+  }
+
+  try {
+    const db = await getDb();
+    
+    // Lấy cấu hình nhóm Zalo
+    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+    const targetGroupId = groupSetting ? groupSetting.value : null;
+    if (!targetGroupId) {
+      return res.status(400).json({ success: false, error: 'Vui lòng cấu hình và lưu nhóm Zalo đích nhận thông báo trước!' });
+    }
+
+    // Hàm lấy giờ hiện tại dạng HH:MM DD/MM/YYYY
+    const getVnDateTimeStr = () => {
+      const vnTime = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
+      const hour = String(vnTime.getUTCHours()).padStart(2, '0');
+      const minute = String(vnTime.getUTCMinutes()).padStart(2, '0');
+      const day = String(vnTime.getUTCDate()).padStart(2, '0');
+      const month = String(vnTime.getUTCMonth() + 1).padStart(2, '0');
+      const year = vnTime.getUTCFullYear();
+      return `${hour}:${minute} ${day}/${month}/${year}`;
+    };
+
+    const nowStr = getVnDateTimeStr();
+    let title = '';
+    let msg = '';
+
+    if (scenario === 'new-fuel') {
+      title = '⛽ [FMS BÁO TẢI DẦU CHÍNH THỨC MỚI]';
+      msg = `${title}
+✈️ Chuyến bay: VN-TEST - VNA888
+👥 Cặp tra nạp: THÀNH - CƯỜNG
+🚛 Số xe nạp: Xe 09
+📍 Vị trí đỗ: 49
+🛩️ Số hiệu tàu: VNA888 (Loại: A321)
+---------------------------
+⛽ Tải dầu Standby (CFP): 12,500 kg
+⛽ Tải dầu Chính thức: 13,800 kg
+⏰ Giờ Tra nạp: 10:45
+⏰ Giờ Hạ/Cất: Hạ 10:50 | Cất 11:35
+📢 Giờ thông báo: ${nowStr}`;
+    } else if (scenario === 'update-fuel') {
+      title = '🔄 [FMS CẬP NHẬT SỐ LIỆU TẢI DẦU]';
+      msg = `${title}
+✈️ Chuyến bay: VN-TEST - VNA888
+👥 Cặp tra nạp: THÀNH - CƯỜNG
+🚛 Số xe nạp: Xe 09
+🛩️ Số hiệu tàu: VNA888 (Loại: A321)
+---------------------------
+Tải dầu Chính thức cũ: 12,000 kg
+Mới: 13,800 kg
+⏰ Giờ Tra nạp: 10:45
+⏰ Giờ Hạ/Cất: Hạ 10:50 | Cất 11:35
+📢 Giờ thông báo: ${nowStr}`;
+    } else if (scenario === 'change-ac') {
+      title = '🛩️ [FMS CẢNH BÁO THAY ĐỔI TÀU BAY]';
+      msg = `${title}
+✈️ Chuyến bay: VN-TEST - VNA999
+Số hiệu tàu cũ: VNA888
+Mới: VNA999 (Loại: A321)
+👥 Cặp tra nạp: THÀNH - CƯỜNG
+🚛 Số xe nạp: Xe 09
+⏰ Giờ Tra nạp: 10:45
+⏰ Giờ Hạ/Cất: Hạ 10:50 | Cất 11:35
+📢 Giờ thông báo: ${nowStr}`;
+    } else if (scenario === 'change-gate') {
+      title = '📍 [FMS CẢNH BÁO THAY ĐỔI VỊ TRÍ ĐỖ]';
+      msg = `${title}
+✈️ Chuyến bay: VN-TEST - VNA888
+Vị trí đỗ cũ: 49
+Mới: 52
+👥 Cặp tra nạp: THÀNH - CƯỜNG
+🚛 Số xe nạp: Xe 09
+⏰ Giờ Tra nạp: 10:45
+⏰ Giờ Hạ/Cất: Hạ 10:50 | Cất 11:35
+📢 Giờ thông báo: ${nowStr}`;
+    } else if (scenario === 'change-etd') {
+      title = '🔄 [FMS THAY ĐỔI THÔNG TIN CHUYẾN BAY]';
+      msg = `${title}
+✈️ Chuyến bay: VN-TEST - VNA888
+⛽ Giờ bay ETD (dự kiến) cũ: 11:35'
+⛽ Giờ bay ETD (dự kiến) mới: 12:35'
+Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [THÀNH - CƯỜNG] check chéo thông tin.
+📢 Giờ thông báo: ${nowStr}`;
+    } else {
+      return res.status(400).json({ success: false, error: 'Kịch bản test không hợp lệ!' });
+    }
+
+    const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+    const promises = ids.map(id => sendSkyEyesMessage(id, msg));
+    const responses = await Promise.all(promises);
+    res.json({ success: true, message: `Đã gửi tin nhắn test kịch bản thành công tới ${ids.length} nhóm!`, responses });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Yêu cầu quét FMS thủ công tức thì (chỉ Admin hoặc người có quyền FMS)
 app.post('/api/fms/sync', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {

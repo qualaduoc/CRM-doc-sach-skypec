@@ -148,6 +148,9 @@
         <button id="tab-btn-fms" class="admin-tab-btn" data-tab="tab-fms" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
           <i class="fa-solid fa-gas-pump"></i> Theo dõi Tải dầu FMS
         </button>
+        <button id="tab-btn-settings" class="admin-tab-btn" data-tab="tab-settings" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
+          <i class="fa-solid fa-screwdriver-wrench"></i> Cấu hình & Kết nối
+        </button>
       </div>
 
       <!-- TAB CONTENT 1: QUẢN LÝ HỌC VIÊN -->
@@ -240,107 +243,7 @@
               </button>
             </div>
 
-            <!-- Cấu hình Gemini Keys xoay vòng -->
-            <div id="card-gemini-settings" class="glass-panel" style="padding: 15px; display: flex; flex-direction: column; gap: 10px; height: fit-content;">
-              <h4 style="margin: 0; font-size: 0.95rem; color: #60a5fa; display: flex; align-items: center; gap: 8px;">
-                <i class="fa-solid fa-key"></i> API Key Gemini (Xoay vòng)
-              </h4>
-              <p style="margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.3;">
-                Mỗi dòng một Key API. Hệ thống sẽ tự động thử Key tiếp theo nếu Key trước bị lỗi.
-              </p>
-              <textarea id="gemini-keys-input" placeholder="Nhập các API Keys Gemini tại đây, mỗi dòng một key..." style="width: 100%; height: 60px; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: #fff; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: none;"></textarea>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px;">
-                <button id="btn-save-gemini-keys" class="btn-glow" style="margin-top: 0; width: 100%; font-size: 0.8rem; padding: 8px 12px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
-                  <i class="fa-solid fa-floppy-disk"></i> Lưu Keys
-                </button>
-                <button id="btn-test-gemini-keys" class="btn-secondary" style="margin-top: 0; width: 100%; font-size: 0.8rem; padding: 8px 12px; border-color: rgba(96, 165, 250, 0.3); color: #60a5fa;">
-                  <i class="fa-solid fa-vial"></i> Kiểm Tra Keys
-                </button>
-              </div>
-              <div id="gemini-keys-test-results" style="margin-top: 10px; font-size: 0.8rem; max-height: 150px; overflow-y: auto; display: none; flex-direction: column; gap: 6px; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid var(--border);"></div>
-            </div>
 
-            <!-- Card: Trợ lý Zalo SkyEyes -->
-            <div id="card-zalo-settings" class="glass-panel" style="padding: 15px; display: flex; flex-direction: column; gap: 12px;">
-              <h4 style="margin: 0; font-size: 0.95rem; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
-                <i class="fa-solid fa-robot"></i> Trợ Lý Zalo SkyEyes
-              </h4>
-              <div style="display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem;">
-                  <span style="color: var(--text-muted);">Trạng thái:</span>
-                  <strong id="skyeyes-bot-status" style="color: #ef4444;"><i class="fa-solid fa-circle-xmark"></i> Chưa kết nối</strong>
-                </div>
-                
-                <!-- Khu vực hiển thị mã QR khi đăng nhập -->
-                <div id="skyeyes-qr-container" style="display: none; flex-direction: column; align-items: center; gap: 6px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 6px; border: 1px solid var(--border);">
-                  <img id="skyeyes-qr-img" src="" alt="Zalo QR Login" style="width: 130px; height: 130px; border-radius: 4px; border: 2px solid #fff;">
-                  <span style="font-size: 0.7rem; color: #38bdf8; text-align: center; line-height: 1.3;">Mở ứng dụng Zalo quét QR này và bấm xác nhận đăng nhập</span>
-                </div>
-
-                <!-- Cài đặt nhóm nhận tin và bật/tắt thông báo -->
-                <div id="skyeyes-settings-area" style="display: flex; flex-direction: column; gap: 8px;">
-                  <div style="display: flex; flex-direction: column; gap: 4px; position: relative;">
-                    <label style="font-size: 0.78rem; color: var(--text-muted);">Nhóm Zalo nhận thông báo FMS:</label>
-                    <div id="skyeyes-groups-display" style="width: 100%; padding: 8px 10px; border-radius: 4px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.8rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 34px; user-select: none;">
-                      <span id="skyeyes-groups-display-text" style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">-- Bấm để chọn các nhóm --</span>
-                      <i class="fa-solid fa-chevron-down" style="font-size: 0.7rem; color: var(--text-muted);"></i>
-                    </div>
-                    <div id="skyeyes-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #131d35; border: 1px solid var(--border); border-radius: 4px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);">
-                      <div style="padding: 6px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; align-items: center; background: rgba(255,255,255,0.02);">
-                        <i class="fa-solid fa-magnifying-glass" style="font-size: 0.75rem; color: var(--text-muted); margin-left: 4px;"></i>
-                        <input type="text" id="skyeyes-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.78rem; border: none; background: transparent; color: #fff; outline: none;">
-                      </div>
-                      <div id="skyeyes-groups-list" style="overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 190px;">
-                        <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Chưa tải danh sách nhóm</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
-                    <input type="checkbox" id="skyeyes-notify-enabled" style="cursor: pointer; width: 14px; height: 14px;">
-                    <label for="skyeyes-notify-enabled" style="font-size: 0.8rem; color: #fff; cursor: pointer; user-select: none;">Bật tự động báo tin Zalo</label>
-                  </div>
-                  
-                  <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 5px; border-top: 1px dashed var(--border); padding-top: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                      <label style="font-size: 0.78rem; color: var(--text-muted);">Mẫu soạn sẵn:</label>
-                      <select id="skyeyes-template-presets" style="padding: 2px 4px; border-radius: 4px; border: 1px solid var(--border); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 0.72rem; cursor: pointer;">
-                        <option value="">-- Chọn mẫu soạn sẵn --</option>
-                        <option value="preset-1">Mẫu 1: Đầy đủ (Mặc định)</option>
-                        <option value="preset-2">Mẫu 2: Ngắn gọn</option>
-                        <option value="preset-3">Mẫu 3: Đổi tàu / tải dầu</option>
-                      </select>
-                    </div>
-                    <textarea id="skyeyes-template-input" placeholder="Soạn mẫu tin nhắn tại đây..." style="width: 100%; height: 90px; padding: 6px; border-radius: 4px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-family: monospace; font-size: 0.75rem; line-height: 1.3; resize: none;"></textarea>
-                    <p style="margin: 0; font-size: 0.65rem; color: var(--text-muted); line-height: 1.2;">
-                      Biến: {{flight_no}}, {{ac_reg}}, {{old_ac_reg}}, {{gate}}, {{standby_fuel}}, {{old_standby_fuel}}, {{fuel_order}}, {{old_fuel_order}}, {{crew_info}}, {{truck_no}}, {{time_fuel}}, {{status_change_title}}
-                    </p>
-                  </div>
-                </div>
-
-                <!-- Các nút bấm điều khiển -->
-                <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 5px;">
-                  <button id="btn-skyeyes-connect" class="btn-glow" style="margin-top: 0; width: 100%; font-size: 0.8rem; padding: 8px 12px; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: none;">
-                    <i class="fa-solid fa-qrcode"></i> Kết Nối SkyEyes (Quét QR)
-                  </button>
-                  <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                      <button id="btn-skyeyes-send-test" class="btn-secondary" style="margin-top: 0; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(56, 189, 248, 0.3); color: #38bdf8; width: 100%;">
-                        <i class="fa-solid fa-paper-plane"></i> Gửi Thử
-                      </button>
-                      <button id="btn-skyeyes-test-realtime" class="btn-secondary" style="margin-top: 0; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(168, 85, 247, 0.3); color: #a855f7; width: 100%;">
-                        <i class="fa-solid fa-flask"></i> Test Thực Tế
-                      </button>
-                    </div>
-                    <button id="btn-skyeyes-logout" class="btn-secondary" style="margin-top: 0; font-size: 0.78rem; padding: 6px 8px; border-color: rgba(239, 68, 68, 0.3); color: #ef4444; display: none; width: 100%;">
-                      <i class="fa-solid fa-power-off"></i> Đăng Xuất
-                    </button>
-                    <button id="btn-skyeyes-manage-mappings" class="btn-glow" style="margin-top: 6px; width: 100%; font-size: 0.8rem; padding: 8px 12px; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); border: none;">
-                      <i class="fa-solid fa-user-tag"></i> Quản Lý Liên Kết Zalo Mappings
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
 
           </div>
 
@@ -553,6 +456,151 @@
             </tbody>
           </table>
         </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= TAB CONTENT 3: CẤU HÌNH & KẾT NỐI ================= -->
+  <div id="tab-settings" class="admin-tab-content" style="display: none; padding: 15px 0;">
+    <div class="settings-layout" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; align-items: start;">
+      
+      <!-- Cột 1: Cấu hình Zalo Bot & Bộ nút Test -->
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        
+        <!-- Card: Trợ lý Zalo SkyEyes -->
+        <div id="card-zalo-settings" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
+          <h4 style="margin: 0; font-size: 1.1rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
+            <i class="fa-solid fa-robot"></i> Trợ Lý Zalo Bot SkyEyes
+          </h4>
+          
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+              <span style="color: var(--text-muted);">Trạng thái kết nối Bot:</span>
+              <strong id="skyeyes-bot-status" style="color: #ef4444;"><i class="fa-solid fa-circle-xmark"></i> Chưa kết nối</strong>
+            </div>
+            
+            <!-- Khu vực hiển thị mã QR khi đăng nhập -->
+            <div id="skyeyes-qr-container" style="display: none; flex-direction: column; align-items: center; gap: 8px; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border);">
+              <img id="skyeyes-qr-img" src="" alt="Zalo QR Login" style="width: 150px; height: 150px; border-radius: 6px; border: 3px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+              <span style="font-size: 0.78rem; color: #38bdf8; text-align: center; line-height: 1.4; font-weight: 500;">Mở ứng dụng Zalo trên điện thoại quét mã QR này để đăng nhập làm Bot</span>
+            </div>
+
+            <!-- Cài đặt nhóm nhận tin và bật/tắt thông báo -->
+            <div id="skyeyes-settings-area" style="display: flex; flex-direction: column; gap: 12px; margin-top: 5px;">
+              <div style="display: flex; flex-direction: column; gap: 5px; position: relative;">
+                <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Nhóm Zalo nhận thông báo FMS:</label>
+                <div id="skyeyes-groups-display" style="width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.88rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 38px; user-select: none; transition: border-color 0.2s;">
+                  <span id="skyeyes-groups-display-text" style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px;">-- Bấm để chọn các nhóm --</span>
+                  <i class="fa-solid fa-chevron-down" style="font-size: 0.8rem; color: var(--text-muted);"></i>
+                </div>
+                <div id="skyeyes-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #131d35; border: 1px solid var(--border); border-radius: 6px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);">
+                  <div style="padding: 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.02);">
+                    <i class="fa-solid fa-magnifying-glass" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 4px;"></i>
+                    <input type="text" id="skyeyes-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.85rem; border: none; background: transparent; color: #fff; outline: none;">
+                  </div>
+                  <div id="skyeyes-groups-list" style="overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 190px;">
+                    <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Chưa tải danh sách nhóm</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px; background: rgba(56, 189, 248, 0.05); padding: 10px 12px; border-radius: 6px; border: 1px dashed rgba(56, 189, 248, 0.25);">
+                <input type="checkbox" id="skyeyes-notify-enabled" style="cursor: pointer; width: 16px; height: 16px;">
+                <label for="skyeyes-notify-enabled" style="font-size: 0.88rem; color: #fff; cursor: pointer; user-select: none; font-weight: 500;">Bật tự động báo tin Zalo khi có đổi tàu/tải dầu/giờ bay</label>
+              </div>
+              
+              <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px; border-top: 1px dashed var(--border); padding-top: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Mẫu soạn sẵn tin nhắn Zalo:</label>
+                  <select id="skyeyes-template-presets" style="padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 0.78rem; cursor: pointer; outline: none;">
+                    <option value="">-- Chọn mẫu soạn sẵn --</option>
+                    <option value="preset-1">Mẫu 1: Đầy đủ (Mặc định)</option>
+                    <option value="preset-2">Mẫu 2: Ngắn gọn</option>
+                    <option value="preset-3">Mẫu 3: Đổi tàu / tải dầu</option>
+                  </select>
+                </div>
+                <textarea id="skyeyes-template-input" placeholder="Soạn mẫu tin nhắn tại đây..." style="width: 100%; height: 100px; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: none; outline: none;"></textarea>
+                <p style="margin: 0; font-size: 0.7rem; color: var(--text-muted); line-height: 1.3;">
+                  Biến: {{flight_no}}, {{ac_reg}}, {{old_ac_reg}}, {{gate}}, {{standby_fuel}}, {{old_standby_fuel}}, {{fuel_order}}, {{old_fuel_order}}, {{crew_info}}, {{truck_no}}, {{time_fuel}}, {{status_change_title}}
+                </p>
+              </div>
+            </div>
+
+            <!-- Các nút bấm điều khiển Zalo Bot -->
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 12px;">
+              <button id="btn-skyeyes-connect" class="btn-glow" style="margin-top: 0; width: 100%; font-size: 0.9rem; padding: 10px 15px; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: none;">
+                <i class="fa-solid fa-qrcode"></i> Quét Mã QR Kết Nối Bot Zalo
+              </button>
+              <button id="btn-skyeyes-logout" class="btn-secondary" style="margin-top: 0; font-size: 0.88rem; padding: 9px 15px; border-color: rgba(239, 68, 68, 0.3); color: #ef4444; display: none; width: 100%;">
+                <i class="fa-solid fa-power-off"></i> Đăng Xuất Tài Khoản Bot
+              </button>
+              <button id="btn-skyeyes-manage-mappings" class="btn-glow" style="margin-top: 5px; width: 100%; font-size: 0.9rem; padding: 10px 15px; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); border: none;">
+                <i class="fa-solid fa-user-tag"></i> Quản Lý Liên Kết Zalo Mappings (Tập trung)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card: Thử nghiệm kịch bản cảnh báo (Test Bot Zalo) -->
+        <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
+          <h4 style="margin: 0; font-size: 1.1rem; color: #a855f7; display: flex; align-items: center; gap: 10px;">
+            <i class="fa-solid fa-flask"></i> Thử Nghiệm Kịch Bản Cảnh Báo (Test Zalo)
+          </h4>
+          <p style="margin: 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
+            Bấm các nút dưới đây để giả lập sự kiện thay đổi dữ liệu FMS. Hệ thống sẽ tự động soạn tin nhắn và bắn trực tiếp về nhóm Zalo đã cấu hình để kiểm tra kết nối Bot.
+          </p>
+          
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 5px;">
+            <button id="btn-test-zalo-new-fuel" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(16, 185, 129, 0.25); color: #10b981;">
+              <span><i class="fa-solid fa-gas-pump"></i> 1. Giả lập Báo Tải Dầu Mới</span>
+              <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
+            </button>
+            <button id="btn-test-zalo-update-fuel" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(245, 158, 11, 0.25); color: #f59e0b;">
+              <span><i class="fa-solid fa-rotate"></i> 2. Giả lập Đổi Số Lượng Tải Dầu</span>
+              <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
+            </button>
+            <button id="btn-test-zalo-change-ac" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(239, 68, 68, 0.25); color: #ef4444;">
+              <span><i class="fa-solid fa-plane"></i> 3. Giả lập Thay Đổi Tàu Bay (Acreg)</span>
+              <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
+            </button>
+            <button id="btn-test-zalo-change-gate" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(96, 165, 250, 0.25); color: #60a5fa;">
+              <span><i class="fa-solid fa-location-dot"></i> 4. Giả lập Thay Đổi Bến Đỗ (Vị trí đỗ)</span>
+              <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
+            </button>
+            <button id="btn-test-zalo-change-etd" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(168, 85, 247, 0.25); color: #c084fc;">
+              <span><i class="fa-solid fa-clock"></i> 5. Giả lập Thay Đổi Giờ Bay (ETD)</span>
+              <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Cột 2: Cấu hình Gemini & Hệ thống -->
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        
+        <!-- Cấu hình Gemini Keys xoay vòng -->
+        <div id="card-gemini-settings" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; height: fit-content;">
+          <h4 style="margin: 0; font-size: 1.1rem; color: #60a5fa; display: flex; align-items: center; gap: 10px;">
+            <i class="fa-solid fa-key"></i> API Key Gemini (Xoay Vòng)
+          </h4>
+          <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+            Nhập danh sách các API Keys Gemini (mỗi dòng một key). Khi quét FMS hoặc thực hiện tác vụ, hệ thống sẽ tự động xoay vòng hoặc đổi key dự phòng nếu key hiện tại hết hạn mức/lỗi.
+          </p>
+          <textarea id="gemini-keys-input" placeholder="Nhập các API Keys Gemini tại đây, mỗi dòng một key..." style="width: 100%; height: 120px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: #fff; font-family: monospace; font-size: 0.88rem; line-height: 1.5; resize: none; outline: none;"></textarea>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 5px;">
+            <button id="btn-save-gemini-keys" class="btn-glow" style="margin-top: 0; width: 100%; font-size: 0.88rem; padding: 10px 15px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
+              <i class="fa-solid fa-floppy-disk"></i> Lưu Cấu Hình Keys
+            </button>
+            <button id="btn-test-gemini-keys" class="btn-secondary" style="margin-top: 0; width: 100%; font-size: 0.88rem; padding: 10px 15px; border-color: rgba(96, 165, 250, 0.3); color: #60a5fa;">
+              <i class="fa-solid fa-vial"></i> Kiểm Tra Trạng Thái Keys
+            </button>
+          </div>
+          <div id="gemini-keys-test-results" style="margin-top: 10px; font-size: 0.85rem; max-height: 200px; overflow-y: auto; display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid var(--border);"></div>
+        </div>
+
       </div>
 
     </div>

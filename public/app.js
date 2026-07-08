@@ -480,8 +480,10 @@ function setupEventListeners() {
       });
       document.getElementById(tabId).style.display = tabId === 'tab-fms' ? 'grid' : 'block';
 
-      if (tabId === 'tab-fms') {
-        loadFmsSchedules();
+      if (tabId === 'tab-fms' || tabId === 'tab-settings') {
+        if (tabId === 'tab-fms') {
+          loadFmsSchedules();
+        }
         loadGeminiKeys();
         startSkyEyesPolling();
         loadSkyEyesSettings();
@@ -572,9 +574,24 @@ function setupEventListeners() {
 
   // --- SỰ KIỆN TRỢ LÝ ZALO SKYEYES ---
   document.getElementById('btn-skyeyes-connect').addEventListener('click', handleSkyEyesConnect);
-  document.getElementById('btn-skyeyes-send-test').addEventListener('click', handleSkyEyesSendTest);
-  document.getElementById('btn-skyeyes-test-realtime').addEventListener('click', handleSkyEyesTestRealtime);
-  document.getElementById('btn-skyeyes-logout').addEventListener('click', handleSkyEyesLogout);
+  const btnLogout = document.getElementById('btn-skyeyes-logout');
+  if (btnLogout) btnLogout.addEventListener('click', handleSkyEyesLogout);
+  
+  // 5 Nút test kịch bản giả lập
+  const btnTestNewFuel = document.getElementById('btn-test-zalo-new-fuel');
+  if (btnTestNewFuel) btnTestNewFuel.addEventListener('click', () => runZaloTestScenario('new-fuel'));
+  
+  const btnTestUpdateFuel = document.getElementById('btn-test-zalo-update-fuel');
+  if (btnTestUpdateFuel) btnTestUpdateFuel.addEventListener('click', () => runZaloTestScenario('update-fuel'));
+  
+  const btnTestChangeAc = document.getElementById('btn-test-zalo-change-ac');
+  if (btnTestChangeAc) btnTestChangeAc.addEventListener('click', () => runZaloTestScenario('change-ac'));
+  
+  const btnTestChangeGate = document.getElementById('btn-test-zalo-change-gate');
+  if (btnTestChangeGate) btnTestChangeGate.addEventListener('click', () => runZaloTestScenario('change-gate'));
+  
+  const btnTestChangeEtd = document.getElementById('btn-test-zalo-change-etd');
+  if (btnTestChangeEtd) btnTestChangeEtd.addEventListener('click', () => runZaloTestScenario('change-etd'));
   
   // Sự kiện mở/đóng và tương tác trên Modal Quản Lý Zalo Mappings
   const btnManageMappings = document.getElementById('btn-skyeyes-manage-mappings');
@@ -3145,79 +3162,51 @@ function handleSkyEyesPresetChange(e) {
   }
 }
 
-// Gửi thử tin nhắn test
-async function handleSkyEyesSendTest() {
+// Gửi thử tin nhắn giả lập cảnh báo Zalo Bot (5 kịch bản test)
+async function runZaloTestScenario(scenario) {
   const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
   const groupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
   if (!groupId) {
-    showToast('Vui lòng chọn ít nhất một nhóm Zalo nhận tin trước khi gửi thử!', 'warning', 'Lưu ý');
+    showToast('Vui lòng chọn ít nhất một nhóm Zalo nhận tin trước khi test!', 'warning', 'Lưu ý');
     return;
   }
 
-  const btn = document.getElementById('btn-skyeyes-send-test');
-  const originalHtml = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>...';
+  let btnId = '';
+  if (scenario === 'new-fuel') btnId = 'btn-test-zalo-new-fuel';
+  else if (scenario === 'update-fuel') btnId = 'btn-test-zalo-update-fuel';
+  else if (scenario === 'change-ac') btnId = 'btn-test-zalo-change-ac';
+  else if (scenario === 'change-gate') btnId = 'btn-test-zalo-change-gate';
+  else if (scenario === 'change-etd') btnId = 'btn-test-zalo-change-etd';
+
+  const btn = document.getElementById(btnId);
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = btn.innerHTML.replace(/<i[^>]*><\/i>/, '<i class="fa-solid fa-circle-notch fa-spin"></i>');
+  }
 
   try {
-    const res = await fetch('/api/fms/zalo/send-test', {
+    const res = await fetch('/api/fms/zalo/test-scenario', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.token}`
       },
-      body: JSON.stringify({
-        groupId,
-        message: '🤖 Trợ lý Zalo SkyEyes rất hân hạnh được phục vụ bạn! Kênh thông báo tải dầu FMS đã hoạt động tốt.'
-      })
+      body: JSON.stringify({ scenario })
     });
     const data = await res.json();
     if (data.success) {
-      showToast('Đã gửi tin nhắn test thành công! Hãy kiểm tra nhóm Zalo.', 'success', 'Gửi thử thành công');
-    } else {
-      showToast(data.error, 'error', 'Gửi thử thất bại');
-    }
-  } catch (e) {
-    showToast('Lỗi gửi thử Zalo: ' + e.message, 'error', 'Lỗi kết nối');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalHtml;
-  }
-}
-
-// Gửi tin nhắn test FMS thực tế
-async function handleSkyEyesTestRealtime() {
-  const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
-  const groupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
-  if (!groupId) {
-    showToast('Vui lòng chọn ít nhất một nhóm Zalo nhận tin trước khi test thực tế!', 'warning', 'Lưu ý');
-    return;
-  }
-
-  const btn = document.getElementById('btn-skyeyes-test-realtime');
-  const originalHtml = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>...';
-
-  try {
-    const res = await fetch('/api/fms/zalo/test-realtime', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${state.token}`
-      }
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast('Đã gửi tin nhắn test thực tế thành công! Hãy kiểm tra nhóm Zalo.', 'success', 'Gửi test thành công');
+      showToast('Đã gửi tin nhắn test kịch bản thành công! Hãy kiểm tra nhóm Zalo.', 'success', 'Gửi test thành công');
     } else {
       showToast(data.error, 'error', 'Gửi test thất bại');
     }
   } catch (e) {
-    showToast('Lỗi gửi test thực tế: ' + e.message, 'error', 'Lỗi kết nối');
+    showToast('Lỗi gửi test Zalo: ' + e.message, 'error', 'Lỗi kết nối');
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalHtml;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
   }
 }
 
