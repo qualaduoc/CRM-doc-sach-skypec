@@ -1149,6 +1149,28 @@ input:checked + .slider:before {
   }
 }
 
+.settings-layout {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+  max-width: 1200px;
+  margin: 10px auto 0 auto;
+}
+
+@media (max-width: 1024px) {
+  .settings-layout {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* --- TỐI ƯU HÓA RESPONSIVE DI ĐỘNG (MOBILE) --- */
 @media (max-width: 768px) {
   .admin-container {
