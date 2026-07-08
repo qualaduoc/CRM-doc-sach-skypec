@@ -1484,30 +1484,30 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
 
     const rows = await db.all(`
       SELECT 
-        id,
-        flight_no,
-        ac_type,
-        ac_reg,
-        route,
-        time_arr,
-        time_dep,
-        time_fuel,
-        gate,
-        '' as truck_no,
-        driver_name,
-        operator_name,
-        (driver_name || ' - ' || operator_name) as crew_info,
-        '' as crew_zalo_uids,
-        1 as notify_type,
-        date,
+        s.id,
+        s.flight_no,
+        COALESCE(NULLIF(fl.ac_type, ''), s.ac_type) as ac_type,
+        COALESCE(NULLIF(fl.ac_reg, ''), s.ac_reg) as ac_reg,
+        COALESCE(NULLIF(fl.route, ''), s.route) as route,
+        COALESCE(NULLIF(fl.time_arr, ''), s.time_arr) as time_arr,
+        COALESCE(NULLIF(fl.time_dep, ''), s.time_dep) as time_dep,
+        COALESCE(NULLIF(fl.time_fuel, ''), s.time_fuel) as time_fuel,
+        COALESCE(NULLIF(fl.gate, ''), s.gate) as gate,
+        COALESCE(NULLIF(fl.truck_no, ''), s.truck_no) as truck_no,
+        COALESCE(NULLIF(fl.driver_name, ''), s.driver_name) as driver_name,
+        COALESCE(NULLIF(fl.operator_name, ''), s.operator_name) as operator_name,
+        s.crew_info,
+        s.crew_zalo_uids,
+        s.notify_type,
+        s.date,
         '' as dep_arr,
-        standby_fuel,
-        fuel_order,
+        COALESCE(fl.standby_fuel, '') as standby_fuel,
+        COALESCE(fl.fuel_order, '') as fuel_order,
         '' as trip_fuel,
         '' as trip_time,
         '' as taxi_fuel,
         '' as alternate,
-        status,
+        COALESCE(fl.status, 'Chờ cập nhật') as status,
         0 as warn_ac_reg,
         0 as warn_standby,
         0 as warn_fuel_order,
@@ -1518,10 +1518,11 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         '' as etd,
         '' as old_etd,
         0 as warn_etd,
-        created_at as updated_at
-      FROM fms_flights_live
-      WHERE date = ?
-      ORDER BY id ASC
+        s.created_at as updated_at
+      FROM fms_schedules s
+      LEFT JOIN fms_flights_live fl ON UPPER(s.flight_no) = UPPER(fl.flight_no) AND s.date = fl.date
+      WHERE s.date = ?
+      ORDER BY s.id ASC
     `, targetDate);
 
     res.json({ success: true, data: rows });
