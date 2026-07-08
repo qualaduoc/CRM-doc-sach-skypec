@@ -1544,7 +1544,6 @@ async function getPossibleNames(db, displayName) {
   const parts = cleanName.split(' ');
   if (parts.length > 0) {
     const lastName = parts[parts.length - 1].toUpperCase();
-    names.add(lastName);
     
     if (parts.length >= 2) {
       const firstCharHọ = parts[0][0].toUpperCase();
@@ -1580,6 +1579,72 @@ async function getPossibleNames(db, displayName) {
   }
   
   return Array.from(names);
+}
+
+// So khớp tên nhân viên FMS Skypec (hỗ trợ viết tắt hàng không)
+function matchFmsEmployee(displayName, fmsName, possibleNames = []) {
+  if (!displayName || !fmsName) return false;
+  
+  const emp = displayName.trim().toUpperCase();
+  const fms = fmsName.trim().toUpperCase();
+  
+  // 1. So khớp chính xác tuyệt đối (có dấu hoặc không dấu)
+  if (emp === fms) return true;
+  if (removeAccents(emp) === removeAccents(fms)) return true;
+  
+  // 2. Chuyển đổi khoảng trắng thành dấu chấm để xử lý viết tắt đồng bộ
+  const normalizedFms = fms.replace(/\s+/g, '.');
+  
+  // Thử so khớp viết tắt cho tên chính displayName
+  if (matchAbbreviation(emp, normalizedFms)) return true;
+  
+  // 3. Thử so khớp viết tắt cho các possibleNames
+  if (possibleNames && possibleNames.length > 0) {
+    for (const name of possibleNames) {
+      const uName = name.trim().toUpperCase();
+      if (uName === fms || removeAccents(uName) === removeAccents(fms)) return true;
+      if (matchAbbreviation(uName, normalizedFms)) return true;
+    }
+  }
+  
+  return false;
+}
+
+function matchAbbreviation(empName, fmsName) {
+  const empParts = empName.split(' ').filter(p => p.trim() !== '');
+  const fmsParts = fmsName.split('.').filter(p => p.trim() !== '');
+  
+  if (fmsParts.length < 2 || empParts.length < 2) return false;
+  
+  const fmsLastName = fmsParts[fmsParts.length - 1];
+  const empLastName = empParts[empParts.length - 1];
+  
+  // Tên chính bắt buộc phải khớp hoàn toàn
+  if (removeAccents(fmsLastName) !== removeAccents(empLastName)) return false;
+  
+  // Nếu FMS viết tắt đầy đủ (ví dụ C.K.ANH cho CAO KỲ ANH)
+  if (fmsParts.length === empParts.length) {
+    for (let i = 0; i < empParts.length - 1; i++) {
+      const fmsChar = removeAccents(fmsParts[i]);
+      const empChar = removeAccents(empParts[i][0]);
+      if (fmsChar.length === 1) {
+        if (fmsChar !== empChar) return false;
+      } else {
+        if (fmsChar !== removeAccents(empParts[i])) return false;
+      }
+    }
+    return true;
+  }
+  
+  // Nếu FMS viết tắt ngắn hơn (ví dụ C.ANH cho CAO KỲ ANH)
+  // Chỉ cho phép nếu fmsParts có đúng 2 phần
+  if (fmsParts.length === 2 && empParts.length > 2) {
+    const fmsChar = removeAccents(fmsParts[0]);
+    const empChar = removeAccents(empParts[0][0]);
+    return fmsChar === empChar;
+  }
+  
+  return false;
 }
 
 let lastLiveSyncTime = 0;
@@ -1671,36 +1736,17 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
 
     // 6. Định nghĩa hàm so khớp tên nhân viên mềm dẻo bằng JS
     const matchEmployee = (flight) => {
-      const driver = (flight.driver_name || '').trim().toUpperCase();
-      const operator = (flight.operator_name || '').trim().toUpperCase();
-      
-      const mainName = displayName.trim().toUpperCase();
-      
-      // So khớp tên đầy đủ (hỗ trợ cả chuỗi gộp cách nhau bởi dấu phẩy)
+      const driver = (flight.driver_name || '').trim();
+      const operator = (flight.operator_name || '').trim();
+
       const drivers = driver.split(',').map(d => d.trim());
       const operators = operator.split(',').map(o => o.trim());
 
       for (const d of drivers) {
-        if (d === mainName || d.includes(mainName)) return true;
+        if (matchFmsEmployee(displayName, d, possibleNames)) return true;
       }
       for (const o of operators) {
-        if (o === mainName || o.includes(mainName)) return true;
-      }
-
-      // So khớp các biến thể viết tắt
-      for (const name of possibleNames) {
-        const uName = name.trim().toUpperCase();
-        
-        // Tách phần tên chính để so khớp mềm (ví dụ LONG trong N.LONG)
-        const nameParts = uName.split('.');
-        const lastPart = nameParts[nameParts.length - 1];
-
-        for (const d of drivers) {
-          if (d === uName || d.includes(uName) || (lastPart.length >= 3 && d.endsWith(lastPart))) return true;
-        }
-        for (const o of operators) {
-          if (o === uName || o.includes(uName) || (lastPart.length >= 3 && o.endsWith(lastPart))) return true;
-        }
+        if (matchFmsEmployee(displayName, o, possibleNames)) return true;
       }
 
       return false;
@@ -1828,32 +1874,19 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
       const possibleNames = await getPossibleNames(db, displayName);
       
       const matchEmployee = (flight) => {
-        const driver = (flight.driver_name || '').trim().toUpperCase();
-        const operator = (flight.operator_name || '').trim().toUpperCase();
-        const mainName = displayName.trim().toUpperCase();
-        
+        const driver = (flight.driver_name || '').trim();
+        const operator = (flight.operator_name || '').trim();
+
         const drivers = driver.split(',').map(d => d.trim());
         const operators = operator.split(',').map(o => o.trim());
 
         for (const d of drivers) {
-          if (d === mainName || d.includes(mainName)) return true;
+          if (matchFmsEmployee(displayName, d, possibleNames)) return true;
         }
         for (const o of operators) {
-          if (o === mainName || o.includes(mainName)) return true;
+          if (matchFmsEmployee(displayName, o, possibleNames)) return true;
         }
 
-        for (const name of possibleNames) {
-          const uName = name.trim().toUpperCase();
-          const nameParts = uName.split('.');
-          const lastPart = nameParts[nameParts.length - 1];
-
-          for (const d of drivers) {
-            if (d === uName || d.includes(uName) || (lastPart.length >= 3 && d.endsWith(lastPart))) return true;
-          }
-          for (const o of operators) {
-            if (o === uName || o.includes(uName) || (lastPart.length >= 3 && o.endsWith(lastPart))) return true;
-          }
-        }
         return false;
       };
 
