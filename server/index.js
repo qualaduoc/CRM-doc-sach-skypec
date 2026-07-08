@@ -1590,8 +1590,8 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
     const db = await getDb();
     
     // Nếu là admin hoặc điều hành thì cho phép xem stats của tài khoản khác
-    const role = getUserRole(req.user.permissions);
-    const targetUsername = ((role === 'admin' || role === 'dieu_hanh') && req.query.username)
+    const isAdminOrOperator = req.user.role === 'admin' || req.user.perm_admin === 1 || req.user.perm_fms === 1;
+    const targetUsername = (isAdminOrOperator && req.query.username)
       ? req.query.username
       : req.user.username;
 
@@ -1763,8 +1763,8 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
 
 // Lấy thống kê chuyến bay của tất cả nhân viên (Chỉ Admin và Điều hành mới được gọi)
 app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
-  const role = getUserRole(req.user.permissions);
-  if (role !== 'admin' && role !== 'dieu_hanh') {
+  const isAdminOrOperator = req.user.role === 'admin' || req.user.perm_admin === 1 || req.user.perm_fms === 1;
+  if (!isAdminOrOperator) {
     return res.status(403).json({ success: false, error: 'Không có quyền truy cập số liệu thống kê Admin.' });
   }
 
