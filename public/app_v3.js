@@ -490,6 +490,10 @@ function setupEventListeners() {
       } else {
         stopSkyEyesPolling();
       }
+
+      if (tabId === 'tab-fms-stats') {
+        loadAdminFmsStats();
+      }
     });
   });
 
@@ -3770,3 +3774,90 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+window.loadAdminFmsStats = async function() {
+  const tbody = document.getElementById('admin-fms-stats-tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">
+        <i class="fa-solid fa-spinner fa-spin"></i> Đang tính toán và tải dữ liệu thống kê...
+      </td>
+    </tr>
+  `;
+
+  try {
+    const res = await fetch('/api/fms/admin-stats', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    const stats = data.data;
+    if (stats.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">
+            Chưa có tài khoản nhân viên nào được tạo trên hệ thống.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = stats.map((u, index) => {
+      return `
+        <tr>
+          <td style="text-align: center; font-weight: bold; color: var(--text-muted); font-size: 0.85rem;">${index + 1}</td>
+          <td style="font-family: monospace; font-weight: 600;"><code>${u.username}</code></td>
+          <td style="font-weight: bold; color: #fff;">${u.display_name}</td>
+          <td>${u.position_name} | ${u.department}</td>
+          <td style="text-align: center; font-weight: bold; color: var(--primary); font-size: 1rem;">${u.todayCount}</td>
+          <td style="text-align: center; font-weight: bold; color: #34d399; font-size: 1rem;">${u.monthCount}</td>
+          <td style="text-align: center; font-weight: bold; color: #fb923c; font-size: 1rem;">${u.lastMonthCount}</td>
+          <td style="text-align: center;">
+            <button class="btn-glow" onclick="showAdminUserFmsDetail('${u.username}', '${u.display_name}')" style="margin: 0; padding: 5px 12px; font-size: 0.8rem; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); width: auto; border: none;">
+              <i class="fa-solid fa-eye"></i> Chi tiết
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+  } catch (err) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" style="text-align: center; padding: 30px; color: var(--danger-color); font-weight: bold;">
+          Lỗi: ${err.message}
+        </td>
+      </tr>
+    `;
+    showToast(err.message, 'danger');
+  }
+};
+
+window.showAdminUserFmsDetail = async function(username, displayName) {
+  try {
+    showToast(`Đang tải chi tiết chuyến bay của ${displayName}...`, 'info');
+    const res = await fetch(`/api/fms/user-stats?username=${username}`, {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    // Lưu vào biến toàn cục của modal và reset bộ lọc
+    userFmsStatsData = data.data;
+    
+    // Mở modal chi tiết (mặc định mở tháng này)
+    showUserFmsDetailModal('month');
+    
+    // Đổi tiêu đề modal
+    const titleEl = document.getElementById('user-fms-detail-title');
+    if (titleEl) {
+      titleEl.innerHTML = `<i class="fa-solid fa-plane-departure" style="color: var(--secondary);"></i> Chi tiết chuyến bay trực của <strong>${displayName}</strong>`;
+    }
+  } catch (err) {
+    showToast(err.message, 'danger');
+  }
+};

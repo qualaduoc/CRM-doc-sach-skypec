@@ -166,6 +166,9 @@
         <button id="tab-btn-settings" class="admin-tab-btn" data-tab="tab-settings" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
           <i class="fa-solid fa-screwdriver-wrench"></i> Cấu hình & Kết nối
         </button>
+        <button id="tab-btn-fms-stats" class="admin-tab-btn" data-tab="tab-fms-stats" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
+          <i class="fa-solid fa-square-poll-vertical"></i> Thống kê KPI Chuyến
+        </button>
       </div>
 
       <!-- TAB CONTENT 1: QUẢN LÝ HỌC VIÊN -->
@@ -627,6 +630,45 @@
           </button>
         </div>
         <div id="gemini-keys-test-results" style="margin-top: 10px; font-size: 0.85rem; max-height: 200px; overflow-y: auto; display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid var(--border);"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= TAB CONTENT 4: THỐNG KÊ KPI CHUYẾN BAY CỦA HỌC VIÊN ================= -->
+  <div id="tab-fms-stats" class="admin-tab-content" style="display: none; padding: 15px 0;">
+    <div class="glass-panel" style="padding: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <h4 style="margin: 0; font-size: 1.2rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
+          <i class="fa-solid fa-square-poll-vertical"></i> Bảng Thống Kê KPI Chuyến Trực Nhân Viên
+        </h4>
+        <button class="btn-glow" onclick="loadAdminFmsStats()" style="margin: 0; padding: 8px 15px; font-size: 0.85rem; width: auto; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);">
+          <i class="fa-solid fa-arrows-rotate"></i> Làm mới số liệu
+        </button>
+      </div>
+      
+      <div class="table-container" style="max-height: 600px; overflow-y: auto; width: 100%;">
+        <table class="crm-table">
+          <thead>
+            <tr>
+              <th style="text-align: center; width: 60px;">STT</th>
+              <th>Mã nhân viên</th>
+              <th>Họ tên</th>
+              <th>Chức danh / Đơn vị</th>
+              <th style="text-align: center; color: var(--primary);">Chuyến hôm nay</th>
+              <th style="text-align: center; color: #34d399;">Chuyến tháng này</th>
+              <th style="text-align: center; color: #fb923c;">Chuyến tháng trước</th>
+              <th style="text-align: center; width: 130px;">Hành động</th>
+            </tr>
+          </thead>
+          <tbody id="admin-fms-stats-tbody">
+            <!-- Tải động từ JS -->
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                <i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu thống kê...
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

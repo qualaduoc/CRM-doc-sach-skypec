@@ -1588,10 +1588,15 @@ let lastLiveSyncTime = 0;
 app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
   try {
     const db = await getDb();
-    const username = req.user.username;
+    
+    // Nếu là admin hoặc điều hành thì cho phép xem stats của tài khoản khác
+    const role = getUserRole(req.user.permissions);
+    const targetUsername = ((role === 'admin' || role === 'dieu_hanh') && req.query.username)
+      ? req.query.username
+      : req.user.username;
 
-    // 1. Lấy thông tin display_name của tài khoản đăng nhập
-    const account = await db.get('SELECT display_name FROM accounts WHERE username = ?', username);
+    // 1. Lấy thông tin display_name của tài khoản mục tiêu
+    const account = await db.get('SELECT display_name FROM accounts WHERE username = ?', targetUsername);
     if (!account || !account.display_name) {
       return res.json({
         success: true,
@@ -1751,6 +1756,153 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
       }
     });
 
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy thống kê chuyến bay của tất cả nhân viên (Chỉ Admin và Điều hành mới được gọi)
+app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
+  const role = getUserRole(req.user.permissions);
+  if (role !== 'admin' && role !== 'dieu_hanh') {
+    return res.status(403).json({ success: false, error: 'Không có quyền truy cập số liệu thống kê Admin.' });
+  }
+
+  try {
+    const db = await getDb();
+    
+    // 1. Lấy danh sách tất cả tài khoản học viên/nhân viên
+    const users = await db.all('SELECT username, display_name, position_name, department FROM accounts WHERE username != "admin" ORDER BY display_name ASC');
+    
+    // 2. Tính toán các mốc thời gian
+    const todayStr = getVietnamDbDateStr();
+    const now = new Date();
+    const vnTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    
+    const currentYear = vnTime.getUTCFullYear();
+    const currentMonth = vnTime.getUTCMonth() + 1;
+    const formatMonth = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+    const thisMonthStr = formatMonth(currentYear, currentMonth);
+
+    let lastMonthYear = currentYear;
+    let lastMonth = currentMonth - 1;
+    if (lastMonth === 0) {
+      lastMonth = 12;
+      lastMonthYear -= 1;
+    }
+    const lastMonthStr = formatMonth(lastMonthYear, lastMonth);
+
+    // 3. Lấy toàn bộ chuyến bay trong database thuộc 3 mốc thời gian này
+    const rows = await db.all(`
+      SELECT 
+        id,
+        flight_no,
+        ac_type,
+        ac_reg,
+        route,
+        time_arr,
+        time_dep,
+        time_fuel,
+        gate,
+        '' as truck_no,
+        driver_name,
+        operator_name,
+        (driver_name || ' - ' || operator_name) as crew_info,
+        date as date_str,
+        status,
+        fuel_order,
+        standby_fuel
+      FROM fms_flights_live
+      WHERE date = ?
+        OR strftime('%Y-%m', date) = ?
+        OR strftime('%Y-%m', date) = ?
+      ORDER BY date DESC, id ASC
+    `, todayStr, thisMonthStr, lastMonthStr);
+
+    // 4. Duyệt qua từng tài khoản nhân viên để tính số chuyến bay tương ứng
+    const fmsStats = [];
+    for (const u of users) {
+      const displayName = u.display_name;
+      if (!displayName) continue;
+
+      const possibleNames = await getPossibleNames(db, displayName);
+      
+      const matchEmployee = (flight) => {
+        const driver = (flight.driver_name || '').trim().toUpperCase();
+        const operator = (flight.operator_name || '').trim().toUpperCase();
+        const mainName = displayName.trim().toUpperCase();
+        
+        const drivers = driver.split(',').map(d => d.trim());
+        const operators = operator.split(',').map(o => o.trim());
+
+        for (const d of drivers) {
+          if (d === mainName || d.includes(mainName)) return true;
+        }
+        for (const o of operators) {
+          if (o === mainName || o.includes(mainName)) return true;
+        }
+
+        for (const name of possibleNames) {
+          const uName = name.trim().toUpperCase();
+          const nameParts = uName.split('.');
+          const lastPart = nameParts[nameParts.length - 1];
+
+          for (const d of drivers) {
+            if (d === uName || d.includes(uName) || (lastPart.length >= 3 && d.endsWith(lastPart))) return true;
+          }
+          for (const o of operators) {
+            if (o === uName || o.includes(uName) || (lastPart.length >= 3 && o.endsWith(lastPart))) return true;
+          }
+        }
+        return false;
+      };
+
+      const todayFlights = [];
+      const thisMonthFlights = [];
+      const lastMonthFlights = [];
+
+      const seenToday = new Set();
+      const seenMonth = new Set();
+      const seenLastMonth = new Set();
+
+      for (const row of rows) {
+        if (!matchEmployee(row)) continue;
+
+        const flightDate = row.date_str;
+        const key = `${row.flight_no}_${flightDate}`;
+
+        if (flightDate === todayStr) {
+          if (!seenToday.has(key)) {
+            seenToday.add(key);
+            todayFlights.push(row);
+          }
+        }
+        if (flightDate.startsWith(thisMonthStr)) {
+          if (!seenMonth.has(key)) {
+            seenMonth.add(key);
+            thisMonthFlights.push(row);
+          }
+        }
+        if (flightDate.startsWith(lastMonthStr)) {
+          if (!seenLastMonth.has(key)) {
+            seenLastMonth.add(key);
+            lastMonthFlights.push(row);
+          }
+        }
+      }
+
+      fmsStats.push({
+        username: u.username,
+        display_name: displayName,
+        position_name: u.position_name || 'Nhân viên',
+        department: u.department || 'Skypec',
+        todayCount: todayFlights.length,
+        monthCount: thisMonthFlights.length,
+        lastMonthCount: lastMonthFlights.length
+      });
+    }
+
+    res.json({ success: true, data: fmsStats });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
