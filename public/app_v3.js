@@ -3639,11 +3639,17 @@ async function loadUserFmsStats() {
 }
 
 window.showUserFmsDetailModal = function(period) {
+  console.log('[DEBUG_FMS_MODAL] Gọi hàm showUserFmsDetailModal với period:', period);
   const modal = document.getElementById('user-fms-detail-modal');
+  console.log('[DEBUG_FMS_MODAL] modal element:', modal);
   const titleEl = document.getElementById('user-fms-detail-title');
+  console.log('[DEBUG_FMS_MODAL] title element:', titleEl);
   const tbody = document.getElementById('user-fms-detail-tbody');
+  console.log('[DEBUG_FMS_MODAL] tbody element:', tbody);
+  console.log('[DEBUG_FMS_MODAL] userFmsStatsData:', userFmsStatsData);
   
   if (!modal || !tbody || !userFmsStatsData) {
+    console.warn('[DEBUG_FMS_MODAL] Hủy mở modal vì thiếu modal, tbody hoặc userFmsStatsData!');
     showToast('Chưa có dữ liệu thống kê, vui lòng đợi trong giây lát!', 'warning', 'Chờ tải');
     return;
   }
