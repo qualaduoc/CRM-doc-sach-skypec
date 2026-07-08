@@ -265,16 +265,13 @@ async function syncFMSData(forceDate = null, forceShift = null) {
 
     // Dọn dẹp dữ liệu lịch bay và kế hoạch trực ca cũ của những ngày trước để tránh quá tải DB
     try {
-      // Chỉ dọn dẹp lịch bay cũ hơn ngày hôm trước (date < todayDb - 1 ngày) để giữ lại ca đêm hôm trước
-      const todayDateObj = new Date(todayDb + 'T00:00:00');
-      const limitDateObj = new Date(todayDateObj.getTime() - 24 * 60 * 60 * 1000);
-      const limitDateStr = limitDateObj.toISOString().split('T')[0];
-      const deletedRows = await db.run('DELETE FROM fms_schedules WHERE date < ?', limitDateStr);
+      // Xóa sạch toàn bộ lịch trực cũ của tất cả các ngày trước ngày hôm nay (date < todayDb)
+      const deletedRows = await db.run('DELETE FROM fms_schedules WHERE date < ?', todayDb);
       if (deletedRows && deletedRows.changes > 0) {
-        log(`[Dọn dẹp DB] Đã xóa ${deletedRows.changes} dòng lịch bay cũ (cũ hơn ngày hôm trước).`);
+        log(`[Dọn dẹp DB] Đã xóa ${deletedRows.changes} dòng lịch bay cũ trước ngày hôm nay.`);
       }
 
-      // TỰ ĐỘNG DỌN DẸP tải dầu FMS của các ngày trước ngày hôm nay (date < todayDb) để tránh so sánh nhầm ngày cũ sang ngày mới
+      // Xóa sạch toàn bộ tải dầu FMS của các ngày trước ngày hôm nay (date < todayDb) để tránh so sánh nhầm
       const deletedOrders = await db.run("DELETE FROM fms_fuel_orders WHERE flight_no LIKE '%_%' AND substr(flight_no, instr(flight_no, '_') + 1) < ?", todayDb);
       if (deletedOrders && deletedOrders.changes > 0) {
         log(`[Dọn dẹp DB] Đã xóa ${deletedOrders.changes} bản ghi tải dầu FMS cũ của các ngày trước.`);
@@ -296,26 +293,13 @@ async function syncFMSData(forceDate = null, forceShift = null) {
         targetDates = [selectedDateStr];
       }
     } else {
-      // 1. Quét dải 3 ngày liên tiếp: Hôm trước, Hôm nay, Hôm sau để tránh lệch múi giờ và bắt chuyến rạng sáng (00h00 - 07h00)
-      const todayDate = new Date();
-      // Chuyển múi giờ Việt Nam GMT+7
-      const utc = todayDate.getTime() + (todayDate.getTimezoneOffset() * 60000);
-      const vnTime = new Date(utc + (3600000 * 7));
+      // Tự động trích xuất các ngày bay thực tế đang có trong lịch trực hiện tại để quét
+      const dateRows = await db.all('SELECT DISTINCT COALESCE(fms_date, date) as target_date FROM fms_schedules');
+      targetDates = dateRows.map(r => r.target_date).filter(Boolean);
 
-      // Ngày hôm trước
-      const yesterdayDate = new Date(vnTime.getTime() - 24 * 60 * 60 * 1000);
-      const yesterdayDb = yesterdayDate.toISOString().split('T')[0];
-
-      // Ngày hôm sau
-      const tomorrowDate = new Date(vnTime.getTime() + 24 * 60 * 60 * 1000);
-      const tomorrowDb = tomorrowDate.toISOString().split('T')[0];
-
-      // CHỈ quét ngày hôm qua (yesterdayDb) nếu thời gian hiện tại ở Việt Nam là trước 08h00 sáng (ca đêm hôm trước chưa kết thúc)
-      const currentHour = vnTime.getUTCHours(); // vnTime đã được cộng 7 giờ nên getUTCHours() chính là giờ VN
-      if (currentHour < 8) {
-        targetDates = [yesterdayDb, todayDb, tomorrowDb];
-      } else {
-        targetDates = [todayDb, tomorrowDb];
+      // Nếu database hoàn toàn trống lịch trực, mặc định quét ngày hôm nay
+      if (targetDates.length === 0) {
+        targetDates = [todayDb];
       }
     }
     
