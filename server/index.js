@@ -1642,19 +1642,8 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
 
     // 4. Lấy danh sách các biến thể tên viết tắt khả dĩ để so khớp dự phòng
     const possibleNames = await getPossibleNames(db, displayName);
-    const placeholders = possibleNames.length > 0 ? possibleNames.map(() => '?').join(', ') : "''";
 
-    const queryParams = [
-      displayName.trim(),
-      displayName.trim(),
-      ...possibleNames,
-      ...possibleNames,
-      todayStr,
-      thisMonthStr,
-      lastMonthStr
-    ];
-
-    // 5. Truy vấn database lấy toàn bộ chuyến bay thực tế từ FMS phân công cho nhân viên này trong 3 mốc thời gian
+    // 5. Truy vấn database lấy toàn bộ chuyến bay trong 3 mốc thời gian
     const rows = await db.all(`
       SELECT 
         id,
@@ -1675,20 +1664,50 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
         fuel_order,
         standby_fuel
       FROM fms_flights_live
-      WHERE (
-        driver_name = ? 
-        OR operator_name = ?
-        OR driver_name IN (${placeholders}) 
-        OR operator_name IN (${placeholders})
-      ) AND (
-        date = ?
+      WHERE date = ?
         OR strftime('%Y-%m', date) = ?
         OR strftime('%Y-%m', date) = ?
-      )
       ORDER BY date DESC, id ASC
-    `, ...queryParams);
+    `, todayStr, thisMonthStr, lastMonthStr);
 
-    // 6. Phân loại chuyến bay theo các mốc thời gian
+    // 6. Định nghĩa hàm so khớp tên nhân viên mềm dẻo bằng JS
+    const matchEmployee = (flight) => {
+      const driver = (flight.driver_name || '').trim().toUpperCase();
+      const operator = (flight.operator_name || '').trim().toUpperCase();
+      
+      const mainName = displayName.trim().toUpperCase();
+      
+      // So khớp tên đầy đủ (hỗ trợ cả chuỗi gộp cách nhau bởi dấu phẩy)
+      const drivers = driver.split(',').map(d => d.trim());
+      const operators = operator.split(',').map(o => o.trim());
+
+      for (const d of drivers) {
+        if (d === mainName || d.includes(mainName)) return true;
+      }
+      for (const o of operators) {
+        if (o === mainName || o.includes(mainName)) return true;
+      }
+
+      // So khớp các biến thể viết tắt
+      for (const name of possibleNames) {
+        const uName = name.trim().toUpperCase();
+        
+        // Tách phần tên chính để so khớp mềm (ví dụ LONG trong N.LONG)
+        const nameParts = uName.split('.');
+        const lastPart = nameParts[nameParts.length - 1];
+
+        for (const d of drivers) {
+          if (d === uName || d.includes(uName) || (lastPart.length >= 3 && d.endsWith(lastPart))) return true;
+        }
+        for (const o of operators) {
+          if (o === uName || o.includes(uName) || (lastPart.length >= 3 && o.endsWith(lastPart))) return true;
+        }
+      }
+
+      return false;
+    };
+
+    // 7. Phân loại chuyến bay theo các mốc thời gian
     const todayFlights = [];
     const thisMonthFlights = [];
     const lastMonthFlights = [];
@@ -1698,6 +1717,9 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
     const seenLastMonth = new Set();
 
     for (const row of rows) {
+      // Chỉ tính các chuyến bay khớp với tên của nhân viên này
+      if (!matchEmployee(row)) continue;
+
       const flightDate = row.date_str;
       const key = `${row.flight_no}_${flightDate}`;
 

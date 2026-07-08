@@ -755,6 +755,104 @@ function decodeHtmlEntities(str) {
   return str.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
 }
 
+// Gửi request POST lấy chi tiết tra nạp JRefuelInfo từ FMS Skypec
+function fetchRefuelInfo(cookie, flightId) {
+  return new Promise((resolve) => {
+    const postData = querystring.stringify({
+      id: flightId,
+      url: '/Flights'
+    });
+
+    const req = https.request({
+      hostname: 'fms.skypec.com.vn',
+      port: 443,
+      path: '/Flights/JRefuelInfo',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData),
+        'Cookie': cookie,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        resolve(body);
+      });
+    });
+
+    req.on('error', (err) => {
+      console.error(`[FMS Service] Lỗi gọi JRefuelInfo cho ID ${flightId}:`, err.message);
+      resolve('');
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Parse HTML chi tiết tra nạp để lấy Lái xe & Thợ bơm thực tế của các xe nạp
+function parseRefuelInfoHtml(html) {
+  const refuels = [];
+  let pos = 0;
+  while (true) {
+    const trStart = html.indexOf('<tr class="item-refuel-', pos);
+    if (trStart === -1) break;
+    const trEnd = html.indexOf('</tr>', trStart);
+    if (trEnd === -1) break;
+    const trHtml = html.substring(trStart, trEnd + 5);
+    pos = trEnd + 5;
+
+    // Bóc tách các td
+    const tds = [];
+    let tdPos = 0;
+    while (true) {
+      const tdStart = trHtml.indexOf('<td', tdPos);
+      if (tdStart === -1) break;
+      const tdEnd = trHtml.indexOf('</td>', tdStart);
+      if (tdEnd === -1) break;
+      tds.push(trHtml.substring(tdStart, tdEnd + 5));
+      tdPos = tdEnd + 5;
+    }
+
+    if (tds.length >= 2) {
+      // Cột 1: Xe tra nạp
+      const truckNo = tds[0].replace(/<[^>]*>/g, '').trim();
+      
+      // Cột 2: Lái xe & Thợ bơm (nằm trong các thẻ span class="ctn")
+      const spanCtn = [];
+      let spanPos = 0;
+      while (true) {
+        const spanStart = tds[1].indexOf('<span class="ctn"', spanPos);
+        if (spanStart === -1) break;
+        const spanEnd = tds[1].indexOf('</span>', spanStart);
+        if (spanEnd === -1) break;
+        spanCtn.push(tds[1].substring(spanStart, spanEnd + 7).replace(/<[^>]*>/g, '').trim());
+        spanPos = spanEnd + 7;
+      }
+
+      // Cột 7: Số lượng Kg (tds[6])
+      let amountKg = 0;
+      if (tds.length >= 7) {
+        const kgStr = tds[6].replace(/<[^>]*>/g, '').replace(/[^\d]/g, '');
+        amountKg = parseInt(kgStr, 10) || 0;
+      }
+
+      const driver = spanCtn.length > 0 ? decodeHtmlEntities(spanCtn[0]) : '';
+      const operator = spanCtn.length > 1 ? decodeHtmlEntities(spanCtn[1]) : '';
+
+      refuels.push({
+        truck_no: truckNo,
+        driver_name: driver,
+        operator_name: operator,
+        amount_kg: amountKg
+      });
+    }
+  }
+  return refuels;
+}
+
 // Đồng bộ danh sách chuyến bay và nhân viên thực tế từ trang Flights của FMS Skypec
 let isLiveSyncing = false;
 async function syncFmsSkypecLive(forceDate = null) {
@@ -863,7 +961,7 @@ async function syncFmsSkypecLive(forceDate = null) {
       pos = trEnd + 5;
     }
 
-    let insertCount = 0;
+    const flightsToSync = [];
 
     for (const rowHtml of rows) {
       if (!rowHtml.includes('parent')) continue;
@@ -871,6 +969,10 @@ async function syncFmsSkypecLive(forceDate = null) {
       const codeMatch = rowHtml.match(/id="Code"[^>]*>([\s\S]*?)<\/span>/i);
       const flightNo = codeMatch ? codeMatch[1].trim().toUpperCase().replace(/\s+/g, '') : '';
       if (!flightNo) continue;
+
+      // ID FMS của chuyến bay từ checkbox value
+      const idMatch = rowHtml.match(/value="(\d+)"/);
+      const idFms = idMatch ? idMatch[1] : '';
 
       // Loại tàu bay
       const acTypeMatch = rowHtml.match(/id="AircraftType"[^>]*>([\s\S]*?)<\/span>/i);
@@ -897,7 +999,7 @@ async function syncFmsSkypecLive(forceDate = null) {
       const parkingMatch = rowHtml.match(/id="Parking"[^>]*>([\s\S]*?)<\/span>/i);
       const gate = parkingMatch ? parkingMatch[1].trim() : '';
 
-      // Tải dầu standby và thực tế
+      // Tải dầu standby và thực tế ban đầu ở trang chính
       const estAmountMatch = rowHtml.match(/id="EstimateAmount"[^>]*>([\s\S]*?)<\/td>/i);
       let standbyFuel = '';
       let fuelOrder = '';
@@ -911,7 +1013,7 @@ async function syncFmsSkypecLive(forceDate = null) {
         standbyFuel = beforeSpan.replace(/[^\d]/g, '');
       }
 
-      // Lái xe (driverId)
+      // Lái xe (driverId) ban đầu
       const driverSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*driverId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
       let driverName = '';
       if (driverSelectMatch) {
@@ -921,7 +1023,7 @@ async function syncFmsSkypecLive(forceDate = null) {
         }
       }
 
-      // NV tra nạp (operatorId)
+      // NV tra nạp (operatorId) ban đầu
       const operatorSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*operatorId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
       let operatorName = '';
       if (operatorSelectMatch) {
@@ -931,10 +1033,64 @@ async function syncFmsSkypecLive(forceDate = null) {
         }
       }
 
-      // Đã có số liệu tải dầu chưa?
       const status = (fuelOrder || standbyFuel) ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-      // Insert or replace vào database SQLite live table
+      flightsToSync.push({
+        id_fms: idFms,
+        flight_no: flightNo,
+        ac_type: acType,
+        ac_reg: acReg,
+        route: route,
+        time_arr: timeArr,
+        time_dep: timeDep,
+        time_fuel: timeFuel,
+        gate: gate,
+        driver_name: driverName,
+        operator_name: operatorName,
+        truck_no: '',
+        standby_fuel: standbyFuel,
+        fuel_order: fuelOrder,
+        status: status,
+        date: todayStr
+      });
+    }
+
+    // 4. Gọi song song (giới hạn concurrency = 5) để lấy mẻ nạp JRefuelInfo thực tế
+    const concurrencyLimit = 5;
+    const queue = [...flightsToSync];
+    
+    async function worker() {
+      while (queue.length > 0) {
+        const flight = queue.shift();
+        if (!flight) continue;
+
+        if (flight.id_fms) {
+          try {
+            const refuelHtml = await fetchRefuelInfo(cookie, flight.id_fms);
+            if (refuelHtml) {
+              const refuels = parseRefuelInfoHtml(refuelHtml);
+              if (refuels.length > 0) {
+                // Gộp thông tin của tất cả các mẻ nạp vào chuyến bay chính
+                flight.driver_name = refuels.map(r => r.driver_name).filter(Boolean).join(', ');
+                flight.operator_name = refuels.map(r => r.operator_name).filter(Boolean).join(', ');
+                flight.truck_no = refuels.map(r => r.truck_no).filter(Boolean).join(', ');
+                flight.fuel_order = refuels.reduce((sum, r) => sum + r.amount_kg, 0).toString();
+                flight.status = 'Đã có số liệu';
+              }
+            }
+          } catch (refuelErr) {
+            console.error(`[FMS JRefuelInfo Live] Lỗi lấy mẻ nạp cho chuyến ${flight.flight_no}:`, refuelErr.message);
+          }
+        }
+      }
+    }
+
+    const workers = Array(concurrencyLimit).fill(0).map(() => worker());
+    await Promise.all(workers);
+
+    // 5. Lưu toàn bộ chuyến bay vào SQLite
+    let insertCount = 0;
+    for (const flight of flightsToSync) {
       await db.run(`
         INSERT INTO fms_flights_live (
           flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel,
@@ -954,11 +1110,15 @@ async function syncFmsSkypecLive(forceDate = null) {
           fuel_order = excluded.fuel_order,
           status = excluded.status,
           created_at = CURRENT_TIMESTAMP
-      `, flightNo, acType, acReg, route, timeArr, timeDep, timeFuel, gate, driverName, operatorName, standbyFuel, fuelOrder, status, targetDate);
-
+      `, 
+        flight.flight_no, flight.ac_type, flight.ac_reg, flight.route, 
+        flight.time_arr, flight.time_dep, flight.time_fuel, flight.gate, 
+        flight.driver_name, flight.operator_name, flight.standby_fuel, 
+        flight.fuel_order, flight.status, flight.date
+      );
       insertCount++;
     }
-    console.log(`[FMS Skypec Live] Đồng bộ thành công ${insertCount} chuyến bay của ngày: ${targetDate}`);
+    console.log(`[FMS Skypec Live] Đồng bộ thành công ${insertCount} chuyến bay của ngày: ${todayStr}`);
   } catch (err) {
     console.error('[FMS Skypec Live] Lỗi cào FMS Skypec:', err.message);
   } finally {
