@@ -1471,52 +1471,57 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 
 // Lấy danh sách lịch bay và dữ liệu tải dầu tương ứng (Cho phép tất cả người dùng đăng nhập xem)
 app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
-
   try {
     const db = await getDb();
     const targetDate = req.query.date || getVietnamDbDateStr();
 
+    // Kích hoạt đồng bộ live chạy ngầm (background) cho ngày được xem để luôn cập nhật realtime
+    const nowMs = Date.now();
+    if (nowMs - lastLiveSyncTime > 30000) {
+      lastLiveSyncTime = nowMs;
+      syncFmsSkypecLive(targetDate).catch(err => console.error('[FMS Live Sync Error]', err.message));
+    }
+
     const rows = await db.all(`
       SELECT 
-        s.id,
-        s.flight_no,
-        COALESCE(NULLIF(fo.ac_type, ''), s.ac_type) as ac_type,
-        COALESCE(NULLIF(fo.ac_reg, ''), s.ac_reg) as ac_reg,
-        s.route,
-        s.time_arr,
-        s.time_dep,
-        s.time_fuel,
-        s.gate,
-        s.truck_no,
-        s.driver_name,
-        s.operator_name,
-        s.crew_info,
-        s.crew_zalo_uids,
-        s.notify_type,
-        s.date,
-        fo.dep_arr,
-        fo.standby_fuel,
-        fo.fuel_order,
-        fo.trip_fuel,
-        fo.trip_time,
-        fo.taxi_fuel,
-        fo.alternate,
-        COALESCE(fo.status, 'Chờ cập nhật') as status,
-        fo.warn_ac_reg,
-        fo.warn_standby,
-        fo.warn_fuel_order,
-        fo.warn_updated_at,
-        fo.old_ac_reg,
-        fo.old_standby_fuel,
-        fo.old_fuel_order,
-        fo.etd,
-        fo.old_etd,
-        fo.warn_etd,
-        fo.updated_at
-      FROM fms_schedules s
-      LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no || '_' || COALESCE(s.fms_date, s.date)) = UPPER(fo.flight_no)
-      WHERE COALESCE(s.fms_date, s.date) = ?
-      ORDER BY s.id ASC
+        id,
+        flight_no,
+        ac_type,
+        ac_reg,
+        route,
+        time_arr,
+        time_dep,
+        time_fuel,
+        gate,
+        '' as truck_no,
+        driver_name,
+        operator_name,
+        (driver_name || ' - ' || operator_name) as crew_info,
+        '' as crew_zalo_uids,
+        1 as notify_type,
+        date,
+        '' as dep_arr,
+        standby_fuel,
+        fuel_order,
+        '' as trip_fuel,
+        '' as trip_time,
+        '' as taxi_fuel,
+        '' as alternate,
+        status,
+        0 as warn_ac_reg,
+        0 as warn_standby,
+        0 as warn_fuel_order,
+        null as warn_updated_at,
+        null as old_ac_reg,
+        null as old_standby_fuel,
+        null as old_fuel_order,
+        '' as etd,
+        '' as old_etd,
+        0 as warn_etd,
+        created_at as updated_at
+      FROM fms_flights_live
+      WHERE date = ?
+      ORDER BY id ASC
     `, targetDate);
 
     res.json({ success: true, data: rows });
@@ -1640,8 +1645,8 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
     const placeholders = possibleNames.length > 0 ? possibleNames.map(() => '?').join(', ') : "''";
 
     const queryParams = [
-      displayName.trim().toUpperCase(),
-      displayName.trim().toUpperCase(),
+      displayName.trim(),
+      displayName.trim(),
       ...possibleNames,
       ...possibleNames,
       todayStr,
@@ -1671,10 +1676,10 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
         standby_fuel
       FROM fms_flights_live
       WHERE (
-        UPPER(driver_name) = ? 
-        OR UPPER(operator_name) = ?
-        OR UPPER(driver_name) IN (${placeholders}) 
-        OR UPPER(operator_name) IN (${placeholders})
+        driver_name = ? 
+        OR operator_name = ?
+        OR driver_name IN (${placeholders}) 
+        OR operator_name IN (${placeholders})
       ) AND (
         date = ?
         OR strftime('%Y-%m', date) = ?
