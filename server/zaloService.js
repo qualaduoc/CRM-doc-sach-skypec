@@ -226,7 +226,7 @@ async function startQRLogin() {
   }
 }
 
-// Lấy danh sách nhóm Zalo
+// Lấy danh sách nhóm Zalo (Tốc độ cao - Gộp 1 request duy nhất)
 async function getBotGroups() {
   if (!activeApi) {
     throw new Error('Bot Zalo chưa được đăng nhập!');
@@ -237,19 +237,38 @@ async function getBotGroups() {
 
   if (groupsResp && groupsResp.gridVerMap) {
     const ids = Object.keys(groupsResp.gridVerMap);
-    for (let i = 0; i < ids.length; i++) {
-      const gid = ids[i];
+    if (ids.length > 0) {
       try {
-        const gInfo = await activeApi.getGroupInfo(gid);
-        const gridInfo = gInfo?.gridInfoMap?.[gid];
-        groups.push({
-          groupId: gid,
-          groupName: gridInfo?.name || `Nhóm_${gid}`,
-          memberCount: (gridInfo?.memVerList || []).length
-        });
-      } catch (e) {}
-      if (i < ids.length - 1) {
-        await new Promise(r => setTimeout(r, 100)); // Delay tránh spam
+        // Tận dụng tính năng batching của API Zalo: Truyền cả mảng GroupID vào 1 request duy nhất!
+        const gInfoResp = await activeApi.getGroupInfo(ids);
+        if (gInfoResp && gInfoResp.gridInfoMap) {
+          for (let i = 0; i < ids.length; i++) {
+            const gid = ids[i];
+            const gridInfo = gInfoResp.gridInfoMap[gid];
+            if (gridInfo) {
+              groups.push({
+                groupId: gid,
+                groupName: gridInfo.name || `Nhóm_${gid}`,
+                memberCount: (gridInfo.memVerList || []).length
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Zalo Service] Lỗi quét gộp nhóm, chuyển sang dự phòng tuần tự:', err.message);
+        // Phương án dự phòng: Quét tuần tự nếu API gộp gặp lỗi
+        for (let i = 0; i < ids.length; i++) {
+          const gid = ids[i];
+          try {
+            const gInfo = await activeApi.getGroupInfo(gid);
+            const gridInfo = gInfo?.gridInfoMap?.[gid];
+            groups.push({
+              groupId: gid,
+              groupName: gridInfo?.name || `Nhóm_${gid}`,
+              memberCount: (gridInfo?.memVerList || []).length
+            });
+          } catch (e) {}
+        }
       }
     }
   }
