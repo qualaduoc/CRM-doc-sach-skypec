@@ -749,6 +749,270 @@ Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
   }
 }
 
+// Hàm giải mã ký tự HTML Entity
+function decodeHtmlEntities(str) {
+  if (!str) return '';
+  return str.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
+}
+
+// Đồng bộ danh sách chuyến bay và nhân viên thực tế từ trang Flights của FMS Skypec
+let isLiveSyncing = false;
+async function syncFmsSkypecLive(forceDate = null) {
+  if (isLiveSyncing) return;
+  isLiveSyncing = true;
+  
+  const HOST = 'fms.skypec.com.vn';
+  const targetDate = forceDate || getVietnamDbDateStr(); // YYYY-MM-DD
+  
+  // Chuyển sang DD/MM/YYYY
+  const parts = targetDate.split('-');
+  const dateStr = `${parts[2]}/${parts[1]}/${parts[0]}`;
+  const dateRange = `${dateStr} 00:00-${dateStr} 23:59`;
+
+  console.log(`[FMS Skypec Live] Bắt đầu đồng bộ cho ngày: ${targetDate} (range: ${dateRange})...`);
+
+  try {
+    const db = await getDb();
+    
+    // 1. GET login page lấy CSRF Token
+    const cookie = await new Promise((resolve, reject) => {
+      https.get(`https://${HOST}/Account/Login`, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          const cookies = res.headers['set-cookie'] || [];
+          const cookieStr = cookies.map(c => c.split(';')[0]).join('; ');
+          const tokenMatch = body.match(/input name="__RequestVerificationToken" type="hidden" value="([^"]+)"/i);
+          if (!tokenMatch) return reject(new Error('No CSRF token'));
+          
+          const csrfToken = tokenMatch[1];
+          const postData = querystring.stringify({
+            __RequestVerificationToken: csrfToken,
+            UserName: 'noibai.han',
+            Password: '12345678',
+            RememberMe: 'false'
+          });
+
+          const req = https.request({
+            hostname: HOST,
+            port: 443,
+            path: '/Account/Login',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Content-Length': Buffer.byteLength(postData),
+              'Cookie': cookieStr
+            }
+          }, (postRes) => {
+            postRes.on('data', () => {});
+            postRes.on('end', () => {
+              const postCookies = postRes.headers['set-cookie'] || [];
+              let authCookieStr = cookieStr;
+              if (postCookies.length > 0) {
+                authCookieStr = postCookies.map(c => c.split(';')[0]).join('; ');
+              }
+              resolve(authCookieStr);
+            });
+          });
+          req.on('error', reject);
+          req.write(postData);
+          req.end();
+        });
+      }).on('error', reject);
+    });
+
+    // 2. Fetch Flights page
+    const path = `/Flights?daterange=${encodeURIComponent(dateRange)}`;
+    const html = await new Promise((resolve, reject) => {
+      https.get({
+        hostname: HOST,
+        port: 443,
+        path: path,
+        headers: {
+          'Cookie': cookie,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+          if (res.statusCode !== 200) reject(new Error(`HTTP Code ${res.statusCode}`));
+          else resolve(body);
+        });
+      }).on('error', reject);
+    });
+
+    // 3. Parse HTML và trích xuất các chuyến bay
+    const tbodyStart = html.indexOf('<tbody');
+    const tbodyEnd = html.indexOf('</tbody>');
+    if (tbodyStart === -1 || tbodyEnd === -1) {
+      console.log('[FMS Skypec Live] Không tìm thấy tbody trong trang Flights');
+      isLiveSyncing = false;
+      return;
+    }
+
+    const tbodyHtml = html.substring(tbodyStart, tbodyEnd + 8);
+    const rows = [];
+    let pos = 0;
+    while (true) {
+      const trStart = tbodyHtml.indexOf('<tr', pos);
+      if (trStart === -1) break;
+      const trEnd = tbodyHtml.indexOf('</tr>', trStart);
+      if (trEnd === -1) break;
+      rows.push(tbodyHtml.substring(trStart, trEnd + 5));
+      pos = trEnd + 5;
+    }
+
+    let insertCount = 0;
+
+    for (const rowHtml of rows) {
+      if (!rowHtml.includes('parent')) continue;
+
+      const codeMatch = rowHtml.match(/id="Code"[^>]*>([\s\S]*?)<\/span>/i);
+      const flightNo = codeMatch ? codeMatch[1].trim().toUpperCase().replace(/\s+/g, '') : '';
+      if (!flightNo) continue;
+
+      // Loại tàu bay
+      const acTypeMatch = rowHtml.match(/id="AircraftType"[^>]*>([\s\S]*?)<\/span>/i);
+      let acType = acTypeMatch ? acTypeMatch[1].trim() : '';
+      if (acType.startsWith('<span>')) acType = acType.replace('<span>', '').trim();
+
+      // Số hiệu tàu bay
+      const acRegMatch = rowHtml.match(/id="AircraftCode"[^>]*>([\s\S]*?)<\/span>/i);
+      const acReg = acRegMatch ? acRegMatch[1].trim() : '';
+
+      // Đường bay
+      const routeMatch = rowHtml.match(/id="RouteName"[^>]*>([\s\S]*?)<\/span>/i);
+      const route = routeMatch ? routeMatch[1].trim() : '';
+
+      // Giờ
+      const depTimeMatch = rowHtml.match(/id="DepartureScheduledTime"[^>]*>([\s\S]*?)<\/span>/i);
+      const timeDep = depTimeMatch ? depTimeMatch[1].trim() : '';
+      const arrTimeMatch = rowHtml.match(/id="ArrivalScheduledTime"[^>]*>([\s\S]*?)<\/span>/i);
+      const timeArr = arrTimeMatch ? arrTimeMatch[1].trim() : '';
+      const refuelHoursMatch = rowHtml.match(/id="RefuelScheduledHours"[^>]*>([\s\S]*?)<\/span>/i);
+      const timeFuel = refuelHoursMatch ? refuelHoursMatch[1].trim() : '';
+
+      // Vị trí đỗ
+      const parkingMatch = rowHtml.match(/id="Parking"[^>]*>([\s\S]*?)<\/span>/i);
+      const gate = parkingMatch ? parkingMatch[1].trim() : '';
+
+      // Tải dầu standby và thực tế
+      const estAmountMatch = rowHtml.match(/id="EstimateAmount"[^>]*>([\s\S]*?)<\/td>/i);
+      let standbyFuel = '';
+      let fuelOrder = '';
+      if (estAmountMatch) {
+        const tdContent = estAmountMatch[1];
+        const actuMatch = tdContent.match(/<span[^>]*class="actu-capa"[^>]*>([\s\S]*?)<\/span>/i);
+        if (actuMatch) {
+          fuelOrder = actuMatch[1].replace(/[^\d]/g, '');
+        }
+        const beforeSpan = tdContent.split(/<br|<span/i)[0];
+        standbyFuel = beforeSpan.replace(/[^\d]/g, '');
+      }
+
+      // Lái xe (driverId)
+      const driverSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*driverId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
+      let driverName = '';
+      if (driverSelectMatch) {
+        const selectedOptionMatch = driverSelectMatch[1].match(/<option[^>]*selected="selected"[^>]*>([\s\S]*?)<\/option>/i);
+        if (selectedOptionMatch) {
+          driverName = decodeHtmlEntities(selectedOptionMatch[1].trim());
+        }
+      }
+
+      // NV tra nạp (operatorId)
+      const operatorSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*operatorId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
+      let operatorName = '';
+      if (operatorSelectMatch) {
+        const selectedOptionMatch = operatorSelectMatch[1].match(/<option[^>]*selected="selected"[^>]*>([\s\S]*?)<\/option>/i);
+        if (selectedOptionMatch) {
+          operatorName = decodeHtmlEntities(selectedOptionMatch[1].trim());
+        }
+      }
+
+      // Đã có số liệu tải dầu chưa?
+      const status = (fuelOrder || standbyFuel) ? 'Đã có số liệu' : 'Chờ cập nhật';
+
+      // Insert or replace vào database SQLite live table
+      await db.run(`
+        INSERT INTO fms_flights_live (
+          flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel,
+          gate, driver_name, operator_name, standby_fuel, fuel_order, status, date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(flight_no, date) DO UPDATE SET
+          ac_type = excluded.ac_type,
+          ac_reg = excluded.ac_reg,
+          route = excluded.route,
+          time_arr = excluded.time_arr,
+          time_dep = excluded.time_dep,
+          time_fuel = excluded.time_fuel,
+          gate = excluded.gate,
+          driver_name = excluded.driver_name,
+          operator_name = excluded.operator_name,
+          standby_fuel = excluded.standby_fuel,
+          fuel_order = excluded.fuel_order,
+          status = excluded.status,
+          created_at = CURRENT_TIMESTAMP
+      `, flightNo, acType, acReg, route, timeArr, timeDep, timeFuel, gate, driverName, operatorName, standbyFuel, fuelOrder, status, targetDate);
+
+      insertCount++;
+    }
+    console.log(`[FMS Skypec Live] Đồng bộ thành công ${insertCount} chuyến bay của ngày: ${targetDate}`);
+  } catch (err) {
+    console.error('[FMS Skypec Live] Lỗi cào FMS Skypec:', err.message);
+  } finally {
+    isLiveSyncing = false;
+  }
+}
+
+// Hàm cào dữ liệu lịch sử từ ngày 1 của tháng trước đến ngày hôm nay
+async function syncFmsSkypecHistory() {
+  console.log('[FMS Skypec Live] Bắt đầu cào dữ liệu lịch sử 40 ngày gần đây...');
+  
+  const targetDates = [];
+  const now = new Date();
+  const vnTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+  
+  // Lấy ngày hiện tại
+  const today = new Date(vnTime.getFullYear(), vnTime.getMonth(), vnTime.getDate());
+  
+  // Tính ngày 1 của tháng trước
+  let startYear = vnTime.getFullYear();
+  let startMonth = vnTime.getMonth() - 1; // Month index 0-11
+  if (startMonth < 0) {
+    startMonth = 11;
+    startYear -= 1;
+  }
+  const startDate = new Date(startYear, startMonth, 1);
+  
+  // Loop từ startDate đến today
+  let current = new Date(startDate);
+  while (current <= today) {
+    const y = current.getFullYear();
+    const m = String(current.getMonth() + 1).padStart(2, '0');
+    const d = String(current.getDate()).padStart(2, '0');
+    targetDates.push(`${y}-${m}-${d}`);
+    current.setDate(current.getDate() + 1);
+  }
+  
+  console.log(`[FMS Skypec Live] Tổng số ngày lịch sử cần cào: ${targetDates.length} ngày.`);
+  
+  // Cào tuần tự cách nhau 1.5s để tránh block IP hoặc quá tải FMS
+  for (let i = 0; i < targetDates.length; i++) {
+    const dateStr = targetDates[i];
+    try {
+      isLiveSyncing = false;
+      await syncFmsSkypecLive(dateStr);
+      // Delay 1.5s
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    } catch (e) {
+      console.error(`[FMS Skypec Live] Lỗi cào lịch sử ngày ${dateStr}:`, e.message);
+    }
+  }
+  console.log('[FMS Skypec Live] Hoàn tất cào dữ liệu lịch sử 40 ngày!');
+}
+
 // Khởi chạy tiến trình quét ngầm định kỳ
 let workerInterval = null;
 function startFmsWorker(intervalMs = 3 * 60 * 1000) { // Mặc định quét mỗi 3 phút
@@ -759,10 +1023,14 @@ function startFmsWorker(intervalMs = 3 * 60 * 1000) { // Mặc định quét m�
   // Chạy lần đầu tiên
   setTimeout(() => {
     syncFMSData();
+    syncFmsSkypecLive().catch(err => console.error('[FMS Skypec Live Worker Error]', err.message));
+    // Tự động kích hoạt cào ngầm dữ liệu lịch sử 40 ngày gần đây
+    syncFmsSkypecHistory().catch(err => console.error('[FMS Skypec History Error]', err.message));
   }, 5000);
 
   workerInterval = setInterval(() => {
     syncFMSData();
+    syncFmsSkypecLive().catch(err => console.error('[FMS Skypec Live Worker Error]', err.message));
   }, intervalMs);
   
   log(`Đã khởi chạy tiến trình quét ngầm FMS (Chu kỳ: ${intervalMs / 1000}s)`);
@@ -770,6 +1038,8 @@ function startFmsWorker(intervalMs = 3 * 60 * 1000) { // Mặc định quét m�
 
 module.exports = {
   syncFMSData,
+  syncFmsSkypecLive,
+  syncFmsSkypecHistory,
   startFmsWorker,
   getVietnamDbDateStr
 };

@@ -122,6 +122,26 @@ async function getDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS fms_flights_live (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      flight_no TEXT NOT NULL,
+      ac_type TEXT,
+      ac_reg TEXT,
+      route TEXT,
+      time_arr TEXT,
+      time_dep TEXT,
+      time_fuel TEXT,
+      gate TEXT,
+      driver_name TEXT,
+      operator_name TEXT,
+      standby_fuel TEXT,
+      fuel_order TEXT,
+      status TEXT,
+      date TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(flight_no, date)
+    );
+
     INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
   `);
 

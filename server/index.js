@@ -9,7 +9,7 @@ const querystring = require('querystring');
 const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
-const { syncFMSData, startFmsWorker, getVietnamDbDateStr } = require('./fmsService');
+const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr } = require('./fmsService');
 const { performImageOCR, testSingleGeminiKey } = require('./ocrService');
 const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyEyesMessage, sendSkyEyesPrivateMessage, getBotState } = require('./zaloService');
 
@@ -1583,6 +1583,8 @@ async function getPossibleNames(db, displayName) {
   return Array.from(names);
 }
 
+let lastLiveSyncTime = 0;
+
 // Lấy chỉ số thống kê số chuyến ước tính cho nhân viên (Hôm nay, Tháng này, Tháng trước)
 app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
   try {
@@ -1626,25 +1628,20 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
     const lastMonthStr = formatMonth(lastMonthYear, lastMonth);
     const todayStr = getVietnamDbDateStr();
 
-    // 3. Lấy danh sách các biến thể tên viết tắt khả dĩ
-    const possibleNames = await getPossibleNames(db, displayName);
-    if (possibleNames.length === 0) {
-      return res.json({
-        success: true,
-        data: {
-          todayCount: 0,
-          monthCount: 0,
-          lastMonthCount: 0,
-          todayFlights: [],
-          monthFlights: [],
-          lastMonthFlights: []
-        }
-      });
+    // 3. Kích hoạt đồng bộ live chạy ngầm (background) nếu lần cào gần nhất cách đây hơn 30 giây
+    const nowMs = Date.now();
+    if (nowMs - lastLiveSyncTime > 30000) {
+      lastLiveSyncTime = nowMs;
+      syncFmsSkypecLive().catch(err => console.error('[FMS Live Sync Error]', err.message));
     }
 
-    // Tạo danh sách placeholders cho SQL IN clause
-    const placeholders = possibleNames.map(() => '?').join(', ');
+    // 4. Lấy danh sách các biến thể tên viết tắt khả dĩ để so khớp dự phòng
+    const possibleNames = await getPossibleNames(db, displayName);
+    const placeholders = possibleNames.length > 0 ? possibleNames.map(() => '?').join(', ') : "''";
+
     const queryParams = [
+      displayName.trim().toUpperCase(),
+      displayName.trim().toUpperCase(),
       ...possibleNames,
       ...possibleNames,
       todayStr,
@@ -1652,38 +1649,41 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
       lastMonthStr
     ];
 
-    // 4. Truy vấn database lấy toàn bộ lịch trực có phân công cho nhân viên này trong 3 mốc thời gian
+    // 5. Truy vấn database lấy toàn bộ chuyến bay thực tế từ FMS phân công cho nhân viên này trong 3 mốc thời gian
     const rows = await db.all(`
       SELECT 
-        s.id,
-        s.flight_no,
-        COALESCE(NULLIF(fo.ac_type, ''), s.ac_type) as ac_type,
-        COALESCE(NULLIF(fo.ac_reg, ''), s.ac_reg) as ac_reg,
-        s.route,
-        s.time_arr,
-        s.time_dep,
-        s.time_fuel,
-        s.gate,
-        s.truck_no,
-        s.driver_name,
-        s.operator_name,
-        s.crew_info,
-        COALESCE(s.fms_date, s.date) as date_str,
-        COALESCE(fo.status, 'Chờ cập nhật') as status,
-        fo.fuel_order,
-        fo.standby_fuel
-      FROM fms_schedules s
-      LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no || '_' || COALESCE(s.fms_date, s.date)) = UPPER(fo.flight_no)
-      WHERE (UPPER(s.driver_name) IN (${placeholders}) OR UPPER(s.operator_name) IN (${placeholders}))
-        AND (
-          COALESCE(s.fms_date, s.date) = ?
-          OR strftime('%Y-%m', COALESCE(s.fms_date, s.date)) = ?
-          OR strftime('%Y-%m', COALESCE(s.fms_date, s.date)) = ?
-        )
-      ORDER BY COALESCE(s.fms_date, s.date) DESC, s.id ASC
+        id,
+        flight_no,
+        ac_type,
+        ac_reg,
+        route,
+        time_arr,
+        time_dep,
+        time_fuel,
+        gate,
+        '' as truck_no,
+        driver_name,
+        operator_name,
+        (driver_name || ' - ' || operator_name) as crew_info,
+        date as date_str,
+        status,
+        fuel_order,
+        standby_fuel
+      FROM fms_flights_live
+      WHERE (
+        UPPER(driver_name) = ? 
+        OR UPPER(operator_name) = ?
+        OR UPPER(driver_name) IN (${placeholders}) 
+        OR UPPER(operator_name) IN (${placeholders})
+      ) AND (
+        date = ?
+        OR strftime('%Y-%m', date) = ?
+        OR strftime('%Y-%m', date) = ?
+      )
+      ORDER BY date DESC, id ASC
     `, ...queryParams);
 
-    // 4. Lọc trùng chuyến bay (multi-truck)
+    // 6. Phân loại chuyến bay theo các mốc thời gian
     const todayFlights = [];
     const thisMonthFlights = [];
     const lastMonthFlights = [];
