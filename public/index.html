@@ -947,15 +947,28 @@
 
   <!-- ================= MODAL CHI TIẾT CHUYẾN BAY USER ================= -->
   <div id="user-fms-detail-modal" class="modal">
-    <div class="glass-panel modal-card" style="max-width: 90%; width: 950px;">
-      <div class="modal-header">
+    <div class="glass-panel modal-card" style="max-width: 95%; width: 92%; min-width: 900px; padding: 25px;">
+      <div class="modal-header" style="margin-bottom: 15px;">
         <h3 id="user-fms-detail-title" style="display: flex; align-items: center; gap: 8px;"><i class="fa-solid fa-plane-departure" style="color: var(--primary);"></i> Chi tiết chuyến bay trực ca</h3>
         <button class="close-btn" id="btn-close-user-fms-detail-modal"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <div class="table-container" style="max-height: 480px; overflow-y: auto; margin-top: 15px; margin-bottom: 15px;">
+      
+      <!-- Thanh công cụ bộ lọc -->
+      <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 15px; background: rgba(255,255,255,0.02); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--border); flex-wrap: wrap;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 0.9rem; color: #fff; font-weight: 500; margin: 0;">
+          <input type="checkbox" id="user-fms-filter-no-refuel" style="width: 16px; height: 16px; cursor: pointer;">
+          <span>Loại các chuyến không lấy dầu (Bỏ các chuyến trống số lượng)</span>
+        </label>
+        <div style="margin-left: auto; font-size: 0.85rem; color: var(--text-muted);">
+          Hiển thị: <strong id="user-fms-filtered-count" style="color: var(--primary);">0</strong> / <strong id="user-fms-total-count">0</strong> chuyến
+        </div>
+      </div>
+
+      <div class="table-container" style="max-height: 480px; overflow-y: auto; margin-top: 5px; margin-bottom: 5px;">
         <table class="crm-table">
           <thead>
             <tr>
+              <th style="text-align: center; width: 50px;">STT</th>
               <th>Chuyến bay</th>
               <th>Hành trình</th>
               <th style="text-align: center;">Tàu bay</th>

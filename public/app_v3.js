@@ -3638,15 +3638,61 @@ async function loadUserFmsStats() {
   }
 }
 
+let currentModalFlights = [];
+
+function renderUserFmsDetailTable(flights) {
+  const tbody = document.getElementById('user-fms-detail-tbody');
+  const countEl = document.getElementById('user-fms-filtered-count');
+  if (!tbody) return;
+
+  if (countEl) countEl.textContent = flights.length;
+
+  if (flights.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
+          Chưa có lịch bay phù hợp với bộ lọc này.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = flights.map((r, index) => {
+    // Xác định trạng thái "Chưa lên hệ thống hoặc không lấy dầu"
+    const isNoRefuel = !r.fuel_order || r.fuel_order === '---' || r.fuel_order === '0' || r.status === 'Chờ cập nhật' || r.status === 'Ko lấy dầu';
+    
+    let statusHtml = '';
+    if (isNoRefuel) {
+      statusHtml = `<span class="fms-no-refuel-blink">Chưa lên hệ thống hoặc không lấy dầu</span>`;
+    } else {
+      statusHtml = `<span class="status-tag review-finished" style="background: rgba(74, 222, 128, 0.15); color: var(--green); border: 1px solid rgba(74, 222, 128, 0.3); padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em;">Đã có số liệu</span>`;
+    }
+
+    return `
+      <tr>
+        <td style="text-align: center; font-weight: bold; color: var(--text-muted); font-size: 0.85rem; width: 50px;">${index + 1}</td>
+        <td style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">${r.flight_no}</td>
+        <td style="color: #60a5fa; font-weight: 500;">${r.route || '-'}</td>
+        <td style="text-align: center;">
+          <span style="font-weight: bold; color: #fff;">${r.ac_reg || '-'}</span>
+          <span style="color: var(--text-muted); font-size: 0.8em;"> (${r.ac_type || '-'})</span>
+        </td>
+        <td style="text-align: center; font-weight: bold; color: #f59e0b;">${r.gate || '-'}</td>
+        <td style="text-align: center; font-weight: bold; color: #fb923c;">${r.time_fuel || '-'}</td>
+        <td><span style="font-size: 0.9em; color: var(--primary); font-weight: 500;">${r.truck_no && r.truck_no !== '-' ? (String(r.truck_no).includes('Xe') || String(r.truck_no).includes('HAN') ? r.truck_no : 'Xe ' + r.truck_no) : '-'}</span></td>
+        <td><span style="font-weight: 600; color: #fff;">${r.crew_info || (r.driver_name && r.operator_name ? r.driver_name + ' - ' + r.operator_name : '-')}</span></td>
+        <td style="text-align: center;">${statusHtml}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
 window.showUserFmsDetailModal = function(period) {
   console.log('[DEBUG_FMS_MODAL] Gọi hàm showUserFmsDetailModal với period:', period);
   const modal = document.getElementById('user-fms-detail-modal');
-  console.log('[DEBUG_FMS_MODAL] modal element:', modal);
   const titleEl = document.getElementById('user-fms-detail-title');
-  console.log('[DEBUG_FMS_MODAL] title element:', titleEl);
   const tbody = document.getElementById('user-fms-detail-tbody');
-  console.log('[DEBUG_FMS_MODAL] tbody element:', tbody);
-  console.log('[DEBUG_FMS_MODAL] userFmsStatsData:', userFmsStatsData);
   
   if (!modal || !tbody || !userFmsStatsData) {
     console.warn('[DEBUG_FMS_MODAL] Hủy mở modal vì thiếu modal, tbody hoặc userFmsStatsData!');
@@ -3676,49 +3722,22 @@ window.showUserFmsDetailModal = function(period) {
   }
 
   titleEl.innerHTML = titleText;
+  
+  // Lưu vào biến toàn cục và reset filter checkbox
+  currentModalFlights = flights;
+  const totalCountEl = document.getElementById('user-fms-total-count');
+  if (totalCountEl) totalCountEl.textContent = flights.length;
+  
+  const filterCheckbox = document.getElementById('user-fms-filter-no-refuel');
+  if (filterCheckbox) filterCheckbox.checked = false;
 
-  if (flights.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">
-          Chưa có lịch bay được phân công cho khoảng thời gian này.
-        </td>
-      </tr>
-    `;
-  } else {
-    tbody.innerHTML = flights.map(r => {
-      // Xác định trạng thái "Chưa lên hệ thống hoặc không lấy dầu"
-      const isNoRefuel = !r.fuel_order || r.fuel_order === '---' || r.fuel_order === '0' || r.status === 'Chờ cập nhật' || r.status === 'Ko lấy dầu';
-      
-      let statusHtml = '';
-      if (isNoRefuel) {
-        statusHtml = `<span class="fms-no-refuel-blink">Chưa lên hệ thống hoặc không lấy dầu</span>`;
-      } else {
-        statusHtml = `<span class="status-tag review-finished" style="background: rgba(74, 222, 128, 0.15); color: var(--green); border: 1px solid rgba(74, 222, 128, 0.3); padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em;">Đã có số liệu</span>`;
-      }
-
-      return `
-        <tr>
-          <td style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">${r.flight_no}</td>
-          <td style="color: #60a5fa; font-weight: 500;">${r.route || '-'}</td>
-          <td style="text-align: center;">
-            <span style="font-weight: bold; color: #fff;">${r.ac_reg || '-'}</span>
-            <span style="color: var(--text-muted); font-size: 0.8em;"> (${r.ac_type || '-'})</span>
-          </td>
-          <td style="text-align: center; font-weight: bold; color: #f59e0b;">${r.gate || '-'}</td>
-          <td style="text-align: center; font-weight: bold; color: #fb923c;">${r.time_fuel || '-'}</td>
-          <td><span style="font-size: 0.9em; color: var(--primary); font-weight: 500;">${r.truck_no && r.truck_no !== '-' ? (String(r.truck_no).includes('Xe') || String(r.truck_no).includes('HAN') ? r.truck_no : 'Xe ' + r.truck_no) : '-'}</span></td>
-          <td><span style="font-weight: 600; color: #fff;">${r.crew_info || (r.driver_name && r.operator_name ? r.driver_name + ' - ' + r.operator_name : '-')}</span></td>
-          <td style="text-align: center;">${statusHtml}</td>
-        </tr>
-      `;
-    }).join('');
-  }
+  // Render bảng
+  renderUserFmsDetailTable(flights);
 
   modal.classList.add('active');
 };
 
-// Gắn sự kiện đóng modal chi tiết FMS của user
+// Gắn sự kiện đóng modal và bộ lọc chi tiết FMS của user
 document.addEventListener('DOMContentLoaded', () => {
   const closeBtn = document.getElementById('btn-close-user-fms-detail-modal');
   const modal = document.getElementById('user-fms-detail-modal');
@@ -3731,6 +3750,22 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
         modal.classList.remove('active');
+      }
+    });
+  }
+
+  // Bộ lọc loại bỏ chuyến không lấy dầu
+  const filterCheckbox = document.getElementById('user-fms-filter-no-refuel');
+  if (filterCheckbox) {
+    filterCheckbox.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        const filtered = currentModalFlights.filter(r => {
+          const isNoRefuel = !r.fuel_order || r.fuel_order === '---' || r.fuel_order === '0' || r.status === 'Chờ cập nhật' || r.status === 'Ko lấy dầu';
+          return !isNoRefuel;
+        });
+        renderUserFmsDetailTable(filtered);
+      } else {
+        renderUserFmsDetailTable(currentModalFlights);
       }
     });
   }
