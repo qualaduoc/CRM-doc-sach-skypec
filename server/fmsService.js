@@ -1051,7 +1051,7 @@ async function syncFmsSkypecLive(forceDate = null) {
         standby_fuel: standbyFuel,
         fuel_order: fuelOrder,
         status: status,
-        date: todayStr
+        date: targetDate
       });
     }
 
@@ -1118,7 +1118,7 @@ async function syncFmsSkypecLive(forceDate = null) {
       );
       insertCount++;
     }
-    console.log(`[FMS Skypec Live] Đồng bộ thành công ${insertCount} chuyến bay của ngày: ${todayStr}`);
+    console.log(`[FMS Skypec Live] Đồng bộ thành công ${insertCount} chuyến bay của ngày: ${targetDate}`);
   } catch (err) {
     console.error('[FMS Skypec Live] Lỗi cào FMS Skypec:', err.message);
   } finally {
