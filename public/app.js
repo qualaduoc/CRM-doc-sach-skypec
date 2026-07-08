@@ -3701,7 +3701,7 @@ window.showUserFmsDetailModal = function(period) {
           </td>
           <td style="text-align: center; font-weight: bold; color: #f59e0b;">${r.gate || '-'}</td>
           <td style="text-align: center; font-weight: bold; color: #fb923c;">${r.time_fuel || '-'}</td>
-          <td><span style="font-size: 0.9em; color: var(--primary); font-weight: 500;">${r.truck_no && r.truck_no !== '-' ? (r.truck_no.includes('Xe') || r.truck_no.includes('HAN') ? r.truck_no : 'Xe ' + r.truck_no) : '-'}</span></td>
+          <td><span style="font-size: 0.9em; color: var(--primary); font-weight: 500;">${r.truck_no && r.truck_no !== '-' ? (String(r.truck_no).includes('Xe') || String(r.truck_no).includes('HAN') ? r.truck_no : 'Xe ' + r.truck_no) : '-'}</span></td>
           <td><span style="font-weight: 600; color: #fff;">${r.crew_info || (r.driver_name && r.operator_name ? r.driver_name + ' - ' + r.operator_name : '-')}</span></td>
           <td style="text-align: center;">${statusHtml}</td>
         </tr>
