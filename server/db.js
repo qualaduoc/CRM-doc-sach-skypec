@@ -108,6 +108,9 @@ async function getDb() {
       old_standby_fuel TEXT,
       old_fuel_order TEXT,
       gate TEXT,
+      etd TEXT,
+      old_etd TEXT,
+      warn_etd INTEGER DEFAULT 0,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -154,6 +157,9 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN old_standby_fuel TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN old_fuel_order TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN gate TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN etd TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN old_etd TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_etd INTEGER DEFAULT 0;`); } catch(e) {}
 
   // Thêm cột phân quyền cho accounts của database cũ
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_admin INTEGER DEFAULT 0;`); } catch(e) {}

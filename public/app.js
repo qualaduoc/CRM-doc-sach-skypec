@@ -1885,6 +1885,7 @@ function renderFmsTable() {
     let blinkAcReg = false;
     let blinkStandby = false;
     let blinkFuelOrder = false;
+    let blinkEtd = false;
 
     const now = new Date();
     if (r.time_fuel && r.time_fuel !== '-' && r.date) {
@@ -1900,6 +1901,7 @@ function renderFmsTable() {
           blinkAcReg = r.warn_ac_reg === 1;
           blinkStandby = r.warn_standby === 1;
           blinkFuelOrder = r.warn_fuel_order === 1;
+          blinkEtd = r.warn_etd === 1;
         }
       } catch (e) {
         console.error('[Blink] Lỗi parse time:', e.message);
@@ -1909,10 +1911,12 @@ function renderFmsTable() {
     const acRegClass = blinkAcReg ? 'blink-red-text' : '';
     const standbyClass = blinkStandby ? 'blink-orange-text' : '';
     const fuelOrderClass = blinkFuelOrder ? 'blink-orange-text' : '';
+    const etdClass = blinkEtd ? 'blink-red-text' : '';
 
     const acRegTdClass = blinkAcReg ? 'blink-red-bg' : '';
     const standbyTdClass = blinkStandby ? 'blink-orange-bg' : '';
     const fuelOrderTdClass = blinkFuelOrder ? 'blink-orange-bg' : '';
+    const etdTdClass = blinkEtd ? 'blink-red-bg' : '';
 
     // Trực quan hóa chi tiết thay đổi (Cũ và Mới) cho số hiệu máy bay
     let planeInfo = '';
@@ -1959,10 +1963,24 @@ function renderFmsTable() {
       orderHtml = parseInt(r.fuel_order) > 0 ? `${parseInt(r.fuel_order).toLocaleString()} kg` : '-';
     }
     
+    // Trực quan hóa chi tiết thay đổi (Cũ và Mới) cho Giờ bay (cột Cất)
+    let depTimeHtml = '';
+    if (blinkEtd && r.old_etd) {
+      depTimeHtml = `
+        <div style="font-size: 0.76rem; padding: 2px 4px; border-radius: 4px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25); display: inline-block; line-height: 1.3;">
+          <div style="color: #a3e635; text-decoration: line-through;">Cũ: ${r.old_etd}</div>
+          <div style="color: #ef4444; font-weight: bold; margin-top: 1px;" class="${etdClass}">Mới: ${r.etd || '-'}</div>
+        </div>
+      `;
+    } else {
+      const displayEtd = r.etd || r.time_dep || '-';
+      depTimeHtml = `<span>${displayEtd}</span>`;
+    }
+
     const timesHtml = `
       <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
         ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
-        ${r.time_dep ? `<div>Cất: <span>${r.time_dep}</span></div>` : ''}
+        <div>Cất: ${depTimeHtml}</div>
         ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
       </div>
     `;
@@ -1978,7 +1996,7 @@ function renderFmsTable() {
         <td>${crewText}${truckText}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
         <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${gateHtml}</td>
-        <td>${timesHtml}</td>
+        <td class="${etdTdClass}">${timesHtml}</td>
         <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyHtml}</td>
         <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderHtml}</td>
         <td style="text-align: center; font-weight: 600; color: #60a5fa;" class="hide-on-mobile">${tripVal}</td>

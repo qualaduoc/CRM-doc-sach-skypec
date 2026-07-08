@@ -93,6 +93,17 @@ function getVietnamDateTimeStr() {
   return `${hour}:${minute} ${day}/${month}/${year}`;
 }
 
+// Chuyển đổi giờ UTC (từ FMS gốc dạng HH:MM) sang giờ Việt Nam (GMT+7)
+function convertUtcToVnTime(utcTimeStr) {
+  if (!utcTimeStr || utcTimeStr === '-') return '-';
+  const match = utcTimeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return utcTimeStr;
+  let hour = parseInt(match[1]);
+  const minute = match[2];
+  hour = (hour + 7) % 24;
+  return `${String(hour).padStart(2, '0')}:${minute}`;
+}
+
 // Biến lưu cookie đăng nhập FMS trong bộ nhớ cache
 let cachedFmsCookie = null;
 
@@ -397,7 +408,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
           const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, gate, warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo + '_' + targetDate);
+          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, gate, etd, warn_ac_reg, warn_standby, warn_fuel_order, warn_etd, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order, old_etd FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo + '_' + targetDate);
 
           // Lấy lịch trực để so sánh bến đỗ trước khi check thay đổi
           const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type FROM fms_schedules WHERE flight_no = ? AND COALESCE(fms_date, date) = ?', cleanFltNo, targetDate);
@@ -412,6 +423,11 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const oldGate = oldOrder ? (oldOrder.gate || '') : '';
           const newGate = sched ? (sched.gate || '') : '';
           const isGateChanged = oldOrder && oldGate && newGate && (oldGate.trim() !== newGate.trim());
+
+          // So sánh giờ bay ETD dự kiến
+          const newEtd = convertUtcToVnTime(flt.ETD);
+          const oldEtd = oldOrder ? (oldOrder.etd || '') : '';
+          const isEtdChanged = oldOrder && oldEtd && newEtd && (oldEtd.trim() !== newEtd.trim());
 
           // Báo tin khi mới xuất hiện standby_fuel lần đầu
           const isNewStandby = newStandby > 0 && oldStandby <= 0;
@@ -428,7 +444,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
                                  (String(oldOrder.ac_reg).trim() !== cleanACREG);
 
           // Nhận diện lần quét đầu tiên khi import lịch trực: nếu oldOrder chưa tồn tại trong DB, không bắn thông báo Zalo
-          const shouldNotify = oldOrder ? (isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged || isGateChanged) : false;
+          const shouldNotify = oldOrder ? (isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged || isGateChanged || isEtdChanged) : false;
 
           if (shouldNotify) {
             let title = '🔔 [FMS BÁO TẢI DẦU MỚI]';
@@ -442,6 +458,8 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               title = '🛩️ [FMS CẢNH BÁO THAY ĐỔI TÀU BAY]';
             } else if (isGateChanged) {
               title = '📍 [FMS CẢNH BÁO THAY ĐỔI VỊ TRÍ ĐỖ]';
+            } else if (isEtdChanged) {
+              title = '🔄 [FMS THAY ĐỔI THÔNG TIN CHUYẾN BAY]';
             }
             
             // Lấy giá trị cũ phục vụ template
@@ -500,51 +518,65 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             };
 
             let msg = template;
-            for (const [key, value] of Object.entries(replacements)) {
-              const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
-              msg = msg.replace(regex, value);
-            }
-
-            // Tự động lọc dòng thông minh chi tiết (Fine-grained Smart Filtering)
-            const lines = msg.split('\n');
-            const filteredLines = lines.filter(line => {
-              const lower = line.toLowerCase();
-              
-              // 1. Dòng chứa Số hiệu tàu cũ/mới: Chỉ hiển thị khi có đổi tàu
-              if (lower.includes('số hiệu tàu cũ') || lower.includes('old_ac_reg') || (lower.includes('tàu') && lower.includes('cũ') && lower.includes('mới'))) {
-                return !!isAcRegChanged;
-              }
-              
-              // 2. Dòng chứa Tải dầu Standby cũ/mới: Chỉ hiển thị khi Standby thay đổi hoặc mới xuất hiện
-              if (lower.includes('tải dầu standby cũ') || lower.includes('old_standby_fuel') || (lower.includes('standby') && lower.includes('cũ') && lower.includes('mới'))) {
-                return !!(isStandbyChanged || isNewStandby);
-              }
-              
-              // 3. Dòng chứa Tải dầu Chính thức cũ/mới: Chỉ hiển thị khi Chính thức thay đổi hoặc mới xuất hiện
-              if (lower.includes('tải dầu chính thức cũ') || lower.includes('old_fuel_order') || (lower.includes('chính thức') && lower.includes('cũ') && lower.includes('mới'))) {
-                return !!(isNewFuelOrder || isFuelOrderChanged);
+            // Nếu chỉ thay đổi giờ bay ETD, soạn tin nhắn theo đúng mẫu Khầy yêu cầu
+            if (isEtdChanged && !isNewStandby && !isNewFuelOrder && !isFuelChanged && !isAcRegChanged && !isGateChanged) {
+              const oldEtdVal = oldEtd || '-';
+              const newEtdVal = newEtd || '-';
+              const crewVal = sched ? (sched.crew_info || '-') : '-';
+              msg = `${title}
+✈️ Chuyến bay: ${cleanFltNo} - ${cleanACREG || '-'}
+⛽ Giờ bay ETD (dự kiến) cũ: ${oldEtdVal}'
+⛽ Giờ bay ETD (dự kiến) mới: ${newEtdVal}'
+Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
+📢 Giờ thông báo: ${replacements.notify_time}`;
+            } else {
+              // Đối với các trường hợp khác, dùng template soạn sẵn bình thường
+              for (const [key, value] of Object.entries(replacements)) {
+                const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
+                msg = msg.replace(regex, value);
               }
 
-              // 4. Dòng chứa Vị trí đỗ: Chỉ hiển thị khi vị trí đỗ có thay đổi
-              if (lower.includes('vị trí đỗ') || lower.includes('gate') || lower.includes('vị trí:')) {
-                return !!isGateChanged;
-              }
+              // Tự động lọc dòng thông minh chi tiết (Fine-grained Smart Filtering)
+              const lines = msg.split('\n');
+              const filteredLines = lines.filter(line => {
+                const lower = line.toLowerCase();
+                
+                // 1. Dòng chứa Số hiệu tàu cũ/mới: Chỉ hiển thị khi có đổi tàu
+                if (lower.includes('số hiệu tàu cũ') || lower.includes('old_ac_reg') || (lower.includes('tàu') && lower.includes('cũ') && lower.includes('mới'))) {
+                  return !!isAcRegChanged;
+                }
+                
+                // 2. Dòng chứa Tải dầu Standby cũ/mới: Chỉ hiển thị khi Standby thay đổi hoặc mới xuất hiện
+                if (lower.includes('tải dầu standby cũ') || lower.includes('old_standby_fuel') || (lower.includes('standby') && lower.includes('cũ') && lower.includes('mới'))) {
+                  return !!(isStandbyChanged || isNewStandby);
+                }
+                
+                // 3. Dòng chứa Tải dầu Chính thức cũ/mới: Chỉ hiển thị khi Chính thức thay đổi hoặc mới xuất hiện
+                if (lower.includes('tải dầu chính thức cũ') || lower.includes('old_fuel_order') || (lower.includes('chính thức') && lower.includes('cũ') && lower.includes('mới'))) {
+                  return !!(isNewFuelOrder || isFuelOrderChanged);
+                }
 
-              return true;
-            });
+                // 4. Dòng chứa Vị trí đỗ: Chỉ hiển thị khi vị trí đỗ có thay đổi
+                if (lower.includes('vị trí đỗ') || lower.includes('gate') || lower.includes('vị trí:')) {
+                  return !!isGateChanged;
+                }
 
-            // Gom lại và dọn dẹp các dòng trống liên tiếp bị thừa ra
-            msg = filteredLines
-              .map(line => line.trimEnd())
-              .filter((line, index, arr) => {
-                if (line === '' && index > 0 && arr[index - 1] === '') return false;
                 return true;
-              })
-              .join('\n');
+              });
 
-            // Đảm bảo tin nhắn luôn có dòng Giờ thông báo ở cuối
-            if (!msg.includes('Giờ thông báo')) {
-              msg += `\n📢 Giờ thông báo: ${replacements.notify_time}`;
+              // Gom lại và dọn dẹp các dòng trống liên tiếp bị thừa ra
+              msg = filteredLines
+                .map(line => line.trimEnd())
+                .filter((line, index, arr) => {
+                  if (line === '' && index > 0 && arr[index - 1] === '') return false;
+                  return true;
+                })
+                .join('\n');
+
+              // Đảm bảo tin nhắn luôn có dòng Giờ thông báo ở cuối
+              if (!msg.includes('Giờ thông báo')) {
+                msg += `\n📢 Giờ thông báo: ${replacements.notify_time}`;
+              }
             }
 
           // Lấy cấu hình gửi tin nhắn trực tiếp qua Bot SkyOne từ settings
@@ -618,14 +650,16 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const oldWarnAcReg = oldOrder ? (oldOrder.warn_ac_reg || 0) : 0;
           const oldWarnStandby = oldOrder ? (oldOrder.warn_standby || 0) : 0;
           const oldWarnFuelOrder = oldOrder ? (oldOrder.warn_fuel_order || 0) : 0;
+          const oldWarnEtd = oldOrder ? (oldOrder.warn_etd || 0) : 0;
           const oldWarnUpdatedAt = oldOrder ? oldOrder.warn_updated_at : null;
 
           const warnAcRegVal = isAcRegChanged ? 1 : oldWarnAcReg;
           const warnStandbyVal = (isStandbyChanged || isNewStandby) ? 1 : oldWarnStandby;
           const warnFuelOrderVal = (isFuelOrderChanged || isNewFuelOrder) ? 1 : oldWarnFuelOrder;
+          const warnEtdVal = isEtdChanged ? 1 : oldWarnEtd;
           
           let warnUpdatedAtVal = oldWarnUpdatedAt;
-          if (isAcRegChanged || isStandbyChanged || isNewStandby || isFuelOrderChanged || isNewFuelOrder) {
+          if (isAcRegChanged || isStandbyChanged || isNewStandby || isFuelOrderChanged || isNewFuelOrder || isEtdChanged) {
             warnUpdatedAtVal = new Date().toISOString();
           }
 
@@ -633,22 +667,24 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const oldAcRegDb = oldOrder ? oldOrder.old_ac_reg : null;
           const oldStandbyDb = oldOrder ? oldOrder.old_standby_fuel : null;
           const oldFuelOrderDb = oldOrder ? oldOrder.old_fuel_order : null;
+          const oldEtdDb = oldOrder ? oldOrder.old_etd : null;
 
           // Khi có thay đổi thì lưu lại giá trị cũ (trước khi thay đổi)
           // Nếu không đổi nhưng đang trong thời gian nhấp nháy, giữ lại giá trị cũ để render
           const finalOldAcReg = isAcRegChanged ? oldOrder.ac_reg : (warnAcRegVal === 1 ? oldAcRegDb : null);
           const finalOldStandby = isStandbyChanged ? oldOrder.standby_fuel : (warnStandbyVal === 1 ? oldStandbyDb : null);
           const finalOldFuelOrder = isFuelOrderChanged ? oldOrder.fuel_order : (warnFuelOrderVal === 1 ? oldFuelOrderDb : null);
+          const finalOldEtd = isEtdChanged ? oldOrder.etd : (warnEtdVal === 1 ? oldEtdDb : null);
 
           // Lưu hoặc cập nhật vào database SQLite
           await db.run(`
             INSERT INTO fms_fuel_orders (
               flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
               trip_fuel, trip_time, taxi_fuel, alternate, status,
-              warn_ac_reg, warn_standby, warn_fuel_order, warn_updated_at,
-              old_ac_reg, old_standby_fuel, old_fuel_order, gate,
+              warn_ac_reg, warn_standby, warn_fuel_order, warn_etd, warn_updated_at,
+              old_ac_reg, old_standby_fuel, old_fuel_order, old_etd, gate, etd,
               updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(flight_no) DO UPDATE SET
               ac_reg = excluded.ac_reg,
               ac_type = excluded.ac_type,
@@ -663,11 +699,14 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               warn_ac_reg = excluded.warn_ac_reg,
               warn_standby = excluded.warn_standby,
               warn_fuel_order = excluded.warn_fuel_order,
+              warn_etd = excluded.warn_etd,
               warn_updated_at = excluded.warn_updated_at,
               old_ac_reg = excluded.old_ac_reg,
               old_standby_fuel = excluded.old_standby_fuel,
               old_fuel_order = excluded.old_fuel_order,
+              old_etd = excluded.old_etd,
               gate = excluded.gate,
+              etd = excluded.etd,
               updated_at = CURRENT_TIMESTAMP
           `, 
             cleanFltNo + '_' + targetDate,
@@ -684,11 +723,14 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             warnAcRegVal,
             warnStandbyVal,
             warnFuelOrderVal,
+            warnEtdVal,
             warnUpdatedAtVal,
             finalOldAcReg,
             finalOldStandby,
             finalOldFuelOrder,
-            newGate
+            finalOldEtd,
+            newGate,
+            newEtd
           );
         log(`[Hoàn tất quét] Chuyến bay ${cleanFltNo}: Fuel Order = ${detail.fuel_order} kg, Trạng thái = ${status}`);
       } catch (fltErr) {
