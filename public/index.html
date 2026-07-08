@@ -347,15 +347,15 @@
         
         <!-- Thống kê số chuyến trực ca -->
         <div class="user-refuel-stats" id="user-refuel-stats" style="display: flex; gap: 15px; align-items: center; justify-content: center; flex: 1; margin: 0 20px; flex-wrap: wrap;">
-          <div class="stat-box" onclick="showUserFmsDetailModal('today')" style="cursor: pointer; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.15); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
+          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('today')" style="cursor: pointer; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.15); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
             <span class="stat-num" id="user-stat-today" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--primary);">0</span>
             <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính trong ngày</span>
           </div>
-          <div class="stat-box" onclick="showUserFmsDetailModal('month')" style="cursor: pointer; background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.15); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
+          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('month')" style="cursor: pointer; background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.15); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
             <span class="stat-num" id="user-stat-month" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--secondary);">0</span>
             <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính trong tháng</span>
           </div>
-          <div class="stat-box" onclick="showUserFmsDetailModal('last-month')" style="cursor: pointer; background: rgba(251, 146, 60, 0.08); border: 1px solid rgba(251, 146, 60, 0.15); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
+          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('last-month')" style="cursor: pointer; background: rgba(251, 146, 60, 0.08); border: 1px solid rgba(251, 146, 60, 0.15); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
             <span class="stat-num" id="user-stat-last-month" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--orange);">0</span>
             <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính tháng trước</span>
           </div>

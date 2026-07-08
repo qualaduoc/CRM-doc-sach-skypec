@@ -3692,6 +3692,8 @@ function renderUserFmsDetailTable(flights) {
   }).join('');
 }
 
+window.currentViewingFmsName = '';
+
 window.showUserFmsDetailModal = function(period) {
   console.log('[DEBUG_FMS_MODAL] Gọi hàm showUserFmsDetailModal với period:', period);
   const modal = document.getElementById('user-fms-detail-modal');
@@ -3704,24 +3706,29 @@ window.showUserFmsDetailModal = function(period) {
     return;
   }
 
+  // Đồng bộ trạng thái tab
+  syncFmsPeriodTabUI(period);
+
   let titleText = '';
   let flights = [];
   
+  const suffix = window.currentViewingFmsName ? ` của <strong>${window.currentViewingFmsName}</strong>` : '';
+  
   if (period === 'today') {
-    titleText = '<i class="fa-solid fa-plane-departure" style="color: var(--primary);"></i> Chi tiết chuyến trực ca hôm nay';
+    titleText = `<i class="fa-solid fa-plane-departure" style="color: var(--primary);"></i> Chi tiết chuyến trực ca hôm nay${suffix}`;
     flights = userFmsStatsData.todayFlights || [];
   } else if (period === 'month') {
     const now = new Date();
     const vnTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
     const currentMonth = vnTime.getUTCMonth() + 1;
-    titleText = `<i class="fa-solid fa-plane-departure" style="color: var(--secondary);"></i> Chi tiết chuyến trực ca tháng ${currentMonth}`;
+    titleText = `<i class="fa-solid fa-plane-departure" style="color: #34d399;"></i> Chi tiết chuyến trực ca tháng ${currentMonth}${suffix}`;
     flights = userFmsStatsData.monthFlights || [];
   } else if (period === 'last-month') {
     const now = new Date();
     const vnTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
     let lastMonth = vnTime.getUTCMonth();
     if (lastMonth === 0) lastMonth = 12;
-    titleText = `<i class="fa-solid fa-plane-departure" style="color: var(--orange);"></i> Chi tiết chuyến trực ca tháng ${lastMonth}`;
+    titleText = `<i class="fa-solid fa-plane-departure" style="color: #fb923c;"></i> Chi tiết chuyến trực ca tháng ${lastMonth}${suffix}`;
     flights = userFmsStatsData.lastMonthFlights || [];
   }
 
@@ -3846,18 +3853,54 @@ window.showAdminUserFmsDetail = async function(username, displayName) {
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
 
-    // Lưu vào biến toàn cục của modal và reset bộ lọc
+    // Lưu vào biến toàn cục của modal
     userFmsStatsData = data.data;
+    
+    // Gán tên nhân viên đang xem để hiển thị tiêu đề động trong modal
+    window.currentViewingFmsName = displayName;
     
     // Mở modal chi tiết (mặc định mở tháng này)
     showUserFmsDetailModal('month');
-    
-    // Đổi tiêu đề modal
-    const titleEl = document.getElementById('user-fms-detail-title');
-    if (titleEl) {
-      titleEl.innerHTML = `<i class="fa-solid fa-plane-departure" style="color: var(--secondary);"></i> Chi tiết chuyến bay trực của <strong>${displayName}</strong>`;
-    }
   } catch (err) {
     showToast(err.message, 'danger');
+  }
+};
+
+window.switchFmsModalPeriod = function(period) {
+  showUserFmsDetailModal(period);
+};
+
+window.syncFmsPeriodTabUI = function(period) {
+  const btnToday = document.getElementById('btn-fms-period-today');
+  const btnMonth = document.getElementById('btn-fms-period-month');
+  const btnLastMonth = document.getElementById('btn-fms-period-last-month');
+  
+  if (btnToday && btnMonth && btnLastMonth) {
+    [btnToday, btnMonth, btnLastMonth].forEach(btn => {
+      btn.classList.remove('active');
+      btn.style.background = 'none';
+      btn.style.color = 'var(--text-muted)';
+      btn.style.borderColor = 'var(--border)';
+    });
+    
+    let activeBtn;
+    let activeColor = 'var(--primary)';
+    if (period === 'today') {
+      activeBtn = btnToday;
+      activeColor = 'var(--primary)';
+    } else if (period === 'month') {
+      activeBtn = btnMonth;
+      activeColor = '#34d399';
+    } else if (period === 'last-month') {
+      activeBtn = btnLastMonth;
+      activeColor = '#fb923c';
+    }
+    
+    if (activeBtn) {
+      activeBtn.classList.add('active');
+      activeBtn.style.background = activeColor;
+      activeBtn.style.color = '#fff';
+      activeBtn.style.borderColor = activeColor;
+    }
   }
 };
