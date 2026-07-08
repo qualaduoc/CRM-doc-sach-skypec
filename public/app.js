@@ -1251,6 +1251,9 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
       </tr>
     `;
   }
+
+  // Tải các chỉ số thống kê số chuyến bay FMS của nhân viên
+  loadUserFmsStats().catch(err => console.error('[FMS Stats] Lỗi tải số liệu:', err.message));
 }
 
 // Bật/Tắt học ngầm cho một lớp
@@ -3605,3 +3608,124 @@ function exportFmsScheduleToExcel() {
   XLSX.writeFile(wb, `Lich_truc_Skypec_${selectedDate}.xlsx`);
   showToast('Xuất file Excel lịch trực thành công!', 'success', 'Thành công');
 }
+
+// --- LOGIC THỐNG KÊ CHUYẾN BAY FMS VÀ MODAL CHI TIẾT DÀNH CHO USER ---
+let userFmsStatsData = null;
+
+async function loadUserFmsStats() {
+  try {
+    const username = state.username || localStorage.getItem('crm_username');
+    if (!username) return;
+
+    const res = await fetch('/api/fms/user-stats', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      userFmsStatsData = data.data;
+
+      // Cập nhật các ô hiển thị số chuyến bay lên header màn hình user
+      const todayEl = document.getElementById('user-stat-today');
+      const monthEl = document.getElementById('user-stat-month');
+      const lastMonthEl = document.getElementById('user-stat-last-month');
+
+      if (todayEl) todayEl.textContent = data.data.todayCount;
+      if (monthEl) monthEl.textContent = data.data.monthCount;
+      if (lastMonthEl) lastMonthEl.textContent = data.data.lastMonthCount;
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải thông tin thống kê chuyến bay của nhân viên:', err.message);
+  }
+}
+
+window.showUserFmsDetailModal = function(period) {
+  const modal = document.getElementById('user-fms-detail-modal');
+  const titleEl = document.getElementById('user-fms-detail-title');
+  const tbody = document.getElementById('user-fms-detail-tbody');
+  
+  if (!modal || !tbody || !userFmsStatsData) {
+    showToast('Chưa có dữ liệu thống kê, vui lòng đợi trong giây lát!', 'warning', 'Chờ tải');
+    return;
+  }
+
+  let titleText = '';
+  let flights = [];
+  
+  if (period === 'today') {
+    titleText = '<i class="fa-solid fa-plane-departure" style="color: var(--primary);"></i> Chi tiết chuyến trực ca hôm nay';
+    flights = userFmsStatsData.todayFlights || [];
+  } else if (period === 'month') {
+    const now = new Date();
+    const vnTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const currentMonth = vnTime.getUTCMonth() + 1;
+    titleText = `<i class="fa-solid fa-plane-departure" style="color: var(--secondary);"></i> Chi tiết chuyến trực ca tháng ${currentMonth}`;
+    flights = userFmsStatsData.monthFlights || [];
+  } else if (period === 'last-month') {
+    const now = new Date();
+    const vnTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    let lastMonth = vnTime.getUTCMonth();
+    if (lastMonth === 0) lastMonth = 12;
+    titleText = `<i class="fa-solid fa-plane-departure" style="color: var(--orange);"></i> Chi tiết chuyến trực ca tháng ${lastMonth}`;
+    flights = userFmsStatsData.lastMonthFlights || [];
+  }
+
+  titleEl.innerHTML = titleText;
+
+  if (flights.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">
+          Chưa có lịch bay được phân công cho khoảng thời gian này.
+        </td>
+      </tr>
+    `;
+  } else {
+    tbody.innerHTML = flights.map(r => {
+      // Xác định trạng thái "Chưa lên hệ thống hoặc không lấy dầu"
+      const isNoRefuel = !r.fuel_order || r.fuel_order === '---' || r.fuel_order === '0' || r.status === 'Chờ cập nhật' || r.status === 'Ko lấy dầu';
+      
+      let statusHtml = '';
+      if (isNoRefuel) {
+        statusHtml = `<span class="fms-no-refuel-blink">Chưa lên hệ thống hoặc không lấy dầu</span>`;
+      } else {
+        statusHtml = `<span class="status-tag review-finished" style="background: rgba(74, 222, 128, 0.15); color: var(--green); border: 1px solid rgba(74, 222, 128, 0.3); padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em;">Đã có số liệu</span>`;
+      }
+
+      return `
+        <tr>
+          <td style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">${r.flight_no}</td>
+          <td style="color: #60a5fa; font-weight: 500;">${r.route || '-'}</td>
+          <td style="text-align: center;">
+            <span style="font-weight: bold; color: #fff;">${r.ac_reg || '-'}</span>
+            <span style="color: var(--text-muted); font-size: 0.8em;"> (${r.ac_type || '-'})</span>
+          </td>
+          <td style="text-align: center; font-weight: bold; color: #f59e0b;">${r.gate || '-'}</td>
+          <td style="text-align: center; font-weight: bold; color: #fb923c;">${r.time_fuel || '-'}</td>
+          <td><span style="font-size: 0.9em; color: var(--primary); font-weight: 500;">${r.truck_no && r.truck_no !== '-' ? 'Xe ' + r.truck_no : '-'}</span></td>
+          <td><span style="font-weight: 600; color: #fff;">${r.crew_info || (r.driver_name && r.operator_name ? r.driver_name + ' - ' + r.operator_name : '-')}</span></td>
+          <td style="text-align: center;">${statusHtml}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  modal.classList.add('active');
+};
+
+// Gắn sự kiện đóng modal chi tiết FMS của user
+document.addEventListener('DOMContentLoaded', () => {
+  const closeBtn = document.getElementById('btn-close-user-fms-detail-modal');
+  const modal = document.getElementById('user-fms-detail-modal');
+  
+  if (closeBtn && modal) {
+    closeBtn.addEventListener('click', () => {
+      modal.classList.remove('active');
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('active');
+      }
+    });
+  }
+});

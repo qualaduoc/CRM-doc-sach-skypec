@@ -1525,6 +1525,132 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
   }
 });
 
+// Lấy chỉ số thống kê số chuyến ước tính cho nhân viên (Hôm nay, Tháng này, Tháng trước)
+app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
+  try {
+    const db = await getDb();
+    const username = req.user.username;
+
+    // 1. Lấy thông tin display_name của tài khoản đăng nhập
+    const account = await db.get('SELECT display_name FROM accounts WHERE username = ?', username);
+    if (!account || !account.display_name) {
+      return res.json({
+        success: true,
+        data: {
+          todayCount: 0,
+          monthCount: 0,
+          lastMonthCount: 0,
+          todayFlights: [],
+          monthFlights: [],
+          lastMonthFlights: []
+        }
+      });
+    }
+
+    const displayName = account.display_name;
+
+    // 2. Tính toán các mốc thời gian
+    const now = new Date();
+    // Chuyển sang múi giờ Việt Nam (+7)
+    const vnTime = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const currentYear = vnTime.getUTCFullYear();
+    const currentMonth = vnTime.getUTCMonth() + 1;
+
+    const formatMonth = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+    const thisMonthStr = formatMonth(currentYear, currentMonth);
+
+    let lastMonthYear = currentYear;
+    let lastMonth = currentMonth - 1;
+    if (lastMonth === 0) {
+      lastMonth = 12;
+      lastMonthYear -= 1;
+    }
+    const lastMonthStr = formatMonth(lastMonthYear, lastMonth);
+    const todayStr = getVietnamDbDateStr();
+
+    // 3. Truy vấn database lấy toàn bộ lịch trực có phân công cho nhân viên này trong 3 mốc thời gian
+    const rows = await db.all(`
+      SELECT 
+        s.id,
+        s.flight_no,
+        COALESCE(NULLIF(fo.ac_type, ''), s.ac_type) as ac_type,
+        COALESCE(NULLIF(fo.ac_reg, ''), s.ac_reg) as ac_reg,
+        s.route,
+        s.time_arr,
+        s.time_dep,
+        s.time_fuel,
+        s.gate,
+        s.truck_no,
+        s.driver_name,
+        s.operator_name,
+        s.crew_info,
+        COALESCE(s.fms_date, s.date) as date_str,
+        COALESCE(fo.status, 'Chờ cập nhật') as status,
+        fo.fuel_order,
+        fo.standby_fuel
+      FROM fms_schedules s
+      LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no || '_' || COALESCE(s.fms_date, s.date)) = UPPER(fo.flight_no)
+      WHERE (s.driver_name = ? OR s.operator_name = ?)
+        AND (
+          COALESCE(s.fms_date, s.date) = ?
+          OR strftime('%Y-%m', COALESCE(s.fms_date, s.date)) = ?
+          OR strftime('%Y-%m', COALESCE(s.fms_date, s.date)) = ?
+        )
+      ORDER BY COALESCE(s.fms_date, s.date) DESC, s.id ASC
+    `, displayName, displayName, todayStr, thisMonthStr, lastMonthStr);
+
+    // 4. Lọc trùng chuyến bay (multi-truck)
+    const todayFlights = [];
+    const thisMonthFlights = [];
+    const lastMonthFlights = [];
+
+    const seenToday = new Set();
+    const seenMonth = new Set();
+    const seenLastMonth = new Set();
+
+    for (const row of rows) {
+      const flightDate = row.date_str;
+      const key = `${row.flight_no}_${flightDate}`;
+
+      if (flightDate === todayStr) {
+        if (!seenToday.has(key)) {
+          seenToday.add(key);
+          todayFlights.push(row);
+        }
+      }
+      
+      if (flightDate.startsWith(thisMonthStr)) {
+        if (!seenMonth.has(key)) {
+          seenMonth.add(key);
+          thisMonthFlights.push(row);
+        }
+      }
+      
+      if (flightDate.startsWith(lastMonthStr)) {
+        if (!seenLastMonth.has(key)) {
+          seenLastMonth.add(key);
+          lastMonthFlights.push(row);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        todayCount: todayFlights.length,
+        monthCount: thisMonthFlights.length,
+        lastMonthCount: lastMonthFlights.length,
+        todayFlights,
+        monthFlights: thisMonthFlights,
+        lastMonthFlights
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // --- CÁC ROUTE API QUẢN LÝ BOT ZALO SKYEYES ---
 
 // Lấy trạng thái của Bot Zalo hiện tại (chỉ Admin)
