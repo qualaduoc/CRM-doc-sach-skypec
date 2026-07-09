@@ -703,7 +703,46 @@ Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
 
               // Tự động lọc dòng thông minh chi tiết (Fine-grained Smart Filtering)
               const lines = msg.split('\n');
-              const filteredLines = lines.filter(line => {
+              const processedLines = lines.map(line => {
+                const lower = line.toLowerCase();
+                
+                // Xử lý dòng vị trí đỗ
+                if (lower.includes('vị trí đỗ') || lower.includes('gate') || lower.includes('vị trí:')) {
+                  if (isGateChanged) {
+                    return line; // Giữ nguyên dòng đầy đủ nếu vị trí đỗ thực sự thay đổi
+                  }
+                  
+                  // Nếu vị trí đỗ không đổi, tìm xem dòng có ghép thông tin Tổ nạp/Cặp tra nạp không
+                  const crewKeywords = ['tổ nạp', 'cặp tra nạp', 'người trực', 'tổ trực'];
+                  let keywordIndex = -1;
+                  for (const kw of crewKeywords) {
+                    const idx = lower.indexOf(kw);
+                    if (idx !== -1) {
+                      keywordIndex = idx;
+                      break;
+                    }
+                  }
+                  
+                  if (keywordIndex !== -1) {
+                    // Cắt bỏ phần vị trí đỗ, chỉ giữ lại phần Tổ trực
+                    let crewPart = line.substring(keywordIndex);
+                    // Loại bỏ ngoặc đóng ở cuối dòng nếu có (do template viết dạng (Tổ nạp: ...))
+                    if (crewPart.endsWith(')')) {
+                      crewPart = crewPart.substring(0, crewPart.length - 1);
+                    }
+                    // Trả về dòng Tổ trực sạch sẽ
+                    return `👥 ${crewPart}`;
+                  }
+                  
+                  // Nếu không chứa tổ nạp, trả về chuỗi rỗng để bị filter loại bỏ
+                  return '';
+                }
+                
+                return line;
+              });
+
+              const filteredLines = processedLines.filter(line => {
+                if (!line) return false;
                 const lower = line.toLowerCase();
                 
                 // 1. Dòng chứa Số hiệu tàu cũ/mới: Chỉ hiển thị khi có đổi tàu
@@ -719,12 +758,6 @@ Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
                 // 3. Dòng chứa Tải dầu Chính thức cũ/mới: Chỉ hiển thị khi Chính thức thay đổi hoặc mới xuất hiện
                 if (lower.includes('tải dầu chính thức cũ') || lower.includes('old_fuel_order') || (lower.includes('chính thức') && lower.includes('cũ') && lower.includes('mới'))) {
                   return !!(isNewFuelOrder || isFuelOrderChanged);
-                }
-
-                // 4. Dòng chứa Vị trí đỗ: Chỉ hiển thị khi vị trí đỗ có thay đổi (Ngoại trừ dòng đó chứa Tổ nạp/Cặp tra nạp/Người trực)
-                if ((lower.includes('vị trí đỗ') || lower.includes('gate') || lower.includes('vị trí:')) && 
-                    !lower.includes('tổ nạp') && !lower.includes('cặp tra nạp') && !lower.includes('crew') && !lower.includes('người trực')) {
-                  return !!isGateChanged;
                 }
 
                 return true;
