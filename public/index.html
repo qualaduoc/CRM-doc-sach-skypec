@@ -919,8 +919,12 @@
             <h4 style="margin: 0 0 10px 0; color: var(--primary); font-size: 0.95rem;"><i class="fa-solid fa-plus"></i> Thêm / Cập Nhật Liên Kết</h4>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label style="font-size: 0.75rem; color: var(--text-muted);">Tên trên lịch trực (Ví dụ: THÀNH):</label>
-                <input type="text" id="mapping-schedule-name" placeholder="Nhập tên viết hoa không dấu..." style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; outline: none; font-size: 0.85rem; box-sizing: border-box;">
+                <label style="font-size: 0.75rem; color: var(--text-muted);">Tên trên lịch trực:</label>
+                <select id="mapping-schedule-name-select" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; outline: none; font-size: 0.85rem; cursor: pointer; box-sizing: border-box;">
+                  <option value="">-- Chọn tên từ lịch trực --</option>
+                  <option value="custom">-- Nhập tên khác --</option>
+                </select>
+                <input type="text" id="mapping-schedule-name" placeholder="Nhập tên viết hoa không dấu..." style="display: none; margin-top: 6px; padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; outline: none; font-size: 0.85rem; box-sizing: border-box;">
               </div>
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 <label style="font-size: 0.75rem; color: var(--text-muted);">Tài khoản Zalo tương ứng:</label>

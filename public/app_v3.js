@@ -627,6 +627,9 @@ function setupEventListeners() {
   if (btnSaveSingleMapping) {
     btnSaveSingleMapping.addEventListener('click', handleSaveSingleMapping);
   }
+  
+  // Khởi tạo sự kiện cho dropdown chọn tên mapping
+  initMappingScheduleNameSelectEvent();
   // Toggle Custom Dropdown chọn nhiều nhóm
   const displayBox = document.getElementById('skyeyes-groups-display');
   if (displayBox) {
@@ -3284,6 +3287,9 @@ async function openZaloMappingsModal() {
   if (!modal) return;
   modal.classList.add('active');
 
+  // Nạp danh sách tên từ lịch trực hiện tại
+  populateScheduleNameSelect();
+
   await Promise.all([
     loadZaloMappingsList(),
     loadZaloGroupMembers()
@@ -3346,7 +3352,37 @@ function renderZaloMappingsListTable() {
     btn.addEventListener('click', (e) => {
       const name = e.target.getAttribute('data-name');
       const uid = e.target.getAttribute('data-uid');
-      document.getElementById('mapping-schedule-name').value = name;
+      
+      const selectName = document.getElementById('mapping-schedule-name-select');
+      const inputName = document.getElementById('mapping-schedule-name');
+      
+      if (selectName) {
+        // Kiểm tra xem name có tồn tại trong select option hay không
+        let hasOption = false;
+        for (let i = 0; i < selectName.options.length; i++) {
+          if (selectName.options[i].value === name) {
+            hasOption = true;
+            break;
+          }
+        }
+        
+        if (hasOption) {
+          selectName.value = name;
+          if (inputName) {
+            inputName.style.display = 'none';
+            inputName.value = name;
+          }
+        } else {
+          selectName.value = 'custom';
+          if (inputName) {
+            inputName.style.display = 'block';
+            inputName.value = name;
+          }
+        }
+      } else if (inputName) {
+        inputName.value = name;
+      }
+      
       const select = document.getElementById('mapping-zalo-uid');
       if (select) select.value = uid;
     });
@@ -3928,3 +3964,46 @@ window.syncFmsPeriodTabUI = function(period) {
     }
   }
 };
+
+// Trích xuất các tên nhân sự từ lịch trực hiện tại để populate vào dropdown liên kết Zalo
+function populateScheduleNameSelect() {
+  const select = document.getElementById('mapping-schedule-name-select');
+  if (!select) return;
+  
+  // Trích xuất danh sách tên độc nhất từ lịch trực hiện tại
+  const namesSet = new Set();
+  if (Array.isArray(state.schedules)) {
+    state.schedules.forEach(s => {
+      if (s.driver_name) namesSet.add(s.driver_name.toUpperCase().trim());
+      if (s.operator_name) namesSet.add(s.operator_name.toUpperCase().trim());
+    });
+  }
+  
+  const names = Array.from(namesSet).sort();
+  
+  let optionsHtml = '<option value="">-- Chọn tên từ lịch trực --</option>';
+  names.forEach(name => {
+    optionsHtml += `<option value="${name}">${name}</option>`;
+  });
+  optionsHtml += '<option value="custom">-- Nhập tên khác --</option>';
+  
+  select.innerHTML = optionsHtml;
+}
+
+// Đăng ký sự kiện thay đổi dropdown tên mapping
+function initMappingScheduleNameSelectEvent() {
+  const select = document.getElementById('mapping-schedule-name-select');
+  const input = document.getElementById('mapping-schedule-name');
+  if (!select || !input) return;
+  
+  select.addEventListener('change', () => {
+    if (select.value === 'custom') {
+      input.style.display = 'block';
+      input.value = '';
+      input.focus();
+    } else {
+      input.style.display = 'none';
+      input.value = select.value;
+    }
+  });
+}
