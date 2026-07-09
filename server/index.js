@@ -1538,7 +1538,7 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         fo.updated_at
       FROM fms_schedules s
       LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no || '_' || COALESCE(s.fms_date, s.date)) = UPPER(fo.flight_no)
-      WHERE COALESCE(s.fms_date, s.date) = ?
+      WHERE s.date = ?
       ORDER BY s.id ASC
     `, targetDate);
 
