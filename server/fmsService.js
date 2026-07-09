@@ -611,6 +611,51 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               template = template.replace('{{flight_no}}', '{{flight_no}} - {{ac_reg}}');
             }
 
+            // 1. Phân giải tag Zalo trực tiếp cho lái xe và nhân viên nạp
+            const drName = sched && sched.driver_name ? sched.driver_name.toUpperCase().trim() : '';
+            const opName = sched && sched.operator_name ? sched.operator_name.toUpperCase().trim() : '';
+            
+            let driverCrewPart = drName || '-';
+            let operatorCrewPart = opName || '-';
+            
+            let driverMentionInfo = null;
+            let operatorMentionInfo = null;
+            
+            try {
+              const dbMappings = await db.all('SELECT schedule_name, zalo_uid, zalo_name FROM zalo_user_mappings');
+              const mappingMap = {};
+              dbMappings.forEach(m => {
+                mappingMap[m.schedule_name.toUpperCase().trim()] = {
+                  uid: m.zalo_uid,
+                  name: m.zalo_name || m.schedule_name
+                };
+              });
+              
+              if (drName && mappingMap[drName]) {
+                const mapInfo = mappingMap[drName];
+                driverCrewPart = `@${mapInfo.name}`;
+                driverMentionInfo = {
+                  uid: mapInfo.uid,
+                  tagLabel: `@${mapInfo.name}`
+                };
+              }
+              
+              if (opName && mappingMap[opName]) {
+                const mapInfo = mappingMap[opName];
+                operatorCrewPart = `@${mapInfo.name}`;
+                operatorMentionInfo = {
+                  uid: mapInfo.uid,
+                  tagLabel: `@${mapInfo.name}`
+                };
+              }
+            } catch (mappingErr) {
+              console.error('[Mapping Fetch Error]', mappingErr.message);
+            }
+            
+            const crewInfoVal = (drName || opName)
+              ? (drName && opName ? `${driverCrewPart} - ${operatorCrewPart}` : (driverCrewPart || operatorCrewPart))
+              : (sched ? (sched.crew_info || '-') : '-');
+
             const formatNumber = (val) => {
               const num = parseInt(val);
               return isNaN(num) ? '0' : num.toLocaleString();
@@ -625,7 +670,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               route: `${flt.DEP_AP_SCHED || ''}-${flt.ARR_AP_SCHED || ''}`,
               gate: sched ? (sched.gate || '-') : '-',
               old_gate: '-',
-              crew_info: sched ? (sched.crew_info || '-') : '-',
+              crew_info: crewInfoVal, // Chứa tag Zalo trực tiếp
               truck_no: sched ? (sched.truck_no || '-') : '-',
               standby_fuel: formatNumber(detail.standby_fuel),
               old_standby_fuel: oldStandbyFuelVal,
@@ -642,7 +687,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             if (isEtdChanged && !isNewStandby && !isNewFuelOrder && !isFuelChanged && !isAcRegChanged && !isGateChanged) {
               const oldEtdVal = oldEtd || '-';
               const newEtdVal = newEtd || '-';
-              const crewVal = sched ? (sched.crew_info || '-') : '-';
+              const crewVal = crewInfoVal;
               msg = `${title}
 ✈️ Chuyến bay: ${cleanFltNo} - ${cleanACREG || '-'}
 ⛽ Giờ bay ETD (dự kiến) cũ: ${oldEtdVal}'
@@ -717,35 +762,36 @@ Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
 
             // Nếu cần gửi vào nhóm (notifyType === 1 hoặc 3)
             if ((notifyType === 1 || notifyType === 3) && targetGroupId) {
-              if (uids.length > 0) {
-                try {
-                  const placeholders = uids.map(() => '?').join(',');
-                  const mappings = await db.all(`SELECT zalo_uid, zalo_name FROM zalo_user_mappings WHERE zalo_uid IN (${placeholders})`, uids);
-                  const nameMap = {};
-                  mappings.forEach(m => {
-                    nameMap[m.zalo_uid] = m.zalo_name || m.zalo_uid;
+              // Tìm vị trí tag Zalo của driver và operator trong thân tin nhắn
+              if (driverMentionInfo) {
+                const pos = msg.indexOf(driverMentionInfo.tagLabel);
+                if (pos !== -1) {
+                  groupMentions.push({
+                    pos: pos,
+                    uid: driverMentionInfo.uid,
+                    len: driverMentionInfo.tagLabel.length
                   });
-
-                  let tagPrefix = '\n👥 Người trực: ';
-                  let msgWithTags = msg + tagPrefix;
-                  uids.forEach(uid => {
-                    const zaloName = nameMap[uid] || 'Thành viên';
-                    const tagLabel = `@${zaloName}`;
-                    const startPos = msgWithTags.length;
-                    msgWithTags += tagLabel + ' ';
-                    groupMentions.push({
-                      pos: startPos,
-                      uid: uid,
-                      len: tagLabel.length
-                    });
-                  });
-                  msgGroup = msgWithTags.trimEnd();
-                } catch (mentionErr) {
-                  console.error('[Mentions Build Error]', mentionErr.message);
                 }
-              } else if (sched && sched.crew_info) {
-                // Fallback: Nếu chưa liên kết Zalo UID, vẫn hiển thị tên người trực dạng text thường để mọi người cùng biết
-                msgGroup = msg + `\n👥 Người trực: ${sched.crew_info}`;
+              }
+              
+              if (operatorMentionInfo) {
+                const pos = msg.indexOf(operatorMentionInfo.tagLabel);
+                if (pos !== -1) {
+                  groupMentions.push({
+                    pos: pos,
+                    uid: operatorMentionInfo.uid,
+                    len: operatorMentionInfo.tagLabel.length
+                  });
+                }
+              }
+
+              // Fallback: Nếu không tag được ai (chưa liên kết Zalo) và tin nhắn gốc không chứa thông tin cặp tra nạp
+              if (groupMentions.length === 0 && sched && sched.crew_info) {
+                const rawCrew = String(sched.crew_info).trim();
+                const hasCrewInMsg = rawCrew && msg.toUpperCase().includes(rawCrew.toUpperCase());
+                if (!hasCrewInMsg) {
+                  msgGroup = msg + `\n👥 Tổ trực: ${sched.crew_info}`;
+                }
               }
 
               const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
