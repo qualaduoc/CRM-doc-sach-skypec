@@ -676,8 +676,9 @@ Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
                   return !!(isNewFuelOrder || isFuelOrderChanged);
                 }
 
-                // 4. Dòng chứa Vị trí đỗ: Chỉ hiển thị khi vị trí đỗ có thay đổi
-                if (lower.includes('vị trí đỗ') || lower.includes('gate') || lower.includes('vị trí:')) {
+                // 4. Dòng chứa Vị trí đỗ: Chỉ hiển thị khi vị trí đỗ có thay đổi (Ngoại trừ dòng đó chứa Tổ nạp/Cặp tra nạp/Người trực)
+                if ((lower.includes('vị trí đỗ') || lower.includes('gate') || lower.includes('vị trí:')) && 
+                    !lower.includes('tổ nạp') && !lower.includes('cặp tra nạp') && !lower.includes('crew') && !lower.includes('người trực')) {
                   return !!isGateChanged;
                 }
 
@@ -742,6 +743,9 @@ Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
                 } catch (mentionErr) {
                   console.error('[Mentions Build Error]', mentionErr.message);
                 }
+              } else if (sched && sched.crew_info) {
+                // Fallback: Nếu chưa liên kết Zalo UID, vẫn hiển thị tên người trực dạng text thường để mọi người cùng biết
+                msgGroup = msg + `\n👥 Người trực: ${sched.crew_info}`;
               }
 
               const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
