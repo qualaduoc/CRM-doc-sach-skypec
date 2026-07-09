@@ -1432,9 +1432,33 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     // Xóa lịch cũ của ngày hôm nay
     await db.run('DELETE FROM fms_schedules WHERE date = ?', targetDate);
 
+    // Tải toàn bộ zalo_user_mappings từ DB để tự động map tên sang zalo_uid ở Backend
+    const dbMappings = await db.all('SELECT schedule_name, zalo_uid FROM zalo_user_mappings');
+    const mappingMap = {};
+    dbMappings.forEach(m => {
+      mappingMap[m.schedule_name.toUpperCase().trim()] = m.zalo_uid;
+    });
+
     // Thêm lịch mới
     for (const item of schedules) {
       const fmsDate = calculateFmsDate(targetDate, item.time_fuel || item.time_dep || item.time_arr, hasNightFlights);
+      
+      // Tự động phân giải Zalo UIDs ở Backend nếu chưa có
+      let finalCrewZaloUids = item.crew_zalo_uids || '';
+      if (!finalCrewZaloUids) {
+        const uids = [];
+        const drName = item.driver_name ? item.driver_name.toUpperCase().trim() : '';
+        const opName = item.operator_name ? item.operator_name.toUpperCase().trim() : '';
+        
+        if (drName && mappingMap[drName]) {
+          uids.push(mappingMap[drName]);
+        }
+        if (opName && mappingMap[opName]) {
+          uids.push(mappingMap[opName]);
+        }
+        finalCrewZaloUids = Array.from(new Set(uids)).join(',');
+      }
+
       await db.run(`
         INSERT INTO fms_schedules (
           flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel, 
@@ -1453,7 +1477,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
         item.driver_name,
         item.operator_name,
         item.crew_info,
-        item.crew_zalo_uids || '',
+        finalCrewZaloUids,
         item.notify_type || 1,
         targetDate,
         fmsDate
