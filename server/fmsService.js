@@ -106,9 +106,84 @@ function convertUtcToVnTime(utcTimeStr) {
 
 // Biến lưu cookie đăng nhập FMS trong bộ nhớ cache
 let cachedFmsCookie = null;
+let isFmsAlertSent = false;
+
+// Đọc cookie FMS được lưu trong Database và kiểm tra hạn dùng 12 tiếng
+async function getStoredFmsCookie(db) {
+  try {
+    const cookieRow = await db.get("SELECT value FROM settings WHERE key = 'fms_cookie'");
+    const createdAtRow = await db.get("SELECT value FROM settings WHERE key = 'fms_cookie_created_at'");
+    
+    if (!cookieRow || !cookieRow.value || !createdAtRow || !createdAtRow.value) {
+      return null;
+    }
+    
+    const createdAt = new Date(createdAtRow.value);
+    const now = new Date();
+    const diffHours = (now - createdAt) / (1000 * 60 * 60);
+    
+    if (diffHours < 12) {
+      log(`Tìm thấy cookie FMS hợp lệ trong Database (Thời gian tạo: ${createdAt.toISOString()}, Đã qua: ${diffHours.toFixed(1)} giờ)`);
+      return cookieRow.value;
+    } else {
+      log(`Cookie FMS trong Database đã quá hạn 12 tiếng (Đã qua: ${diffHours.toFixed(1)} giờ). Tiến hành xóa bỏ.`);
+      await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
+      await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
+      return null;
+    }
+  } catch (err) {
+    console.error('[FMS Service] Lỗi đọc cookie từ Database:', err.message);
+    return null;
+  }
+}
+
+// Lưu cookie FMS và thời gian tạo mới vào Database
+async function saveStoredFmsCookie(db, cookieStr) {
+  try {
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_cookie', ?)", cookieStr);
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_cookie_created_at', ?)", new Date().toISOString());
+  } catch (err) {
+    console.error('[FMS Service] Lỗi lưu cookie vào Database:', err.message);
+    throw err;
+  }
+}
+
+// Gửi tin nhắn cảnh báo Zalo khi FMS bị lỗi đăng nhập (được chống spam)
+async function sendFmsLoginAlert(db) {
+  if (isFmsAlertSent) return; // Tránh spam, chỉ gửi 1 lần khi bắt đầu lỗi
+  
+  log('[Cảnh báo] Phát hiện lỗi đăng nhập FMS. Đang gửi tin nhắn cảnh báo Zalo...');
+  const alertMsg = 'Hệ thống nghẽn đăng nhập, vui lòng chờ xử lý.';
+  
+  try {
+    // 1. Gửi vào nhóm Zalo chung
+    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+    if (groupSetting && groupSetting.value) {
+      const groupIds = String(groupSetting.value).split(',').map(id => id.trim()).filter(Boolean);
+      for (const gid of groupIds) {
+        await sendSkyEyesMessage(gid, alertMsg).catch(e => console.error(`[FMS Login Alert] Gửi tới nhóm ${gid} thất bại:`, e.message));
+      }
+    }
+
+    // 2. Gửi inbox riêng cho Admin (nếu có cấu hình admin_zalo_uid)
+    const adminUidSetting = await db.get("SELECT value FROM settings WHERE key = 'admin_zalo_uid'");
+    if (adminUidSetting && adminUidSetting.value) {
+      await sendSkyEyesPrivateMessage(adminUidSetting.value, alertMsg).catch(e => console.error('[FMS Login Alert] Gửi inbox riêng thất bại:', e.message));
+    }
+    
+    // Gửi qua Webhook Bot Zalo cũ làm phương án dự phòng (fallback)
+    await sendZaloNotification(alertMsg).catch(err => console.error('[FMS Login Alert] Fallback Zalo Bot cũ thất bại:', err.message));
+    
+    isFmsAlertSent = true; // Đặt cờ đã gửi
+    log('Đã gửi tin nhắn cảnh báo Zalo thành công.');
+  } catch (err) {
+    console.error('[FMS Login Alert] Lỗi gửi cảnh báo:', err.message);
+  }
+}
 
 // Thực hiện đăng nhập FMS bằng HTTP
 async function loginFMS() {
+  const db = await getDb();
   return new Promise((resolve, reject) => {
     log('Đang gửi yêu cầu đăng nhập FMS mới...');
     // 1. GET login page lấy CSRF Token & Cookie ban đầu
@@ -121,7 +196,9 @@ async function loginFMS() {
 
         const tokenMatch = body.match(/input name="__RequestVerificationToken" type="hidden" value="([^"]+)"/i);
         if (!tokenMatch) {
-          return reject(new Error('Không tìm thấy __RequestVerificationToken trong HTML đăng nhập!'));
+          const err = new Error('Không tìm thấy __RequestVerificationToken trong HTML đăng nhập!');
+          sendFmsLoginAlert(db).catch(e => console.error('[FMS Service] Lỗi gửi cảnh báo:', e.message));
+          return reject(err);
         }
         const csrfToken = tokenMatch[1];
 
@@ -147,7 +224,9 @@ async function loginFMS() {
           postRes.on('data', () => {});
           postRes.on('end', () => {
             if (postRes.statusCode !== 302) {
-              return reject(new Error(`Đăng nhập FMS thất bại, HTTP Code: ${postRes.statusCode}`));
+              const err = new Error(`Đăng nhập FMS thất bại, HTTP Code: ${postRes.statusCode}`);
+              sendFmsLoginAlert(db).catch(e => console.error('[FMS Service] Lỗi gửi cảnh báo:', e.message));
+              return reject(err);
             }
             
             const postCookies = postRes.headers['set-cookie'] || [];
@@ -156,15 +235,31 @@ async function loginFMS() {
               authCookieStr = postCookies.map(c => c.split(';')[0]).join('; ');
             }
             cachedFmsCookie = authCookieStr; // Lưu vào cache
+            
+            // Lưu cookie mới vào Database để tái sử dụng lâu dài
+            saveStoredFmsCookie(db, authCookieStr)
+              .then(() => log('Đã lưu cookie FMS mới vào Database thành công.'))
+              .catch(dbErr => console.error('[FMS Service] Lỗi lưu cookie vào DB:', dbErr.message));
+            
+            // Reset cờ cảnh báo vì đã đăng nhập thành công
+            isFmsAlertSent = false;
+            
             resolve(authCookieStr);
           });
         });
 
-        req.on('error', reject);
+        req.on('error', (err) => {
+          sendFmsLoginAlert(db).catch(e => console.error('[FMS Service] Lỗi gửi cảnh báo:', e.message));
+          reject(err);
+        });
+        
         req.write(postData);
         req.end();
       });
-    }).on('error', reject);
+    }).on('error', (err) => {
+      sendFmsLoginAlert(db).catch(e => console.error('[FMS Service] Lỗi gửi cảnh báo:', e.message));
+      reject(err);
+    });
   });
 }
 
@@ -316,13 +411,21 @@ async function syncFMSData(forceDate = null, forceShift = null) {
     
     log(`Các ngày sẽ thực hiện quét FMS: ${targetDates.join(', ')}`);
 
-    // 2. Sử dụng cookie đã được lưu cache hoặc tiến hành đăng nhập mới
+    // 2. Sử dụng cookie từ cache bộ nhớ, hoặc đọc từ DB, hoặc tiến hành đăng nhập mới
     let activeCookie = cachedFmsCookie;
     if (!activeCookie) {
-      log('Chưa có cookie cache. Tiến hành đăng nhập FMS...');
+      log('Chưa có cookie trong cache bộ nhớ. Đang kiểm tra Database...');
+      activeCookie = await getStoredFmsCookie(db);
+      if (activeCookie) {
+        cachedFmsCookie = activeCookie; // Lưu lại vào memory cache
+      }
+    }
+
+    if (!activeCookie) {
+      log('Chưa có cookie hợp lệ. Tiến hành đăng nhập FMS mới...');
       activeCookie = await loginFMS();
     } else {
-      log('Sử dụng cookie FMS từ cache bộ nhớ.');
+      log('Sử dụng cookie FMS hợp lệ từ Database/Cache bộ nhớ.');
     }
 
     for (const targetDate of targetDates) {
@@ -380,11 +483,21 @@ async function syncFMSData(forceDate = null, forceShift = null) {
         // Phát hiện cookie hết hạn âm thầm khi FMS trả về 0 chuyến bay
         if (fmsFlights.length === 0) {
           log(`[Cảnh báo] Tải về 0 chuyến bay từ FMS cho ngày ${targetFmsDateStr}. Có khả năng cookie hết hạn âm thầm. Tiến hành đăng nhập lại để làm mới cookie...`);
+          // Xóa cookie cũ khỏi DB và cache bộ nhớ để ép login mới
+          await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
+          await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
+          cachedFmsCookie = null;
+          
           activeCookie = await loginFMS();
           fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
         }
       } catch (err) {
         log(`Cookie FMS bị lỗi hoặc hết hạn. Đang tiến hành đăng nhập lại... Chi tiết lỗi: ${err.message || JSON.stringify(err)}`);
+        // Xóa cookie cũ khỏi DB và cache bộ nhớ để ép login mới
+        await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
+        await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
+        cachedFmsCookie = null;
+        
         activeCookie = await loginFMS();
         fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
       }
