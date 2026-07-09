@@ -376,6 +376,13 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       let fmsFlights = [];
       try {
         fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
+        
+        // Phát hiện cookie hết hạn âm thầm khi FMS trả về 0 chuyến bay
+        if (fmsFlights.length === 0) {
+          log(`[Cảnh báo] Tải về 0 chuyến bay từ FMS cho ngày ${targetFmsDateStr}. Có khả năng cookie hết hạn âm thầm. Tiến hành đăng nhập lại để làm mới cookie...`);
+          activeCookie = await loginFMS();
+          fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
+        }
       } catch (err) {
         log(`Cookie FMS bị lỗi hoặc hết hạn. Đang tiến hành đăng nhập lại... Chi tiết lỗi: ${err.message || JSON.stringify(err)}`);
         activeCookie = await loginFMS();
