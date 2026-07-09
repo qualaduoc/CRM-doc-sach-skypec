@@ -2575,6 +2575,46 @@ app.post('/api/fms/settings/test-keys', authenticateToken, async (req, res) => {
 let cachedMembers = null;
 let cacheTime = 0;
 
+// API lấy danh sách nhân sự trực hôm nay chưa liên kết Zalo
+app.get('/api/fms/zalo/unmapped-crews', authenticateToken, async (req, res) => {
+  try {
+    const db = await getDb();
+    
+    // Lấy ngày hiện tại Việt Nam YYYY-MM-DD
+    const tzOffset = 7 * 60 * 60 * 1000;
+    const vnDate = new Date(Date.now() + tzOffset);
+    const pad = (n) => String(n).padStart(2, '0');
+    const todayStr = `${vnDate.getUTCFullYear()}-${pad(vnDate.getUTCMonth() + 1)}-${pad(vnDate.getUTCDate())}`;
+    
+    // Lấy lịch bay của ngày hôm nay
+    const schedules = await db.all("SELECT driver_name, operator_name FROM fms_schedules WHERE date = ?", todayStr);
+    
+    // Lấy tất cả tên độc nhất của nhân sự trực hôm nay
+    const activeCrews = new Set();
+    schedules.forEach(s => {
+      if (s.driver_name) activeCrews.add(s.driver_name.toUpperCase().trim());
+      if (s.operator_name) activeCrews.add(s.operator_name.toUpperCase().trim());
+    });
+    
+    // Lấy danh sách mappings hiện tại
+    const mappings = await db.all("SELECT schedule_name FROM zalo_user_mappings");
+    const mappedNames = new Set(mappings.map(m => m.schedule_name.toUpperCase().trim()));
+    
+    // Lọc ra các nhân sự chưa được map
+    const unmapped = [];
+    activeCrews.forEach(name => {
+      if (name && name !== '-' && !mappedNames.has(name)) {
+        unmapped.push(name);
+      }
+    });
+    
+    unmapped.sort();
+    res.json({ success: true, unmapped: unmapped });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // API lấy danh sách thành viên nhóm Zalo đang được cấu hình
 app.get('/api/fms/zalo/group-members', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {

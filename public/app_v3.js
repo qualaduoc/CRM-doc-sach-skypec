@@ -1780,6 +1780,8 @@ async function loadFmsSchedules(isSilent = false) {
         }
       }, 10000);
     }
+    // Tải danh sách nhân sự chưa liên kết Zalo
+    fetchUnmappedCrews();
 
   } catch (err) {
     if (!isSilent) {
@@ -3405,6 +3407,7 @@ function renderZaloMappingsListTable() {
           if (data.success) {
             showToast(data.message, 'success', 'Thành công');
             loadZaloMappingsList();
+            fetchUnmappedCrews();
           } else {
             throw new Error(data.error);
           }
@@ -3518,6 +3521,7 @@ async function handleSaveSingleMapping() {
       nameInput.value = '';
       if (select) select.value = '';
       await loadZaloMappingsList();
+      fetchUnmappedCrews();
     } else {
       throw new Error(data.error);
     }
@@ -4006,4 +4010,100 @@ function initMappingScheduleNameSelectEvent() {
       input.value = select.value;
     }
   });
+}
+
+// Tải danh sách nhân sự chưa map Zalo của ngày trực hiện tại
+async function fetchUnmappedCrews() {
+  try {
+    const listContainer = document.getElementById('unmapped-crews-list');
+    if (!listContainer) return;
+
+    const res = await fetch('/api/fms/zalo/unmapped-crews', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error);
+    }
+
+    const unmapped = data.unmapped || [];
+    if (unmapped.length === 0) {
+      listContainer.innerHTML = `
+        <span style="font-size: 0.82rem; color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-circle-check"></i> Tuyệt vời! Tất cả nhân sự trực hôm nay đã liên kết Zalo.
+        </span>
+      `;
+      // Đổi border màu xanh lá cho card
+      const card = document.getElementById('unmapped-crews-card');
+      if (card) {
+        card.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+        card.style.background = 'rgba(16, 185, 129, 0.03)';
+      }
+      return;
+    }
+
+    // Trả lại border màu đỏ nhạt cho card
+    const card = document.getElementById('unmapped-crews-card');
+    if (card) {
+      card.style.borderColor = 'rgba(239, 68, 68, 0.25)';
+      card.style.background = 'rgba(239, 68, 68, 0.03)';
+    }
+
+    let buttonsHtml = '';
+    unmapped.forEach(name => {
+      buttonsHtml += `
+        <button onclick="quickMapCrew('${name}')" class="btn-secondary" style="margin-top: 0; padding: 4px 10px; font-size: 0.78rem; border-color: rgba(239, 68, 68, 0.35); color: #f87171; background: rgba(239, 68, 68, 0.05); cursor: pointer; border-radius: 6px; display: flex; align-items: center; gap: 4px; transition: all 0.2s;">
+          <i class="fa-solid fa-link"></i> ${name}
+        </button>
+      `;
+    });
+    listContainer.innerHTML = buttonsHtml;
+  } catch (err) {
+    console.error('Lỗi lấy danh sách nhân sự chưa map:', err.message);
+  }
+}
+
+// Bấm nhanh vào nhân sự chưa map để mở modal map
+function quickMapCrew(name) {
+  // Mở modal quản lý mappings trước
+  openZaloMappingsModal();
+  
+  // Trì hoãn một chút để modal load danh sách dropdown xong
+  setTimeout(() => {
+    const select = document.getElementById('mapping-schedule-name-select');
+    const input = document.getElementById('mapping-schedule-name');
+    
+    if (select && input) {
+      let hasOption = false;
+      for (let i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === name) {
+          select.value = name;
+          hasOption = true;
+          break;
+        }
+      }
+      
+      if (hasOption) {
+        input.style.display = 'none';
+        input.value = name;
+      } else {
+        select.value = 'custom';
+        input.style.display = 'block';
+        input.value = name;
+        input.focus();
+      }
+    }
+    
+    // Clear các thông tin khác trong form
+    const idInput = document.getElementById('mapping-id');
+    const uidSelect = document.getElementById('mapping-zalo-uid');
+    
+    if (idInput) idInput.value = '';
+    if (uidSelect) uidSelect.value = '';
+    
+    const saveBtn = document.getElementById('btn-save-single-mapping');
+    if (saveBtn) {
+      saveBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Thêm Liên Kết';
+    }
+  }, 300);
 }

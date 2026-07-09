@@ -261,7 +261,18 @@
               </button>
             </div>
 
-
+            <!-- Khung danh sách nhân sự chưa map Zalo -->
+            <div id="unmapped-crews-card" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; border-color: rgba(239, 68, 68, 0.25); background: rgba(239, 68, 68, 0.03); margin-top: 15px;">
+              <h4 style="margin: 0; font-size: 1.02rem; color: #f87171; display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i> Chưa Liên Kết Zalo (Trực Hôm Nay)
+              </h4>
+              <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                Các nhân sự dưới đây trực hôm nay chưa cấu hình mapping Zalo (sẽ hiển thị tên thường, không được tag). Bấm vào tên để liên kết nhanh:
+              </p>
+              <div id="unmapped-crews-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                <span style="font-size: 0.82rem; color: var(--text-muted); font-style: italic;">Đang tải dữ liệu...</span>
+              </div>
+            </div>
 
           </div>
 
