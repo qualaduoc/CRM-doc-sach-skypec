@@ -567,22 +567,26 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const isEtdChanged = oldOrder && oldEtd && newEtd && (oldEtd.trim() !== newEtd.trim());
 
           // Báo tin khi mới xuất hiện standby_fuel lần đầu
-          const triggerNewStandby = (newStandby > 0 && oldStandby <= 0) && notifyNewStandby;
+          const isNewStandby = newStandby > 0 && oldStandby <= 0;
           // Báo tin khi mới xuất hiện fuel_order lần đầu
-          const triggerNewFuelOrder = (newFuelOrder > 0 && oldFuelOrder <= 0) && notifyNewFuelOrder;
+          const isNewFuelOrder = newFuelOrder > 0 && oldFuelOrder <= 0;
           
           // Kiểm tra thay đổi trị số khi đã có dữ liệu từ trước
-          const triggerStandbyChanged = (oldStandby > 0 && newStandby > 0 && oldStandby !== newStandby) && notifyStandbyChanged;
-          const triggerFuelOrderChanged = (oldFuelOrder > 0 && newFuelOrder > 0 && oldFuelOrder !== newFuelOrder) && notifyFuelOrderChanged;
+          const isStandbyChanged = oldStandby > 0 && newStandby > 0 && oldStandby !== newStandby;
+          const isFuelOrderChanged = oldFuelOrder > 0 && newFuelOrder > 0 && oldFuelOrder !== newFuelOrder;
+          const isFuelChanged = isStandbyChanged || isFuelOrderChanged;
 
           // Báo tin khi đổi tàu bay
-          const triggerAcRegChanged = (oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
-                                       (String(oldOrder.ac_reg).trim() !== cleanACREG)) && notifyAcRegChanged;
+          const isAcRegChanged = oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
+                                 (String(oldOrder.ac_reg).trim() !== cleanACREG);
 
-          // Báo tin khi đổi vị trí đỗ
+          // Áp dụng bộ lọc tắt/bật thông báo từ settings của Khầy
+          const triggerNewStandby = isNewStandby && notifyNewStandby;
+          const triggerNewFuelOrder = isNewFuelOrder && notifyNewFuelOrder;
+          const triggerStandbyChanged = isStandbyChanged && notifyStandbyChanged;
+          const triggerFuelOrderChanged = isFuelOrderChanged && notifyFuelOrderChanged;
+          const triggerAcRegChanged = isAcRegChanged && notifyAcRegChanged;
           const triggerGateChanged = isGateChanged && notifyGateChanged;
-
-          // Báo tin khi đổi giờ bay (ETD)
           const triggerEtdChanged = isEtdChanged && notifyEtdChanged;
 
           // Nhận diện lần quét đầu tiên khi import lịch trực: nếu oldOrder chưa tồn tại trong DB, không bắn thông báo Zalo
