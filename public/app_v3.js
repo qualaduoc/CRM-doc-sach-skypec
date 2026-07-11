@@ -670,6 +670,17 @@ function setupEventListeners() {
   document.getElementById('skyeyes-template-presets').addEventListener('change', handleSkyEyesPresetChange);
   document.getElementById('skyeyes-template-input').addEventListener('blur', handleSaveSkyEyesSettings);
 
+  // Đăng ký Auto-save cho các checkbox bộ lọc thông báo Zalo FMS
+  [
+    'skyeyes-notify-new-standby', 'skyeyes-notify-new-fuel-order', 
+    'skyeyes-notify-standby-changed', 'skyeyes-notify-fuel-order-changed', 
+    'skyeyes-notify-ac-reg-changed', 'skyeyes-notify-gate-changed', 
+    'skyeyes-notify-etd-changed'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', handleSaveSkyEyesSettings);
+  });
+
   // Lắng nghe sự kiện tìm kiếm và bộ lọc FMS
   const fmsSearchInput = document.getElementById('fms-search-input');
   if (fmsSearchInput) {
@@ -3070,9 +3081,21 @@ async function loadSkyEyesSettings() {
     });
     const data = await res.json();
     if (data.success && data.settings) {
-      const { targetGroupId, targetGroupName, notifyEnabled, messageTemplate } = data.settings;
+      const { 
+        targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
+        notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
+        notifyAcRegChanged, notifyGateChanged, notifyEtdChanged
+      } = data.settings;
       document.getElementById('skyeyes-notify-enabled').checked = notifyEnabled;
       document.getElementById('skyeyes-template-input').value = messageTemplate || '';
+      
+      document.getElementById('skyeyes-notify-new-standby').checked = notifyNewStandby !== false;
+      document.getElementById('skyeyes-notify-new-fuel-order').checked = notifyNewFuelOrder !== false;
+      document.getElementById('skyeyes-notify-standby-changed').checked = notifyStandbyChanged !== false;
+      document.getElementById('skyeyes-notify-fuel-order-changed').checked = notifyFuelOrderChanged !== false;
+      document.getElementById('skyeyes-notify-ac-reg-changed').checked = notifyAcRegChanged !== false;
+      document.getElementById('skyeyes-notify-gate-changed').checked = notifyGateChanged !== false;
+      document.getElementById('skyeyes-notify-etd-changed').checked = notifyEtdChanged !== false;
       
       // Lưu lại các giá trị nhóm đã chọn để khi load group list sẽ check
       window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',').map(id => id.trim()) : [];
@@ -3103,6 +3126,14 @@ function updateSkyEyesGroupsDisplayText(namesStr) {
 async function handleSaveSkyEyesSettings() {
   const notifyEnabled = document.getElementById('skyeyes-notify-enabled').checked;
   const messageTemplate = document.getElementById('skyeyes-template-input').value;
+
+  const notifyNewStandby = document.getElementById('skyeyes-notify-new-standby').checked;
+  const notifyNewFuelOrder = document.getElementById('skyeyes-notify-new-fuel-order').checked;
+  const notifyStandbyChanged = document.getElementById('skyeyes-notify-standby-changed').checked;
+  const notifyFuelOrderChanged = document.getElementById('skyeyes-notify-fuel-order-changed').checked;
+  const notifyAcRegChanged = document.getElementById('skyeyes-notify-ac-reg-changed').checked;
+  const notifyGateChanged = document.getElementById('skyeyes-notify-gate-changed').checked;
+  const notifyEtdChanged = document.getElementById('skyeyes-notify-etd-changed').checked;
   
   // Thu thập các ID và tên nhóm được tích chọn
   const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
@@ -3127,7 +3158,11 @@ async function handleSaveSkyEyesSettings() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${state.token}`
       },
-      body: JSON.stringify({ targetGroupId, targetGroupName, notifyEnabled, messageTemplate })
+      body: JSON.stringify({ 
+        targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
+        notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
+        notifyAcRegChanged, notifyGateChanged, notifyEtdChanged
+      })
     });
     const data = await res.json();
     if (data.success) {

@@ -2031,13 +2031,28 @@ app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     const notifyVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
     const templateVal = await db.get("SELECT value FROM settings WHERE key = 'zalo_message_template'");
 
+    const nStandby = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_new_standby'");
+    const nFuel = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_new_fuel_order'");
+    const nStandbyChg = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_standby_changed'");
+    const nFuelChg = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_fuel_order_changed'");
+    const nAc = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_ac_reg_changed'");
+    const nGate = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_gate_changed'");
+    const nEtd = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_etd_changed'");
+
     res.json({
       success: true,
       settings: {
         targetGroupId: groupVal ? groupVal.value : '',
         targetGroupName: nameVal ? nameVal.value : '',
         notifyEnabled: notifyVal ? (notifyVal.value === 'true') : false,
-        messageTemplate: templateVal ? templateVal.value : ''
+        messageTemplate: templateVal ? templateVal.value : '',
+        notifyNewStandby: nStandby ? (nStandby.value === 'true') : true,
+        notifyNewFuelOrder: nFuel ? (nFuel.value === 'true') : true,
+        notifyStandbyChanged: nStandbyChg ? (nStandbyChg.value === 'true') : true,
+        notifyFuelOrderChanged: nFuelChg ? (nFuelChg.value === 'true') : true,
+        notifyAcRegChanged: nAc ? (nAc.value === 'true') : true,
+        notifyGateChanged: nGate ? (nGate.value === 'true') : true,
+        notifyEtdChanged: nEtd ? (nEtd.value === 'true') : true
       }
     });
   } catch (err) {
@@ -2050,13 +2065,25 @@ app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
-  const { targetGroupId, targetGroupName, notifyEnabled, messageTemplate } = req.body;
+  const { 
+    targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
+    notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
+    notifyAcRegChanged, notifyGateChanged, notifyEtdChanged
+  } = req.body;
   try {
     const db = await getDb();
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_target_group_id', ?)", targetGroupId ? String(targetGroupId).trim() : '');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_target_group_name', ?)", targetGroupName ? String(targetGroupName).trim() : '');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_notify_enabled', ?)", notifyEnabled ? 'true' : 'false');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('zalo_message_template', ?)", messageTemplate ? String(messageTemplate) : '');
+
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_new_standby', ?)", notifyNewStandby ? 'true' : 'false');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_new_fuel_order', ?)", notifyNewFuelOrder ? 'true' : 'false');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_standby_changed', ?)", notifyStandbyChanged ? 'true' : 'false');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_fuel_order_changed', ?)", notifyFuelOrderChanged ? 'true' : 'false');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_ac_reg_changed', ?)", notifyAcRegChanged ? 'true' : 'false');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_gate_changed', ?)", notifyGateChanged ? 'true' : 'false');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_etd_changed', ?)", notifyEtdChanged ? 'true' : 'false');
 
     res.json({ success: true, message: 'Đã lưu cấu hình trợ lý SkyEyes thành công!' });
   } catch (err) {

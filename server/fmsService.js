@@ -428,6 +428,23 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       log('Sử dụng cookie FMS hợp lệ từ Database/Cache bộ nhớ.');
     }
 
+    // Đọc cấu hình tắt/bật cho từng loại thông báo từ DB
+    const nStandby = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_new_standby'");
+    const nFuel = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_new_fuel_order'");
+    const nStandbyChg = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_standby_changed'");
+    const nFuelChg = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_fuel_order_changed'");
+    const nAc = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_ac_reg_changed'");
+    const nGate = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_gate_changed'");
+    const nEtd = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_etd_changed'");
+
+    const notifyNewStandby = nStandby ? (nStandby.value === 'true') : true;
+    const notifyNewFuelOrder = nFuel ? (nFuel.value === 'true') : true;
+    const notifyStandbyChanged = nStandbyChg ? (nStandbyChg.value === 'true') : true;
+    const notifyFuelOrderChanged = nFuelChg ? (nFuelChg.value === 'true') : true;
+    const notifyAcRegChanged = nAc ? (nAc.value === 'true') : true;
+    const notifyGateChanged = nGate ? (nGate.value === 'true') : true;
+    const notifyEtdChanged = nEtd ? (nEtd.value === 'true') : true;
+
     for (const targetDate of targetDates) {
       // Lấy danh sách các chuyến bay cần theo dõi của ngày đang xét theo ngày bay thực tế FMS (fms_date)
       const schedules = await db.all('SELECT DISTINCT flight_no, time_fuel, time_dep, time_arr FROM fms_schedules WHERE COALESCE(fms_date, date) = ?', targetDate);
@@ -550,35 +567,40 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const isEtdChanged = oldOrder && oldEtd && newEtd && (oldEtd.trim() !== newEtd.trim());
 
           // Báo tin khi mới xuất hiện standby_fuel lần đầu
-          const isNewStandby = newStandby > 0 && oldStandby <= 0;
+          const triggerNewStandby = (newStandby > 0 && oldStandby <= 0) && notifyNewStandby;
           // Báo tin khi mới xuất hiện fuel_order lần đầu
-          const isNewFuelOrder = newFuelOrder > 0 && oldFuelOrder <= 0;
+          const triggerNewFuelOrder = (newFuelOrder > 0 && oldFuelOrder <= 0) && notifyNewFuelOrder;
           
           // Kiểm tra thay đổi trị số khi đã có dữ liệu từ trước
-          const isStandbyChanged = oldStandby > 0 && newStandby > 0 && oldStandby !== newStandby;
-          const isFuelOrderChanged = oldFuelOrder > 0 && newFuelOrder > 0 && oldFuelOrder !== newFuelOrder;
-          const isFuelChanged = isStandbyChanged || isFuelOrderChanged;
+          const triggerStandbyChanged = (oldStandby > 0 && newStandby > 0 && oldStandby !== newStandby) && notifyStandbyChanged;
+          const triggerFuelOrderChanged = (oldFuelOrder > 0 && newFuelOrder > 0 && oldFuelOrder !== newFuelOrder) && notifyFuelOrderChanged;
 
           // Báo tin khi đổi tàu bay
-          const isAcRegChanged = oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
-                                 (String(oldOrder.ac_reg).trim() !== cleanACREG);
+          const triggerAcRegChanged = (oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
+                                       (String(oldOrder.ac_reg).trim() !== cleanACREG)) && notifyAcRegChanged;
+
+          // Báo tin khi đổi vị trí đỗ
+          const triggerGateChanged = isGateChanged && notifyGateChanged;
+
+          // Báo tin khi đổi giờ bay (ETD)
+          const triggerEtdChanged = isEtdChanged && notifyEtdChanged;
 
           // Nhận diện lần quét đầu tiên khi import lịch trực: nếu oldOrder chưa tồn tại trong DB, không bắn thông báo Zalo
-          const shouldNotify = oldOrder ? (isNewStandby || isNewFuelOrder || isFuelChanged || isAcRegChanged || isGateChanged || isEtdChanged) : false;
+          const shouldNotify = oldOrder ? (triggerNewStandby || triggerNewFuelOrder || triggerStandbyChanged || triggerFuelOrderChanged || triggerAcRegChanged || triggerGateChanged || triggerEtdChanged) : false;
 
           if (shouldNotify) {
             let title = '🔔 [FMS BÁO TẢI DẦU MỚI]';
-            if (isNewStandby && !isNewFuelOrder) {
+            if (triggerNewStandby && !triggerNewFuelOrder) {
               title = '🔔 [FMS BÁO TẢI DẦU STANDBY MỚI]';
-            } else if (isNewFuelOrder) {
+            } else if (triggerNewFuelOrder) {
               title = '⛽ [FMS BÁO TẢI DẦU CHÍNH THỨC MỚI]';
-            } else if (isFuelChanged) {
+            } else if (triggerStandbyChanged || triggerFuelOrderChanged) {
               title = '🔄 [FMS CẬP NHẬT SỐ LIỆU TẢI DẦU]';
-            } else if (isAcRegChanged) {
+            } else if (triggerAcRegChanged) {
               title = '🛩️ [FMS CẢNH BÁO THAY ĐỔI TÀU BAY]';
-            } else if (isGateChanged) {
+            } else if (triggerGateChanged) {
               title = '📍 [FMS CẢNH BÁO THAY ĐỔI VỊ TRÍ ĐỖ]';
-            } else if (isEtdChanged) {
+            } else if (triggerEtdChanged) {
               title = '🔄 [FMS THAY ĐỔI THÔNG TIN CHUYẾN BAY]';
             }
             
