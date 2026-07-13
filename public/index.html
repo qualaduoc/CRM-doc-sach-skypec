@@ -288,9 +288,14 @@
 
             <!-- Widget theo dõi Tạm nhập - Tái xuất tàu bay trong ngày -->
             <div id="fms-import-export-widget" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; margin-top: 15px; border-color: rgba(56, 189, 248, 0.25);">
-              <h4 style="margin: 0; font-size: 1.02rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
-                <i class="fa-solid fa-plane-circle-exclamation"></i> Giám Sát Tạm Nhập - Tái Xuất
-              </h4>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4 style="margin: 0; font-size: 1.02rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-plane-circle-exclamation"></i> Giám Sát Tạm Nhập - Tái Xuất
+                </h4>
+                <button id="btn-fms-test-import-export" class="btn-glow" style="margin-top: 0; padding: 4px 10px; font-size: 0.75rem; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border: none;">
+                  <i class="fa-solid fa-vial"></i> Test Giả Lập
+                </button>
+              </div>
               <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
                 Danh sách tàu bay nội địa bị đổi tàu (đã nạp dầu) và chuyến bay quốc tế phát hiện trong ngày hôm nay:
               </p>

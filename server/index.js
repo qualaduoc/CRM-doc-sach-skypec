@@ -2821,6 +2821,57 @@ app.post('/api/fms/temp-import-exports/confirm', authenticateToken, async (req, 
   }
 });
 
+// API giả lập tình huống test Tạm nhập - Tái xuất
+app.post('/api/fms/temp-import-exports/test', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  }
+
+  const todayDb = getVietnamDbDateStr();
+  const testAcReg = 'VNA-TEST';
+  const oldFlight = 'VN161';
+  const oldRoute = 'HAN-DAD';
+  const fuelOrder = 8500;
+  const newFlight = 'VN416';
+  const newRoute = 'HAN-ICN';
+
+  try {
+    const db = await getDb();
+    
+    // Xóa bản ghi test cũ của ngày hôm nay nếu có để tránh trùng lặp
+    await db.run("DELETE FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ?", testAcReg, todayDb);
+
+    // 1. Thêm bản ghi mới ở trạng thái đã phát hiện bay quốc tế nhưng chưa xử lý (is_warned = 1)
+    await db.run(`
+      INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, new_flight_no, new_route, is_warned)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `, testAcReg, oldFlight, oldRoute, fuelOrder, todayDb, newFlight, newRoute);
+
+    // 2. Gửi tin nhắn Zalo cảnh báo khẩn cấp
+    const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+    const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
+    const targetGroupId = groupSetting ? groupSetting.value : null;
+
+    if (isSkyOneEnabled && targetGroupId) {
+      const msg = `⚠️ [CẢNH BÁO GIẢ LẬP TEST: TẠM NHẬP - TÁI XUẤT TÀU BAY]
+Tàu bay ${testAcReg} đã nạp ${fuelOrder.toLocaleString()} kg dầu cho chuyến bay nội địa ${oldFlight} (${oldRoute}) nhưng bị đổi tàu.
+Hiện tại, tàu ${testAcReg} đang được phân công bay chuyến bay Quốc tế ${newFlight} (${newRoute}).
+Yêu cầu Điều hành & Kế toán kiểm tra hóa đơn ngay lập tức!
+📢 Giờ cảnh báo giả lập: ${getVietnamDateTimeStr()}`;
+
+      const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+      for (const id of groupIds) {
+        await sendSkyEyesMessage(id, msg, []).catch(e => console.error('[Test Alert Zalo Error]', e.message));
+      }
+    }
+
+    res.json({ success: true, message: 'Đã tạo tình huống giả lập test Tạm nhập - Tái xuất thành công và gửi tin Zalo cảnh báo!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Tiến trình tự động cảnh báo Zalo nếu bắt đầu ca trực mới mà chưa import lịch trực mới
 function startScheduleWarningWorker() {
   console.log('[Scheduler] Đã kích hoạt tiến trình kiểm tra thiếu lịch trực tự động.');

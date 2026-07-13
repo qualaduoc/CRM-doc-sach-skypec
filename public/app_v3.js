@@ -503,6 +503,31 @@ function setupEventListeners() {
   // Quét FMS ngay lập tức
   document.getElementById('btn-fms-sync-now').addEventListener('click', handleSyncFmsNow);
 
+  // Sự kiện chạy test giả lập Tạm nhập - Tái xuất
+  const testBtn = document.getElementById('btn-fms-test-import-export');
+  if (testBtn) {
+    testBtn.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/fms/temp-import-exports/test', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.token}`
+          }
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message, 'success', 'Thành công');
+          fetchTempImportExportData();
+        } else {
+          showToast(data.error, 'error', 'Thất bại');
+        }
+      } catch (err) {
+        showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi kết nối');
+      }
+    });
+  }
+
   // Xuất lịch trực ra file Excel mẫu chuẩn
   document.getElementById('btn-fms-export-excel').addEventListener('click', exportFmsScheduleToExcel);
 
