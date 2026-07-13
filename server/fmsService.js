@@ -674,19 +674,25 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             const oldAcRegToTrack = String(oldOrder.ac_reg).trim().toUpperCase();
             const routeStr = `${flt.DEP_AP_SCHED || ''}-${flt.ARR_AP_SCHED || ''}`;
             if (oldAcRegToTrack && isDomesticRoute(routeStr)) {
-              const fuelToTrack = parseInt(oldOrder.fuel_order) || parseInt(oldOrder.standby_fuel) || 0;
-              if (fuelToTrack > 0) {
+              // Lấy số liệu nạp dầu thực tế từ Skypec Live thay vì số liệu dự kiến của VNA
+              const liveFlight = await db.get(
+                "SELECT fuel_order, status FROM fms_flights_live WHERE UPPER(flight_no) = UPPER(?) AND date = ?",
+                cleanFltNo, targetDate
+              );
+              const liveFuel = liveFlight ? (parseInt(liveFlight.fuel_order) || 0) : 0;
+
+              if (liveFuel > 0) {
                 // Kiểm tra xem tàu này đã được ghi nhận đổi trong ngày chưa (tránh lặp)
                 const exists = await db.get(
                   "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ?",
                   oldAcRegToTrack, targetDate, cleanFltNo
                 );
                 if (!exists) {
-                  log(`[Tạm nhập - Tái xuất] Đổi tàu Nội địa: Tàu ${oldAcRegToTrack} đã nạp ${fuelToTrack} kg dầu cho chuyến ${cleanFltNo} (${routeStr}) nhưng bị đổi. Bắt đầu theo dõi.`);
+                  log(`[Tạm nhập - Tái xuất] Đổi tàu Nội địa: Tàu ${oldAcRegToTrack} thực tế đã nạp ${liveFuel} kg dầu Skypec cho chuyến ${cleanFltNo} (${routeStr}) nhưng bị đổi. Bắt đầu theo dõi.`);
                   await db.run(`
                     INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date)
                     VALUES (?, ?, ?, ?, ?)
-                  `, oldAcRegToTrack, cleanFltNo, routeStr, fuelToTrack, targetDate);
+                  `, oldAcRegToTrack, cleanFltNo, routeStr, liveFuel, targetDate);
                 }
               }
             }
