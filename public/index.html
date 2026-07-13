@@ -211,6 +211,18 @@
 
       <!-- TAB CONTENT 2: THEO DÕI TẢI DẦU FMS -->
       <div id="tab-fms" class="admin-tab-content" style="display: none;">
+        
+        <!-- Banner cảnh báo Tạm nhập - Tái xuất tàu bay khẩn cấp -->
+        <div id="fms-import-export-alert-banner" class="blink-orange-bg" style="display: none; padding: 12px 20px; border-radius: 8px; border: 1px solid rgba(251, 146, 60, 0.4); margin-bottom: 20px; align-items: center; justify-content: space-between; gap: 15px; font-weight: bold;">
+          <div style="display: flex; align-items: center; gap: 10px; color: #fb923c; font-size: 0.95rem;">
+            <i class="fa-solid fa-triangle-exclamation fa-fade" style="font-size: 1.2rem;"></i>
+            <span id="fms-import-export-alert-text">Cảnh báo Tạm nhập - Tái xuất: Phát hiện tàu bay đang bay quốc tế nhưng chưa xử lý hóa đơn!</span>
+          </div>
+          <button onclick="scrollToImportExportWidget()" style="padding: 6px 12px; border-radius: 4px; border: none; background: #fb923c; color: #000; font-weight: bold; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; box-shadow: 0 0 8px rgba(251, 146, 96, 0.4);">
+            Xem chi tiết
+          </button>
+        </div>
+
         <div class="fms-layout" style="display: grid; grid-template-columns: 350px 1fr; gap: 20px;">
           
           <!-- Bên trái: Nhập lịch bay -->
@@ -271,6 +283,35 @@
               </p>
               <div id="unmapped-crews-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
                 <span style="font-size: 0.82rem; color: var(--text-muted); font-style: italic;">Đang tải dữ liệu...</span>
+              </div>
+            </div>
+
+            <!-- Widget theo dõi Tạm nhập - Tái xuất tàu bay trong ngày -->
+            <div id="fms-import-export-widget" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; margin-top: 15px; border-color: rgba(56, 189, 248, 0.25);">
+              <h4 style="margin: 0; font-size: 1.02rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-plane-circle-exclamation"></i> Giám Sát Tạm Nhập - Tái Xuất
+              </h4>
+              <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                Danh sách tàu bay nội địa bị đổi tàu (đã nạp dầu) và chuyến bay quốc tế phát hiện trong ngày hôm nay:
+              </p>
+              <div id="fms-import-export-container" style="overflow-x: auto; max-height: 250px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
+                  <thead>
+                    <tr style="border-bottom: 1px solid var(--border); color: var(--primary);">
+                      <th style="padding: 6px 4px;">Tàu bay</th>
+                      <th style="padding: 6px 4px;">Nội địa (Dầu)</th>
+                      <th style="padding: 6px 4px;">Quốc tế</th>
+                      <th style="padding: 6px 4px; text-align: center;">T.thái</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fms-import-export-body">
+                    <tr>
+                      <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 15px 0;">
+                        Không có tàu bay nào cần theo dõi trong ngày.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 

@@ -2778,6 +2778,49 @@ app.delete('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   }
 });
 
+// API lấy danh sách tàu bay giám sát Tạm nhập - Tái xuất trong ngày (Admin hoặc có quyền FMS/Zalo)
+app.get('/api/fms/temp-import-exports', authenticateToken, async (req, res) => {
+  const { date } = req.query;
+  const targetDate = date ? String(date).trim() : new Date().toISOString().split('T')[0];
+
+  try {
+    const db = await getDb();
+    const rows = await db.all(
+      "SELECT * FROM fms_temp_import_exports WHERE date = ? ORDER BY id DESC",
+      targetDate
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API xác nhận đã xử lý hóa đơn hoặc xóa theo dõi cho một bản ghi Tạm nhập - Tái xuất
+app.post('/api/fms/temp-import-exports/confirm', authenticateToken, async (req, res) => {
+  const { id, action } = req.body; // action: 'confirm' hoặc 'delete'
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp mã định danh ID!' });
+  }
+
+  try {
+    const db = await getDb();
+    if (action === 'confirm') {
+      // Đánh dấu là đã xử lý/xác nhận (is_warned = 2)
+      await db.run(
+        "UPDATE fms_temp_import_exports SET is_warned = 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        id
+      );
+      res.json({ success: true, message: 'Đã xác nhận hoàn thành xử lý hóa đơn Tạm nhập - Tái xuất!' });
+    } else {
+      // Xóa hẳn bản ghi khỏi database
+      await db.run("DELETE FROM fms_temp_import_exports WHERE id = ?", id);
+      res.json({ success: true, message: 'Đã xóa bản ghi theo dõi thành công!' });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Tiến trình tự động cảnh báo Zalo nếu bắt đầu ca trực mới mà chưa import lịch trực mới
 function startScheduleWarningWorker() {
   console.log('[Scheduler] Đã kích hoạt tiến trình kiểm tra thiếu lịch trực tự động.');

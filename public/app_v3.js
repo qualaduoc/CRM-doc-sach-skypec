@@ -1793,6 +1793,8 @@ async function loadFmsSchedules(isSilent = false) {
     }
     // Tải danh sách nhân sự chưa liên kết Zalo
     fetchUnmappedCrews();
+    // Tải dữ liệu Tạm nhập - Tái xuất tàu bay
+    fetchTempImportExportData();
 
   } catch (err) {
     if (!isSilent) {
@@ -1820,6 +1822,133 @@ function updateFmsCrewFilter(rows) {
 
   crewSelect.innerHTML = html;
 }
+
+// Cuộn màn hình xuống widget Tạm nhập - Tái xuất
+function scrollToImportExportWidget() {
+  const widget = document.getElementById('fms-import-export-widget');
+  if (widget) {
+    widget.scrollIntoView({ behavior: 'smooth' });
+    // Thêm hiệu ứng nhấp nháy cho viền của widget để dễ nhận diện
+    widget.style.borderColor = '#fb923c';
+    setTimeout(() => {
+      widget.style.borderColor = 'rgba(56, 189, 248, 0.25)';
+    }, 2000);
+  }
+}
+window.scrollToImportExportWidget = scrollToImportExportWidget;
+
+// Tải dữ liệu Tạm nhập - Tái xuất tàu bay
+async function fetchTempImportExportData() {
+  try {
+    const filterInput = document.getElementById('fms-filter-date');
+    const selectedDate = filterInput ? filterInput.value : '';
+    
+    const res = await fetch(`/api/fms/temp-import-exports?date=${selectedDate}`, {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) return;
+    
+    const rows = data.data || [];
+    const tbody = document.getElementById('fms-import-export-body');
+    const banner = document.getElementById('fms-import-export-alert-banner');
+    const alertText = document.getElementById('fms-import-export-alert-text');
+    
+    if (!tbody) return;
+    
+    // 1. Kiểm tra xem có bản ghi nào bị cảnh báo Quốc tế mà chưa xác nhận (is_warned = 1)
+    const activeAlert = rows.find(r => r.is_warned === 1);
+    if (activeAlert && banner && alertText) {
+      alertText.textContent = `Cảnh báo Tạm nhập - Tái xuất: Tàu ${activeAlert.ac_reg} (đã nạp ${activeAlert.fuel_order.toLocaleString()} kg dầu chuyến ${activeAlert.old_flight_no}) chuyển sang bay Quốc tế ${activeAlert.new_flight_no}!`;
+      banner.style.display = 'flex';
+    } else if (banner) {
+      banner.style.display = 'none';
+    }
+    
+    // 2. Render dữ liệu ra bảng
+    if (rows.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 15px 0;">
+            Không có tàu bay nào cần theo dõi trong ngày.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+    
+    tbody.innerHTML = rows.map(r => {
+      let statusBadge = '';
+      let actionBtn = '';
+      
+      if (r.is_warned === 0) {
+        statusBadge = `<span style="color: #38bdf8; font-weight: bold;"><i class="fa-solid fa-hourglass-half"></i> Đang theo dõi</span>`;
+        actionBtn = `<button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
+      } else if (r.is_warned === 1) {
+        statusBadge = `<span class="blink-red-text" style="font-weight: bold;"><i class="fa-solid fa-triangle-exclamation"></i> CẢNH BÁO</span>`;
+        actionBtn = `
+          <div style="display: flex; gap: 4px; justify-content: center;">
+            <button onclick="confirmTempImportExport(${r.id}, 'confirm')" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xác nhận</button>
+            <button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>
+          </div>
+        `;
+      } else {
+        statusBadge = `<span style="color: #34d399; font-weight: bold;"><i class="fa-solid fa-circle-check"></i> Đã xử lý</span>`;
+        actionBtn = `<button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
+      }
+      
+      const intlCol = r.new_flight_no ? `<span style="color: #fb923c; font-weight: bold;">✈️ ${r.new_flight_no}</span><br><span style="color: var(--text-muted); font-size: 0.75rem;">(${r.new_route})</span>` : `<span style="color: var(--text-muted); font-style: italic;">Chưa phát hiện</span>`;
+      
+      return `
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <td style="padding: 8px 4px; font-weight: bold; color: #fff;">${r.ac_reg}</td>
+          <td style="padding: 8px 4px;">
+            <span style="font-weight: 600; color: #38bdf8;">${r.old_flight_no}</span><br>
+            <span style="color: var(--text-muted); font-size: 0.75rem;">${r.old_route} (${parseInt(r.fuel_order).toLocaleString()} kg)</span>
+          </td>
+          <td style="padding: 8px 4px;">${intlCol}</td>
+          <td style="padding: 8px 4px; text-align: center; vertical-align: middle;">
+            ${statusBadge}
+            <div style="margin-top: 4px;">${actionBtn}</div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('[Frontend Tạm nhập] Lỗi tải dữ liệu:', err.message);
+  }
+}
+window.fetchTempImportExportData = fetchTempImportExportData;
+
+// Xác nhận hoàn thành xử lý hóa đơn hoặc xóa theo dõi
+async function confirmTempImportExport(id, action) {
+  const confirmMsg = action === 'confirm' 
+    ? 'Khầy có chắc chắn đã xử lý hóa đơn Tạm nhập - Tái xuất cho tàu bay này?'
+    : 'Khầy có chắc chắn muốn xóa theo dõi cho tàu bay này?';
+    
+  if (!confirm(confirmMsg)) return;
+  
+  try {
+    const res = await fetch('/api/fms/temp-import-exports/confirm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ id, action })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success', 'Thành công');
+      fetchTempImportExportData();
+    } else {
+      showToast(data.error, 'error', 'Thất bại');
+    }
+  } catch (e) {
+    showToast('Lỗi kết nối server: ' + e.message, 'error', 'Lỗi kết nối');
+  }
+}
+window.confirmTempImportExport = confirmTempImportExport;
 
 // Thực hiện lọc và vẽ lại bảng FMS
 function renderFmsTable() {

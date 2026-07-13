@@ -355,6 +355,86 @@ function convertDbDateToFmsDate(dbDateStr) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+const VN_DOMESTIC_AIRPORTS = ['HAN', 'SGN', 'DAD', 'CXR', 'HUI', 'PQC', 'VCA', 'HPH', 'VDO', 'BMV', 'UIH', 'PXU', 'VDH', 'DIN', 'TBB', 'THD', 'VCL', 'DLI', 'VCS', 'VKG', 'CAH'];
+
+function isDomesticRoute(routeStr) {
+  if (!routeStr) return false;
+  const cleanRoute = routeStr.toUpperCase().replace(/\s+/g, '');
+  const parts = cleanRoute.split('-');
+  if (parts.length !== 2) return false;
+  const [origin, dest] = parts;
+  
+  // HẠN-HAN hoặc bay thử nghiệm nội địa
+  if (origin === dest && VN_DOMESTIC_AIRPORTS.includes(origin)) return true;
+  
+  return VN_DOMESTIC_AIRPORTS.includes(origin) && VN_DOMESTIC_AIRPORTS.includes(dest);
+}
+
+// Kiểm tra cảnh báo Tạm nhập - Tái xuất tàu bay
+async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
+  try {
+    // 1. Lấy danh sách các tàu đang giám sát của ngày targetDate mà chưa cảnh báo
+    const trackingRows = await db.all(
+      "SELECT * FROM fms_temp_import_exports WHERE date = ? AND new_flight_no IS NULL",
+      targetDate
+    );
+    
+    if (trackingRows.length === 0) return;
+    
+    // Đọc cấu hình Zalo để gửi tin nhắn
+    const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+    const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
+    const targetGroupId = groupSetting ? groupSetting.value : null;
+
+    for (const track of trackingRows) {
+      const trackAcReg = String(track.ac_reg).trim().toUpperCase();
+      
+      // 2. Tìm chuyến bay Quốc tế của tàu này trong fmsFlights
+      const intlFlight = fmsFlights.find(f => {
+        if (!f.ACREG) return false;
+        const cleanAcReg = String(f.ACREG).trim().toUpperCase();
+        if (cleanAcReg !== trackAcReg) return false;
+        
+        // Kiểm tra xem có phải chặng bay quốc tế không
+        const route = `${f.DEP_AP_SCHED || ''}-${f.ARR_AP_SCHED || ''}`;
+        return !isDomesticRoute(route);
+      });
+      
+      if (intlFlight) {
+        const newFltNo = intlFlight.FLIGHTNO ? intlFlight.FLIGHTNO.toUpperCase().replace(/\s+/g, '') : '';
+        const newRoute = `${intlFlight.DEP_AP_SCHED || ''}-${intlFlight.ARR_AP_SCHED || ''}`;
+        
+        log(`[Tạm nhập - Tái xuất] PHÁT HIỆN TÀU BAY ${trackAcReg} BAY QUỐC TẾ ${newFltNo} (${newRoute})!`);
+        
+        // Cập nhật DB
+        await db.run(
+          "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          newFltNo, newRoute, track.id
+        );
+        
+        // Gửi tin nhắn Zalo cảnh báo khẩn cấp
+        if (isSkyOneEnabled && targetGroupId) {
+          const msg = `⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT TÀU BAY]
+Tàu bay ${trackAcReg} đã nạp ${parseInt(track.fuel_order).toLocaleString()} kg dầu cho chuyến bay nội địa ${track.old_flight_no} (${track.old_route}) nhưng bị đổi tàu.
+Hiện tại, tàu ${trackAcReg} đang được phân công bay chuyến bay Quốc tế ${newFltNo} (${newRoute}).
+Yêu cầu Điều hành & Kế toán kiểm tra hóa đơn ngay lập tức!
+📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
+
+          const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+          groupIds.forEach(id => {
+            sendSkyEyesMessage(id, msg, [])
+              .then(() => log(`[SkyOne] Đã gửi cảnh báo Tạm nhập - Tái xuất cho tàu ${trackAcReg} tới nhóm ${id} thành công!`))
+              .catch(err => console.error(`[SkyOne] Gửi cảnh báo Tạm nhập - Tái xuất tới nhóm ${id} thất bại:`, err.message));
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Tạm nhập - Tái xuất] Lỗi kiểm tra cảnh báo:', err.message);
+  }
+}
+
 let isSyncing = false;
 
 // Thực hiện đồng bộ hóa toàn bộ chuyến bay trong lịch trực từ FMS
@@ -381,6 +461,12 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       const deletedOrders = await db.run("DELETE FROM fms_fuel_orders WHERE flight_no LIKE '%_%' AND substr(flight_no, instr(flight_no, '_') + 1) < ?", todayDb);
       if (deletedOrders && deletedOrders.changes > 0) {
         log(`[Dọn dẹp DB] Đã xóa ${deletedOrders.changes} bản ghi tải dầu FMS cũ của các ngày trước.`);
+      }
+
+      // Xóa sạch toàn bộ dữ liệu Tạm nhập - Tái xuất cũ trước ngày hôm nay
+      const deletedTemp = await db.run("DELETE FROM fms_temp_import_exports WHERE date < ?", todayDb);
+      if (deletedTemp && deletedTemp.changes > 0) {
+        log(`[Dọn dẹp DB] Đã xóa ${deletedTemp.changes} bản ghi Tạm nhập - Tái xuất cũ của các ngày trước.`);
       }
     } catch (cleanupErr) {
       console.error('[Dọn dẹp DB] Lỗi khi dọn dẹp dữ liệu cũ:', cleanupErr.message);
@@ -521,6 +607,9 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       
       log(`[Ngày ${targetDate}] Đã tải danh sách chuyến bay từ FMS, tổng cộng ${fmsFlights.length} chuyến.`);
 
+      // Kiểm tra và cảnh báo Tạm nhập - Tái xuất tàu bay
+      await checkTempImportExportAlerts(db, targetDate, fmsFlights);
+
       // Lọc các chuyến bay khớp với lịch trực của ngày này
       const matchedFlights = fmsFlights.filter(f => {
         if (!f.FLIGHTNO) return false;
@@ -579,6 +668,29 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           // Báo tin khi đổi tàu bay
           const isAcRegChanged = oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
                                  (String(oldOrder.ac_reg).trim() !== cleanACREG);
+
+          // Cảnh báo Tạm nhập - Tái xuất: Phát hiện đổi tàu nội địa khi đã bơm dầu
+          if (isAcRegChanged) {
+            const oldAcRegToTrack = String(oldOrder.ac_reg).trim().toUpperCase();
+            const routeStr = `${flt.DEP_AP_SCHED || ''}-${flt.ARR_AP_SCHED || ''}`;
+            if (oldAcRegToTrack && isDomesticRoute(routeStr)) {
+              const fuelToTrack = parseInt(oldOrder.fuel_order) || parseInt(oldOrder.standby_fuel) || 0;
+              if (fuelToTrack > 0) {
+                // Kiểm tra xem tàu này đã được ghi nhận đổi trong ngày chưa (tránh lặp)
+                const exists = await db.get(
+                  "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ?",
+                  oldAcRegToTrack, targetDate, cleanFltNo
+                );
+                if (!exists) {
+                  log(`[Tạm nhập - Tái xuất] Đổi tàu Nội địa: Tàu ${oldAcRegToTrack} đã nạp ${fuelToTrack} kg dầu cho chuyến ${cleanFltNo} (${routeStr}) nhưng bị đổi. Bắt đầu theo dõi.`);
+                  await db.run(`
+                    INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date)
+                    VALUES (?, ?, ?, ?, ?)
+                  `, oldAcRegToTrack, cleanFltNo, routeStr, fuelToTrack, targetDate);
+                }
+              }
+            }
+          }
 
           // Áp dụng bộ lọc tắt/bật thông báo từ settings của Khầy
           const triggerNewStandby = isNewStandby && notifyNewStandby;

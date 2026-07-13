@@ -143,6 +143,20 @@ async function getDb() {
       UNIQUE(flight_no, date)
     );
 
+    CREATE TABLE IF NOT EXISTS fms_temp_import_exports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ac_reg TEXT NOT NULL,
+      old_flight_no TEXT NOT NULL,
+      old_route TEXT NOT NULL,
+      fuel_order INTEGER DEFAULT 0,
+      date TEXT NOT NULL,
+      new_flight_no TEXT DEFAULT NULL,
+      new_route TEXT DEFAULT NULL,
+      is_warned INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
   `);
 
