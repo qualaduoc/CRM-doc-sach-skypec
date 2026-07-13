@@ -1543,5 +1543,6 @@ module.exports = {
   syncFmsSkypecLive,
   syncFmsSkypecHistory,
   startFmsWorker,
-  getVietnamDbDateStr
+  getVietnamDbDateStr,
+  getVietnamDateTimeStr
 };
