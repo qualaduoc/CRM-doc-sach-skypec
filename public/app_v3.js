@@ -2108,9 +2108,9 @@ function renderFmsTable() {
         </div>
         <div style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
           ${crews.map(c => `
-            <div class="crew-notify-badge" style="background: rgba(30, 41, 59, 0.65); border: 1px solid rgba(56, 189, 248, 0.25); padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.82rem;">
-              <span style="font-weight: bold; color: #38bdf8;">👥 ${c.crewName} ${c.truckNo !== '-' ? `(Xe: ${c.truckNo})` : ''}</span>
-              <select class="fms-crew-notify-select" data-crew="${c.crewName}" data-date="${c.date || ''}" data-original-val="${c.notifyType}" style="font-size: 0.75rem; padding: 2px 4px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white; cursor: pointer; outline: none;">
+            <div class="crew-notify-badge" style="background: rgba(0, 114, 151, 0.08); border: 1px solid rgba(0, 114, 151, 0.18); padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.82rem;">
+              <span style="font-weight: bold; color: var(--primary);">👥 ${c.crewName} ${c.truckNo !== '-' ? `(Xe: ${c.truckNo})` : ''}</span>
+              <select class="fms-crew-notify-select" data-crew="${c.crewName}" data-date="${c.date || ''}" data-original-val="${c.notifyType}" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); cursor: pointer; outline: none;">
                 <option value="1" ${c.notifyType == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
                 <option value="2" ${c.notifyType == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
                 <option value="3" ${c.notifyType == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>

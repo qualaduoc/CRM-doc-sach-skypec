@@ -244,24 +244,24 @@
               <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
             </h4>
             <div style="display: flex; align-items: center; gap: 10px;">
-              <input type="date" id="fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.85rem; font-weight: bold; cursor: pointer;">
-              <button id="btn-fms-sync-now" class="btn-secondary" style="border-color: rgba(52, 211, 153, 0.3); color: #34d399; padding: 6px 12px; font-size: 0.85rem; margin-top: 0;">
+              <input type="date" id="fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
+              <button id="btn-fms-sync-now" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: var(--success); padding: 6px 12px; font-size: 0.85rem; margin-top: 0;">
                 <i class="fa-solid fa-rotate"></i> Quét FMS Ngay
               </button>
-              <button id="btn-fms-export-excel" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: #10b981; padding: 6px 12px; font-size: 0.85rem; margin-top: 0; margin-left: 8px;">
+              <button id="btn-fms-export-excel" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: var(--success); padding: 6px 12px; font-size: 0.85rem; margin-top: 0; margin-left: 8px;">
                 <i class="fa-solid fa-file-excel"></i> Xuất Excel Lịch Trực
               </button>
             </div>
           </div>
 
           <!-- Bộ lọc và tìm kiếm nhanh FMS -->
-          <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px; margin-bottom: 10px;">
+          <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(0, 114, 151, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); margin-top: 10px; margin-bottom: 10px;">
             <div style="flex: 1; min-width: 250px; position: relative;">
               <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
-              <input type="text" id="fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
+              <input type="text" id="fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
             </div>
             <div style="width: 220px; min-width: 180px;">
-              <select id="fms-crew-filter" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; cursor: pointer; outline: none; box-sizing: border-box;">
+              <select id="fms-crew-filter" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; cursor: pointer; outline: none; box-sizing: border-box;">
                 <option value="">-- Tất cả Cặp tra nạp --</option>
               </select>
             </div>
@@ -497,14 +497,14 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             <h4 style="margin: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 10px;">
               <i class="fa-solid fa-file-import"></i> Nhập Lịch Bay Trực Ca
             </h4>
-            <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px; background: rgba(0,0,0,0.15); border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px;">
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px; background: rgba(0, 114, 151, 0.03); border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); margin-bottom: 8px;">
               <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="fms-schedule-date" style="font-size: 0.8rem; font-weight: bold; color: var(--primary);">📅 Chọn ngày trực:</label>
-                <input type="date" id="fms-schedule-date" style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; outline: none; font-size: 0.9rem;">
+                <label for="fms-schedule-date" style="font-size: 0.85rem; font-weight: bold; color: var(--primary);">📅 Chọn ngày trực:</label>
+                <input type="date" id="fms-schedule-date" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); outline: none; font-size: 0.9rem;">
               </div>
               <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="fms-filter-shift" style="font-size: 0.8rem; font-weight: bold; color: var(--warning);">⏰ Chọn ca trực:</label>
-                <select id="fms-filter-shift" style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: #131d35; color: #fff; outline: none; font-size: 0.9rem; cursor: pointer;">
+                <label for="fms-filter-shift" style="font-size: 0.85rem; font-weight: bold; color: var(--warning);">⏰ Chọn ca trực:</label>
+                <select id="fms-filter-shift" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); outline: none; font-size: 0.9rem; cursor: pointer;">
                   <option value="all" selected>Tất cả cả ngày</option>
                   <option value="day">Ca ngày (07:30 - 19:30)</option>
                   <option value="evening">Ca tối (19:30 - 23:59)</option>
@@ -533,7 +533,7 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
               Copy-paste lịch trực hôm nay.<br>
               <strong>Định dạng:</strong> <code>VN343: Đạt - Hưng</code>
             </p>
-            <textarea id="fms-schedule-input" placeholder="VN343: Đạt - Hưng&#10;VN1603: Thùy - Được" style="width: 100%; height: 120px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; font-family: monospace; font-size: 0.9rem; line-height: 1.5; resize: none;"></textarea>
+            <textarea id="fms-schedule-input" placeholder="VN343: Đạt - Hưng&#10;VN1603: Thùy - Được" style="width: 100%; height: 120px; padding: 10px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-family: monospace; font-size: 0.9rem; line-height: 1.5; resize: none;"></textarea>
             <button id="btn-fms-save-schedule" class="btn-glow" style="margin-top: 0; width: 100%;">
               <i class="fa-solid fa-floppy-disk"></i> Lưu Lịch Dán Thủ Công
             </button>
@@ -685,15 +685,15 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
           </h4>
           <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="date" id="user-fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.85rem; font-weight: bold; cursor: pointer;">
+            <input type="date" id="user-fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
           </div>
         </div>
 
         <!-- Bộ lọc và tìm kiếm nhanh FMS -->
-        <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px; margin-bottom: 10px;">
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(0, 114, 151, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); margin-top: 10px; margin-bottom: 10px;">
           <div style="flex: 1; min-width: 250px; position: relative;">
             <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
-            <input type="text" id="user-fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
+            <input type="text" id="user-fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
           </div>
         </div>
         
@@ -738,29 +738,29 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
         </h4>
         
         <div style="display: flex; flex-direction: column; gap: 10px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
-            <span style="color: var(--text-muted);">Trạng thái kết nối Bot:</span>
-            <strong id="skyeyes-bot-status" style="color: #ef4444;"><i class="fa-solid fa-circle-xmark"></i> Chưa kết nối</strong>
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; background: #ffffff; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.18);">
+            <span style="color: var(--text-muted); font-weight: 500;">Trạng thái kết nối Bot:</span>
+            <strong id="skyeyes-bot-status" style="color: var(--danger);"><i class="fa-solid fa-circle-xmark"></i> Chưa kết nối</strong>
           </div>
           
           <!-- Khu vực hiển thị mã QR khi đăng nhập -->
-          <div id="skyeyes-qr-container" style="display: none; flex-direction: column; align-items: center; gap: 8px; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border);">
-            <img id="skyeyes-qr-img" src="" alt="Zalo QR Login" style="width: 150px; height: 150px; border-radius: 6px; border: 3px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-            <span style="font-size: 0.78rem; color: #38bdf8; text-align: center; line-height: 1.4; font-weight: 500;">Mở ứng dụng Zalo trên điện thoại quét mã QR này để đăng nhập làm Bot</span>
+          <div id="skyeyes-qr-container" style="display: none; flex-direction: column; align-items: center; gap: 8px; padding: 15px; background: rgba(0, 114, 151, 0.03); border-radius: 8px; border: 1px dashed rgba(0, 114, 151, 0.22);">
+            <img id="skyeyes-qr-img" src="" alt="Zalo QR Login" style="width: 150px; height: 150px; border-radius: 6px; border: 3px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.15);">
+            <span style="font-size: 0.78rem; color: var(--primary); text-align: center; line-height: 1.4; font-weight: 600;">Mở ứng dụng Zalo trên điện thoại quét mã QR này để đăng nhập làm Bot</span>
           </div>
 
           <!-- Cài đặt nhóm nhận tin và bật/tắt thông báo -->
           <div id="skyeyes-settings-area" style="display: flex; flex-direction: column; gap: 12px; margin-top: 5px;">
             <div style="display: flex; flex-direction: column; gap: 5px; position: relative;">
-              <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Nhóm Zalo nhận thông báo FMS:</label>
-              <div id="skyeyes-groups-display" style="width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.88rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 38px; user-select: none; transition: border-color 0.2s;">
-                <span id="skyeyes-groups-display-text" style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">-- Bấm để chọn các nhóm --</span>
+              <label style="font-size: 0.85rem; font-weight: 600; color: var(--text);">Nhóm Zalo nhận thông báo FMS:</label>
+              <div id="skyeyes-groups-display" style="width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 38px; user-select: none; transition: border-color 0.2s;">
+                <span id="skyeyes-groups-display-text" style="color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">-- Bấm để chọn các nhóm --</span>
                 <i class="fa-solid fa-chevron-down" style="font-size: 0.8rem; color: var(--text-muted);"></i>
               </div>
-              <div id="skyeyes-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #131d35; border: 1px solid var(--border); border-radius: 6px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);">
-                <div style="padding: 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.02);">
+              <div id="skyeyes-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #ffffff; border: 1px solid rgba(0, 114, 151, 0.22); border-radius: 6px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 114, 151, 0.15);">
+                <div style="padding: 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; background: rgba(0, 114, 151, 0.02);">
                   <i class="fa-solid fa-magnifying-glass" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 4px;"></i>
-                  <input type="text" id="skyeyes-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.85rem; border: none; background: transparent; color: #fff; outline: none;">
+                  <input type="text" id="skyeyes-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.85rem; border: none; background: transparent; color: var(--text); outline: none;">
                 </div>
                 <div id="skyeyes-groups-list" style="overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 190px;">
                   <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Chưa tải danh sách nhóm</div>
@@ -768,60 +768,60 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
               </div>
             </div>
             
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px; background: rgba(56, 189, 248, 0.05); padding: 10px 12px; border-radius: 6px; border: 1px dashed rgba(56, 189, 248, 0.25);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px; background: rgba(0, 114, 151, 0.03); padding: 10px 12px; border-radius: 6px; border: 1px dashed rgba(0, 114, 151, 0.25);">
               <input type="checkbox" id="skyeyes-notify-enabled" style="cursor: pointer; width: 16px; height: 16px;">
-              <label for="skyeyes-notify-enabled" style="font-size: 0.88rem; color: #fff; cursor: pointer; user-select: none; font-weight: 500;">Bật tự động báo tin Zalo khi có đổi tàu/tải dầu/giờ bay</label>
+              <label for="skyeyes-notify-enabled" style="font-size: 0.88rem; color: var(--text); cursor: pointer; user-select: none; font-weight: bold;">Bật tự động báo tin Zalo khi có đổi tàu/tải dầu/giờ bay</label>
             </div>
             
             <!-- Bộ lọc chi tiết các loại thông báo -->
-            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; background: rgba(255, 255, 255, 0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
-              <label style="font-size: 0.85rem; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.18);">
+              <label style="font-size: 0.85rem; font-weight: 600; color: var(--primary); display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
                 <i class="fa-solid fa-filter"></i> Bộ lọc các loại thay đổi báo Zalo:
               </label>
               
-              <div style="display: grid; grid-template-columns: 1fr; gap: 8px; font-size: 0.8rem; color: #fff;">
+              <div style="display: grid; grid-template-columns: 1fr; gap: 8px; font-size: 0.82rem; color: var(--text);">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <input type="checkbox" id="skyeyes-notify-new-standby" style="cursor: pointer; width: 14px; height: 14px;">
-                  <label for="skyeyes-notify-new-standby" style="cursor: pointer; user-select: none;">Báo khi có Tải Standby mới</label>
+                  <label for="skyeyes-notify-new-standby" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi có Tải Standby mới</label>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <input type="checkbox" id="skyeyes-notify-new-fuel-order" style="cursor: pointer; width: 14px; height: 14px;">
-                  <label for="skyeyes-notify-new-fuel-order" style="cursor: pointer; user-select: none;">Báo khi có Tải Chính thức mới</label>
+                  <label for="skyeyes-notify-new-fuel-order" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi có Tải Chính thức mới</label>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <input type="checkbox" id="skyeyes-notify-standby-changed" style="cursor: pointer; width: 14px; height: 14px;">
-                  <label for="skyeyes-notify-standby-changed" style="cursor: pointer; user-select: none;">Báo khi Tải Standby thay đổi trị số</label>
+                  <label for="skyeyes-notify-standby-changed" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi Tải Standby thay đổi trị số</label>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <input type="checkbox" id="skyeyes-notify-fuel-order-changed" style="cursor: pointer; width: 14px; height: 14px;">
-                  <label for="skyeyes-notify-fuel-order-changed" style="cursor: pointer; user-select: none;">Báo khi Tải Chính thức thay đổi trị số</label>
+                  <label for="skyeyes-notify-fuel-order-changed" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi Tải Chính thức thay đổi trị số</label>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <input type="checkbox" id="skyeyes-notify-ac-reg-changed" style="cursor: pointer; width: 14px; height: 14px;">
-                  <label for="skyeyes-notify-ac-reg-changed" style="cursor: pointer; user-select: none;">Báo khi thay đổi Số hiệu tàu bay (Acreg)</label>
+                  <label for="skyeyes-notify-ac-reg-changed" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi thay đổi Số hiệu tàu bay (Acreg)</label>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <input type="checkbox" id="skyeyes-notify-gate-changed" style="cursor: pointer; width: 14px; height: 14px;">
-                  <label for="skyeyes-notify-gate-changed" style="cursor: pointer; user-select: none;">Báo khi thay đổi Bến đỗ (Vị trí đỗ)</label>
+                  <label for="skyeyes-notify-gate-changed" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi thay đổi Bến đỗ (Vị trí đỗ)</label>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <input type="checkbox" id="skyeyes-notify-etd-changed" style="cursor: pointer; width: 14px; height: 14px;">
-                  <label for="skyeyes-notify-etd-changed" style="cursor: pointer; user-select: none;">Báo khi thay đổi Giờ bay (ETD)</label>
+                  <label for="skyeyes-notify-etd-changed" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi thay đổi Giờ bay (ETD)</label>
                 </div>
               </div>
             </div>
 
             <!-- Cấu hình thời gian giám sát Tạm nhập - Tái xuất -->
-            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; background: rgba(56, 189, 248, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.2);">
-              <label style="font-size: 0.85rem; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.18);">
+              <label style="font-size: 0.85rem; font-weight: 600; color: var(--primary); display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
                 <i class="fa-solid fa-clock"></i> Thời gian giám sát Tạm nhập - Tái xuất:
               </label>
-              <div style="display: flex; gap: 15px; font-size: 0.85rem; color: #fff; margin-top: 2px;">
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;">
+              <div style="display: flex; gap: 15px; font-size: 0.82rem; color: var(--text); margin-top: 2px;">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-weight: 500;">
                   <input type="radio" name="fms-import-export-duration" id="fms-duration-24h" value="24h" checked style="cursor: pointer; width: 15px; height: 15px;">
                   Giám sát trong 24 giờ
                 </label>
-                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-weight: 500;">
                   <input type="radio" name="fms-import-export-duration" id="fms-duration-always" value="always" style="cursor: pointer; width: 15px; height: 15px;">
                   Giám sát luôn luôn
                 </label>
@@ -832,16 +832,16 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
               </p>
 
               <!-- Cấu hình nhóm Zalo nhận cảnh báo Tạm nhập - Tái xuất riêng biệt -->
-              <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px; position: relative;">
-                <label style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted);">Nhóm Zalo nhận cảnh báo riêng biệt:</label>
-                <div id="skyeyes-ie-groups-display" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.85rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 36px; user-select: none; transition: border-color 0.2s;">
-                  <span id="skyeyes-ie-groups-display-text" style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">-- Dùng chung nhóm thông báo FMS --</span>
+              <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 8px; position: relative;">
+                <label style="font-size: 0.82rem; font-weight: 600; color: var(--text);">Nhóm Zalo nhận cảnh báo riêng biệt:</label>
+                <div id="skyeyes-ie-groups-display" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 36px; user-select: none; transition: border-color 0.2s;">
+                  <span id="skyeyes-ie-groups-display-text" style="color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">-- Dùng chung nhóm thông báo FMS --</span>
                   <i class="fa-solid fa-chevron-down" style="font-size: 0.8rem; color: var(--text-muted);"></i>
                 </div>
-                <div id="skyeyes-ie-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #131d35; border: 1px solid var(--border); border-radius: 6px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);">
-                  <div style="padding: 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.02);">
+                <div id="skyeyes-ie-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #ffffff; border: 1px solid rgba(0, 114, 151, 0.22); border-radius: 6px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 114, 151, 0.15);">
+                  <div style="padding: 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; background: rgba(0, 114, 151, 0.02);">
                     <i class="fa-solid fa-magnifying-glass" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 4px;"></i>
-                    <input type="text" id="skyeyes-ie-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.85rem; border: none; background: transparent; color: #fff; outline: none;">
+                    <input type="text" id="skyeyes-ie-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.85rem; border: none; background: transparent; color: var(--text); outline: none;">
                   </div>
                   <div id="skyeyes-ie-groups-list" style="overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 190px;">
                     <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Chưa tải danh sách nhóm</div>
@@ -851,16 +851,16 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             </div>
             
             <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px; border-top: 1px dashed var(--border); padding-top: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Mẫu soạn sẵn tin nhắn Zalo:</label>
-                <select id="skyeyes-template-presets" style="padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 0.78rem; cursor: pointer; outline: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <label style="font-size: 0.85rem; font-weight: 600; color: var(--text);">Mẫu soạn sẵn tin nhắn Zalo:</label>
+                <select id="skyeyes-template-presets" style="padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--primary); font-size: 0.78rem; cursor: pointer; outline: none;">
                   <option value="">-- Chọn mẫu soạn sẵn --</option>
                   <option value="preset-1">Mẫu 1: Đầy đủ (Mặc định)</option>
                   <option value="preset-2">Mẫu 2: Ngắn gọn</option>
                   <option value="preset-3">Mẫu 3: Đổi tàu / tải dầu</option>
                 </select>
               </div>
-              <textarea id="skyeyes-template-input" placeholder="Soạn mẫu tin nhắn tại đây..." style="width: 100%; height: 100px; padding: 8px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: none; outline: none;"></textarea>
+              <textarea id="skyeyes-template-input" placeholder="Soạn mẫu tin nhắn tại đây..." style="width: 100%; height: 100px; padding: 8px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: none; outline: none;"></textarea>
               <p style="margin: 0; font-size: 0.7rem; color: var(--text-muted); line-height: 1.3;">
                 Biến: {{flight_no}}, {{ac_reg}}, {{old_ac_reg}}, {{gate}}, {{standby_fuel}}, {{old_standby_fuel}}, {{fuel_order}}, {{old_fuel_order}}, {{crew_info}}, {{truck_no}}, {{time_fuel}}, {{status_change_title}}
               </p>
@@ -921,23 +921,23 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 
       <!-- Cột 3: Cấu hình Gemini -->
       <div id="card-gemini-settings" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; height: fit-content;">
-        <h4 style="margin: 0; font-size: 1.1rem; color: #60a5fa; display: flex; align-items: center; gap: 10px;">
+        <h4 style="margin: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 10px;">
           <i class="fa-solid fa-key"></i> API Key Gemini (Xoay Vòng)
         </h4>
         <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
           Nhập danh sách các API Keys Gemini (mỗi dòng một key). Khi quét FMS hoặc thực hiện tác vụ, hệ thống sẽ tự động xoay vòng hoặc đổi key dự phòng nếu key hiện tại hết hạn mức/lỗi.
         </p>
-        <textarea id="gemini-keys-input" placeholder="Nhập các API Keys Gemini tại đây, mỗi dòng một key..." style="width: 100%; height: 120px; padding: 10px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: #fff; font-family: monospace; font-size: 0.88rem; line-height: 1.5; resize: none; outline: none;"></textarea>
+        <textarea id="gemini-keys-input" placeholder="Nhập các API Keys Gemini tại đây, mỗi dòng một key..." style="width: 100%; height: 120px; padding: 10px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-family: monospace; font-size: 0.88rem; line-height: 1.5; resize: none; outline: none;"></textarea>
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 5px;">
           <button id="btn-save-gemini-keys" class="btn-glow" style="margin-top: 0; width: 100%; font-size: 0.88rem; padding: 10px 15px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
             <i class="fa-solid fa-floppy-disk"></i> Lưu Cấu Hình Keys
           </button>
-          <button id="btn-test-gemini-keys" class="btn-secondary" style="margin-top: 0; width: 100%; font-size: 0.88rem; padding: 10px 15px; border-color: rgba(96, 165, 250, 0.3); color: #60a5fa;">
+          <button id="btn-test-gemini-keys" class="btn-secondary" style="margin-top: 0; width: 100%; font-size: 0.88rem; padding: 10px 15px; border-color: rgba(0, 114, 151, 0.22); color: var(--primary);">
             <i class="fa-solid fa-vial"></i> Kiểm Tra Trạng Thái Keys
           </button>
         </div>
-        <div id="gemini-keys-test-results" style="margin-top: 10px; font-size: 0.85rem; max-height: 200px; overflow-y: auto; display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 6px; background: rgba(0,0,0,0.25); border: 1px solid var(--border);"></div>
+        <div id="gemini-keys-test-results" style="margin-top: 10px; font-size: 0.85rem; max-height: 200px; overflow-y: auto; display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 6px; background: rgba(0, 114, 151, 0.03); border: 1px solid rgba(0, 114, 151, 0.12); color: var(--text);"></div>
       </div>
     </div>
   </div>
@@ -1112,14 +1112,14 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
         Hệ thống tự động phát hiện danh sách chuyến bay bên dưới. Vui lòng kiểm tra kỹ trước khi bấm lưu.
       </div>
       
-      <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
+      <div style="background: rgba(0, 114, 151, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); display: flex; align-items: center; gap: 20px; margin-bottom: 15px; flex-wrap: wrap;">
         <div style="display: flex; align-items: center; gap: 8px;">
           <span style="font-weight: bold; color: #fb923c;"><i class="fa-solid fa-calendar-day"></i> Ngày Trực Kế Hoạch:</span>
-          <input type="date" id="fms-preview-date-input" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: bold; cursor: pointer; outline: none;">
+          <input type="date" id="fms-preview-date-input" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-weight: bold; cursor: pointer; outline: none;">
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
           <span style="font-weight: bold; color: var(--warning);"><i class="fa-solid fa-clock"></i> Ca Trực Kế Hoạch:</span>
-          <select id="fms-preview-shift-input" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: bold; cursor: pointer; outline: none;">
+          <select id="fms-preview-shift-input" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-weight: bold; cursor: pointer; outline: none;">
             <option value="all">Tất cả cả ngày</option>
             <option value="day">Ca ngày (07:30 - 19:30)</option>
             <option value="evening">Ca tối (19:30 - 23:59)</option>
@@ -1134,7 +1134,7 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
         
         <!-- Cột 1: Kế hoạch bay (Bảng chuyến bay) -->
         <div style="flex: 1.4; min-width: 700px;">
-          <div class="table-container" style="max-height: 680px; overflow-y: auto; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+          <div class="table-container" style="max-height: 680px; overflow-y: auto; margin-bottom: 20px; border: 1px solid rgba(0, 114, 151, 0.15); border-radius: 8px;">
             <table class="crm-table">
               <thead>
                 <tr>
@@ -1222,20 +1222,20 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
         <!-- Cột bên trái: Danh sách mappings hiện tại và Form thêm mới -->
         <div style="display: flex; flex-direction: column; gap: 15px;">
           <!-- Form thêm mới/cập nhật mapping -->
-          <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+          <div style="background: rgba(0, 114, 151, 0.03); padding: 15px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12);">
             <h4 style="margin: 0 0 10px 0; color: var(--primary); font-size: 0.95rem;"><i class="fa-solid fa-plus"></i> Thêm / Cập Nhật Liên Kết</h4>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label style="font-size: 0.75rem; color: var(--text-muted);">Tên trên lịch trực:</label>
-                <select id="mapping-schedule-name-select" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; outline: none; font-size: 0.85rem; cursor: pointer; box-sizing: border-box;">
+                <label style="font-size: 0.75rem; color: var(--text); font-weight: 500;">Tên trên lịch trực:</label>
+                <select id="mapping-schedule-name-select" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); outline: none; font-size: 0.85rem; cursor: pointer; box-sizing: border-box;">
                   <option value="">-- Chọn tên từ lịch trực --</option>
                   <option value="custom">-- Nhập tên khác --</option>
                 </select>
-                <input type="text" id="mapping-schedule-name" placeholder="Nhập tên viết hoa không dấu..." style="display: none; margin-top: 6px; padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; outline: none; font-size: 0.85rem; box-sizing: border-box;">
+                <input type="text" id="mapping-schedule-name" placeholder="Nhập tên viết hoa không dấu..." style="display: none; margin-top: 6px; padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); outline: none; font-size: 0.85rem; box-sizing: border-box;">
               </div>
               <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label style="font-size: 0.75rem; color: var(--text-muted);">Tài khoản Zalo tương ứng:</label>
-                <select id="mapping-zalo-uid" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; outline: none; font-size: 0.85rem; cursor: pointer; box-sizing: border-box;">
+                <label style="font-size: 0.75rem; color: var(--text); font-weight: 500;">Tài khoản Zalo tương ứng:</label>
+                <select id="mapping-zalo-uid" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); outline: none; font-size: 0.85rem; cursor: pointer; box-sizing: border-box;">
                   <!-- Populate động thành viên nhóm -->
                 </select>
               </div>
@@ -1250,9 +1250,9 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
           <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <h4 style="margin: 0; color: #fb923c; font-size: 0.95rem;"><i class="fa-solid fa-list"></i> Danh Sách Đã Ghi Nhớ</h4>
-              <input type="text" id="search-zalo-mapping" placeholder="Tìm kiếm nhanh..." style="width: 150px; padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: white; font-size: 0.75rem; outline: none;">
+              <input type="text" id="search-zalo-mapping" placeholder="Tìm kiếm nhanh..." style="width: 150px; padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.75rem; outline: none;">
             </div>
-            <div class="table-container" style="max-height: 380px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+            <div class="table-container" style="max-height: 380px; overflow-y: auto; border: 1px solid rgba(0, 114, 151, 0.15); border-radius: 8px;">
               <table class="crm-table" style="font-size: 0.8rem;">
                 <thead>
                   <tr>
@@ -1270,10 +1270,10 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
         </div>
 
         <!-- Cột bên phải: Danh sách thành viên nhóm Zalo -->
-        <div style="display: flex; flex-direction: column; gap: 10px; border-left: 1px dashed rgba(255,255,255,0.1); padding-left: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 10px; border-left: 1px dashed rgba(0, 114, 151, 0.2); padding-left: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h4 style="margin: 0; color: #38bdf8; font-size: 0.95rem;"><i class="fa-solid fa-users"></i> Thành Viên Nhóm Chat Zalo</h4>
-            <button id="btn-refresh-zalo-members" class="btn-secondary" style="margin-top: 0; padding: 3px 8px; font-size: 0.72rem; border-color: rgba(56, 189, 248, 0.3); color: #38bdf8;">
+            <h4 style="margin: 0; color: var(--primary); font-size: 0.95rem;"><i class="fa-solid fa-users"></i> Thành Viên Nhóm Chat Zalo</h4>
+            <button id="btn-refresh-zalo-members" class="btn-secondary" style="margin-top: 0; padding: 4px 10px; font-size: 0.75rem; border-color: rgba(0, 114, 151, 0.25); color: var(--primary);">
               <i class="fa-solid fa-arrows-rotate"></i> Làm mới
             </button>
           </div>
@@ -1281,10 +1281,10 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             Dưới đây là danh sách thành viên hiện tại trong nhóm Zalo đã cấu hình. Nhấp vào tên thành viên để điền nhanh vào Form liên kết!
           </div>
           <div style="position: relative; margin-bottom: 5px;">
-            <input type="text" id="search-zalo-member" placeholder="Tìm thành viên nhóm..." style="width: 100%; padding: 6px 10px 6px 30px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.25); color: white; font-size: 0.8rem; outline: none; box-sizing: border-box;">
+            <input type="text" id="search-zalo-member" placeholder="Tìm thành viên nhóm..." style="width: 100%; padding: 8px 12px 8px 30px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.8rem; outline: none; box-sizing: border-box;">
             <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.8rem;"></i>
           </div>
-          <div class="table-container" style="max-height: 480px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+          <div class="table-container" style="max-height: 480px; overflow-y: auto; border: 1px solid rgba(0, 114, 151, 0.15); border-radius: 8px;">
             <table class="crm-table" style="font-size: 0.8rem;">
               <thead>
                 <tr>
@@ -1311,8 +1311,8 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
       </div>
       
       <!-- Thanh công cụ bộ lọc -->
-      <div class="fms-filter-toolbar" style="display: flex; gap: 15px; align-items: center; margin-bottom: 15px; background: rgba(255,255,255,0.02); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--border); flex-wrap: wrap; width: 100%;">
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 0.9rem; color: #fff; font-weight: 500; margin: 0;">
+      <div class="fms-filter-toolbar" style="display: flex; gap: 15px; align-items: center; margin-bottom: 15px; background: rgba(0, 114, 151, 0.03); padding: 10px 15px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); flex-wrap: wrap; width: 100%;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 0.9rem; color: var(--text); font-weight: 500; margin: 0;">
           <input type="checkbox" id="user-fms-filter-no-refuel" style="width: 16px; height: 16px; cursor: pointer;">
           <span>Loại các chuyến không lấy dầu (Bỏ các chuyến trống số lượng)</span>
         </label>
