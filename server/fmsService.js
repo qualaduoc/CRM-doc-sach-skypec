@@ -456,10 +456,10 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
           // Tàu nạp nội địa chuyển quốc tế (Tạm nhập - Tái xuất)
           if (isNextIntl) {
             shouldWarn = true;
-            warningMsg = `⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT TÀU BAY]
-Tàu bay ${trackAcReg} đã nạp ${parseInt(track.fuel_order).toLocaleString()} kg dầu cho chuyến bay nội địa ${track.old_flight_no} (${track.old_route} lúc ${track.old_time}) nhưng bị đổi tàu.
+            warningMsg = `⚠️ [CẢNH BÁO]
+Tàu bay ${trackAcReg} đã nạp ${parseInt(track.fuel_order).toLocaleString()} kg dầu cho chuyến bay nội địa ${track.old_flight_no} (${track.old_route} lúc ${track.old_time}) nhưng đổi tàu.
 Hiện tại, tàu ${trackAcReg} đang được phân công bay chuyến bay Quốc tế ${newFltNo} (${newRoute}).
-Yêu cầu Điều hành & Kế toán kiểm tra hóa đơn ngay lập tức!
+Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
           }
         } else if (track.monitor_type === 'INTL_TO_DOMESTIC') {

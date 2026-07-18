@@ -2896,10 +2896,10 @@ app.post('/api/fms/temp-import-exports/test', authenticateToken, async (req, res
 📢 Giờ cảnh báo giả lập: ${getVietnamDateTimeStr()}`;
   } else {
     // Mặc định: Kịch bản 1 (Nội địa -> Quốc tế)
-    msg = `⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT TÀU BAY]
-Tàu bay ${testAcReg} đã nạp ${fuelOrder.toLocaleString()} kg dầu cho chuyến bay nội địa ${oldFlight} (${oldRoute} lúc ${oldTime}) nhưng bị đổi tàu.
+    msg = `⚠️ [CẢNH BÁO]
+Tàu bay ${testAcReg} đã nạp ${fuelOrder.toLocaleString()} kg dầu cho chuyến bay nội địa ${oldFlight} (${oldRoute} lúc ${oldTime}) nhưng đổi tàu.
 Hiện tại, tàu ${testAcReg} đang được phân công bay chuyến bay Quốc tế ${newFlight} (${newRoute}).
-Yêu cầu Điều hành & Kế toán kiểm tra hóa đơn ngay lập tức!
+Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 📢 Giờ cảnh báo giả lập: ${getVietnamDateTimeStr()}`;
   }
 
