@@ -1222,6 +1222,19 @@ input:checked + .slider:before {
   font-weight: 700 !important;
 }
 
+.status-tag.status-not-refueled {
+  background: rgba(148, 163, 184, 0.14) !important;
+  color: #64748b !important;
+  border: 1px solid rgba(100, 116, 139, 0.28) !important;
+  font-weight: 600 !important;
+}
+
+html[data-theme="dark"] .status-tag.status-not-refueled {
+  background: rgba(100, 116, 139, 0.2) !important;
+  color: #94a3b8 !important;
+  border-color: rgba(148, 163, 184, 0.3) !important;
+}
+
 tr.row-refueled > td {
   background: rgba(16, 185, 129, 0.045);
 }

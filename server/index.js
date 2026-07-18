@@ -1633,10 +1633,9 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         fl.operator_name as skypec_operator_name,
         fl.truck_no as skypec_truck_no,
         fl.date as skypec_date,
+        -- Chỉ "Đã tra nạp" khi Skypec Flights có kg nạp thực tế > 0 (không dựa status text)
         CASE
-          WHEN CAST(COALESCE(NULLIF(TRIM(fl.fuel_order), ''), '0') AS INTEGER) > 0 THEN 1
-          WHEN fl.status = 'Đã có số liệu' THEN 1
-          WHEN CAST(COALESCE(NULLIF(TRIM(fo.fuel_order), ''), '0') AS INTEGER) > 0 THEN 1
+          WHEN CAST(COALESCE(NULLIF(REPLACE(TRIM(fl.fuel_order), ',', ''), ''), '0') AS INTEGER) > 0 THEN 1
           ELSE 0
         END as is_refueled
       FROM fms_schedules s
@@ -1645,10 +1644,10 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         SELECT fl2.id FROM fms_flights_live fl2
         WHERE REPLACE(REPLACE(UPPER(fl2.flight_no), ' ', ''), '-', '')
             = REPLACE(REPLACE(UPPER(s.flight_no), ' ', ''), '-', '')
-          AND fl2.date IN (s.date, COALESCE(NULLIF(s.fms_date, ''), s.date))
-        ORDER BY
-          CASE WHEN CAST(COALESCE(NULLIF(TRIM(fl2.fuel_order), ''), '0') AS INTEGER) > 0 THEN 0 ELSE 1 END,
-          fl2.created_at DESC
+          -- Khớp đúng ngày FMS của chuyến (fms_date ca đêm, không gộp 2 ngày → tránh dính kg hôm khác)
+          AND fl2.date = COALESCE(NULLIF(s.fms_date, ''), s.date)
+          AND CAST(COALESCE(NULLIF(REPLACE(TRIM(fl2.fuel_order), ',', ''), ''), '0') AS INTEGER) > 0
+        ORDER BY fl2.created_at DESC
         LIMIT 1
       )
       WHERE s.date = ?
