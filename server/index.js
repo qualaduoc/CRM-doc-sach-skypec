@@ -1273,36 +1273,52 @@ function addDaysYmd(dateStr, deltaDays) {
   return `${y}-${m}-${day}`;
 }
 
-// Hàm tính toán ngày bay thực tế FMS dựa trên giờ tra nạp
-// dateStr = ngày BẮT ĐẦU ca trực (user chọn khi nhập lịch)
-// hasNightFlights = ca đêm vượt ngày (23h → sáng hôm sau)
-function calculateFmsDate(dateStr, timeStr, hasNightFlights = false) {
+/**
+ * Nguyên tắc ngày FMS Vietnam Airlines (theo ca trực):
+ *
+ * - Ca ngày (07:30–19:30 cùng ngày D):
+ *     mọi chuyến → fms_date = D  (cùng ngày lịch FMS)
+ *
+ * - Ca tối (2 giai đoạn, bắt đầu ngày D):
+ *     • 19:30–23:59 ngày D     → fms_date = D
+ *     • 00:00–07:30 sáng D+1   → fms_date = D+1  (sang ngày mới trên FMS)
+ *
+ * isOvernightShift = true khi ca tối / ca đêm / tự nhận file có giờ tối muộn.
+ */
+function isEarlyMorningTime(hour, minute) {
+  // 00:00 <= t <= 07:30
+  return hour < 7 || (hour === 7 && minute <= 30);
+}
+
+function calculateFmsDate(dateStr, timeStr, isOvernightShift = false) {
   if (!timeStr || timeStr === '-') return dateStr;
   try {
-    const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
-    if (match) {
-      const hour = parseInt(match[1], 10);
-      const minute = parseInt(match[2], 10);
-      
-      // Khoảng sáng sớm / rạng sáng (00:00 - 07:30)
-      if (hour < 7 || (hour === 7 && minute <= 30)) {
-        if (hasNightFlights) {
-          // Ca đêm: chuyến 00:00–07:30 là SÁNG HÔM SAU so với ngày bắt đầu ca
-          // → ngày FMS thực tế = date + 1 (để khớp lệnh fuel FMS theo ngày bay)
-          return addDaysYmd(dateStr, 1);
-        }
-        // Không phải ca đêm: 00:00–05:59 thường thuộc ngày FMS hôm trước
-        if (hour < 6) {
-          return addDaysYmd(dateStr, -1);
-        }
-        // 06:00–07:30 cùng ngày trực
-        return dateStr;
+    const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return dateStr;
+    const hour = parseInt(match[1], 10);
+    const minute = parseInt(match[2], 10);
+
+    if (isEarlyMorningTime(hour, minute)) {
+      if (isOvernightShift) {
+        // Đoạn sáng sớm của ca tối → lấy dữ liệu FMS ngày hôm sau
+        return addDaysYmd(dateStr, 1);
       }
+      // Ca ngày / lịch không overnight: giữ cùng ngày trực
+      return dateStr;
     }
+
+    // 07:31 → 23:59: cùng ngày bắt đầu ca (ca ngày hoặc đoạn tối 19:30–23:59)
+    return dateStr;
   } catch (e) {
     console.error('[calculateFmsDate Error]', e.message);
   }
   return dateStr;
+}
+
+function isOvernightShiftValue(shift) {
+  const s = String(shift || '').trim().toLowerCase();
+  // evening = ca tối full (19:30→07:30); night giữ tương thích cũ
+  return s === 'evening' || s === 'night';
 }
 
 app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
@@ -1339,22 +1355,22 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     const targetDate = date ? String(date).trim() : getVietnamDbDateStr();
     const schedules = [];
 
-    // Xác định xem đây có phải ca trực đêm vượt ngày hay không
-    // (Nếu shift === 'night' thì mặc định là ca đêm, ngược lại tự động dò tìm giờ bay tối muộn)
-    let hasNightFlights = shift === 'night';
-    if (!hasNightFlights && flights && flights.length > 0) {
-      hasNightFlights = flights.some(f => {
+    // Ca tối (overnight): evening/night, hoặc tự nhận file có giờ ≥ 19:30
+    let isOvernightShift = isOvernightShiftValue(shift);
+    if (!isOvernightShift && flights && flights.length > 0) {
+      isOvernightShift = flights.some(f => {
         const timeStr = f.time_fuel || f.time_dep || f.time_arr;
         if (!timeStr || timeStr === '-') return false;
-        const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+        const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
         if (match) {
-          const hour = parseInt(match[1]);
-          const minute = parseInt(match[2]);
-          return (hour > 19) || (hour === 19 && minute >= 30);
+          const hour = parseInt(match[1], 10);
+          const minute = parseInt(match[2], 10);
+          return hour > 19 || (hour === 19 && minute >= 30);
         }
         return false;
       });
     }
+    const hasNightFlights = isOvernightShift; // alias dùng trong log / sync
 
     if (flights && flights.length > 0) {
       // 1. Phân tích lịch bay dạng JSON mảng (từ file Excel)
@@ -1439,9 +1455,13 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
       mappingMap[m.schedule_name.toUpperCase().trim()] = m.zalo_uid;
     });
 
-    // Thêm lịch mới
+    // Thêm lịch mới — gán fms_date theo nguyên tắc ca ngày / ca tối
     for (const item of schedules) {
-      const fmsDate = calculateFmsDate(targetDate, item.time_fuel || item.time_dep || item.time_arr, hasNightFlights);
+      const fmsDate = calculateFmsDate(
+        targetDate,
+        item.time_fuel || item.time_dep || item.time_arr,
+        isOvernightShift
+      );
       
       // Tự động phân giải Zalo UIDs ở Backend nếu chưa có
       let finalCrewZaloUids = item.crew_zalo_uids || '';
@@ -1484,9 +1504,10 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
       );
     }
 
-    // Quét FMS ngay — truyền đúng ngày/ca vừa import (tránh worker dọn nhầm / quét sai ngày)
-    const shiftForSync = (shift && String(shift).trim()) ? String(shift).trim() : 'all';
-    console.log(`[FMS Schedule] Đã lưu ${schedules.length} chuyến date=${targetDate} shift=${shiftForSync} hasNight=${hasNightFlights}`);
+    // Quét FMS ngay — ca tối quét cả D và D+1 (đoạn sáng sớm lấy FMS ngày mới)
+    let shiftForSync = (shift && String(shift).trim()) ? String(shift).trim() : 'all';
+    if (isOvernightShift && shiftForSync === 'all') shiftForSync = 'evening';
+    console.log(`[FMS Schedule] Đã lưu ${schedules.length} chuyến date=${targetDate} shift=${shiftForSync} overnight=${isOvernightShift}`);
     syncFMSData(targetDate, shiftForSync).catch(err => console.error('[FMS] Lỗi quét nhanh sau khi cập nhật lịch:', err.message));
 
     res.json({

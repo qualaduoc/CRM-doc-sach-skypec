@@ -561,8 +561,10 @@ async function syncFMSData(forceDate = null, forceShift = null) {
     let targetDates = [];
     if (forceDate) {
       const selectedDateStr = String(forceDate).trim();
-      if (forceShift === 'night') {
-        // Ca đêm vượt ngày: quét cả ngày bắt đầu ca + ngày hôm sau (rạng sáng)
+      // Ca tối (evening) / ca đêm (night): quét FMS ngày D + ngày D+1
+      // (đoạn 00:00–07:30 lấy dữ liệu FMS ngày hôm sau)
+      const overnight = forceShift === 'evening' || forceShift === 'night';
+      if (overnight) {
         const parts = selectedDateStr.split('-').map(Number);
         let nextDayStr = selectedDateStr;
         if (parts.length === 3 && parts.every(n => Number.isFinite(n))) {
@@ -571,15 +573,15 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           nextDayStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
         }
         targetDates = [selectedDateStr, nextDayStr];
+        log(`[Ca tối] Quét FMS 2 ngày: ${selectedDateStr} (19:30–23:59) + ${nextDayStr} (00:00–07:30)`);
       } else {
         targetDates = [selectedDateStr];
       }
     } else {
-      // Tự động trích xuất các ngày bay thực tế đang có trong lịch trực hiện tại để quét
+      // Tự động: mọi fms_date đã gán khi import (ca ngày = D, ca tối sáng sớm = D+1)
       const dateRows = await db.all('SELECT DISTINCT COALESCE(fms_date, date) as target_date FROM fms_schedules');
       targetDates = dateRows.map(r => r.target_date).filter(Boolean);
 
-      // Nếu database hoàn toàn trống lịch trực, mặc định quét ngày hôm nay
       if (targetDates.length === 0) {
         targetDates = [todayDb];
       }
@@ -626,31 +628,33 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       const schedules = await db.all('SELECT DISTINCT flight_no, time_fuel, time_dep, time_arr FROM fms_schedules WHERE COALESCE(fms_date, date) = ?', targetDate);
       if (schedules.length === 0) continue;
 
-      // Lọc theo ca trực nếu được chỉ định
+      // Lọc theo ca — khớp nguyên tắc nghiệp vụ
+      // day: 07:30–19:30 | evening/night (ca tối): 19:30–23:59 HOẶC 00:00–07:30
       let filteredSchedules = schedules;
       if (forceShift && forceShift !== 'all') {
         filteredSchedules = schedules.filter(s => {
           const timeStr = s.time_fuel || s.time_dep || s.time_arr || '';
-          if (!timeStr || timeStr === '-') return false;
+          if (!timeStr || timeStr === '-') {
+            return forceShift === 'evening' || forceShift === 'night';
+          }
           
           try {
-            const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
-            if (!match) return false;
+            const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+            if (!match) return forceShift === 'evening' || forceShift === 'night';
             
-            const hour = parseInt(match[1]);
-            const minute = parseInt(match[2]);
+            const hour = parseInt(match[1], 10);
+            const minute = parseInt(match[2], 10);
             const minutes = hour * 60 + minute;
             
             const m_0730 = 7 * 60 + 30;
             const m_1930 = 19 * 60 + 30;
-            const m_2359 = 23 * 60 + 59;
             
             if (forceShift === 'day') {
               return minutes >= m_0730 && minutes < m_1930;
-            } else if (forceShift === 'evening') {
-              return minutes >= m_1930 && minutes <= m_2359;
-            } else if (forceShift === 'night') {
-              return minutes >= m_2359 || minutes < m_0730;
+            }
+            if (forceShift === 'evening' || forceShift === 'night') {
+              // Ca tối full: tối muộn cùng ngày + sáng sớm ngày FMS tiếp theo
+              return minutes >= m_1930 || minutes < m_0730;
             }
           } catch (e) {
             console.error('[Backend Shift Filter Error]', e.message);

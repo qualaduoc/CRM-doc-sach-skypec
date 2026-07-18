@@ -24,7 +24,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=3.2.1">
+  <link rel="stylesheet" href="style.css?v=3.2.2">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
   <style>
@@ -528,9 +528,8 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
                 <label for="fms-filter-shift" style="font-size: 0.85rem; font-weight: bold; color: var(--warning);">⏰ Chọn ca trực:</label>
                 <select id="fms-filter-shift" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); outline: none; font-size: 0.9rem; cursor: pointer;">
                   <option value="all" selected>Tất cả cả ngày</option>
-                  <option value="day">Ca ngày (07:30 - 19:30)</option>
-                  <option value="evening">Ca tối (19:30 - 23:59)</option>
-                  <option value="night">Ca đêm (23:59 - 07:30 ngày mai)</option>
+                  <option value="day">Ca ngày (07:30 – 19:30 cùng ngày)</option>
+                  <option value="evening">Ca tối (19:30 – 07:30 sáng hôm sau)</option>
                 </select>
               </div>
             </div>
@@ -1143,12 +1142,11 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
           <span style="font-weight: bold; color: var(--warning);"><i class="fa-solid fa-clock"></i> Ca Trực Kế Hoạch:</span>
           <select id="fms-preview-shift-input" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-weight: bold; cursor: pointer; outline: none;">
             <option value="all">Tất cả cả ngày</option>
-            <option value="day">Ca ngày (07:30 - 19:30)</option>
-            <option value="evening">Ca tối (19:30 - 23:59)</option>
-            <option value="night">Ca đêm (23:59 - 07:30 ngày mai)</option>
+            <option value="day">Ca ngày (07:30 – 19:30 cùng ngày)</option>
+            <option value="evening">Ca tối (19:30 – 07:30 sáng hôm sau)</option>
           </select>
         </div>
-        <span style="font-size: 0.8rem; color: var(--text-muted); flex-grow: 1;">(Lưu ý: Ca đêm vượt ngày sẽ theo dõi đồng bộ theo ngày bắt đầu ca trực)</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted); flex-grow: 1;">Ca tối: 19:30–23:59 lấy FMS ngày D; 00:00–07:30 lấy FMS ngày D+1. Hiển thị lịch theo ngày bắt đầu ca (D).</span>
       </div>
       
       <!-- Layout Dàn Ngang 3 Cột Lớn Mở Rộng Tối Đa (Không Gò Bó) -->
@@ -1366,6 +1364,6 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     </div>
   </div>
 
-  <script src="app_v3.js?v=3.2.1"></script>
+  <script src="app_v3.js?v=3.2.2"></script>
 </body>
 </html>

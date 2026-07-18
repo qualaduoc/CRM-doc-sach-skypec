@@ -2812,38 +2812,36 @@ function formatExcelTime(val) {
   return strVal;
 }
 
-// Hàm lọc danh sách chuyến bay theo ca trực đã chọn
+// Lọc chuyến theo ca trực (khớp nghiệp vụ Skypec / FMS)
+// - day:     07:30 – 19:30 cùng ngày
+// - evening: ca tối full = 19:30 – 23:59  +  00:00 – 07:30 (sáng hôm sau)
+// - night:   alias của evening (tương thích cũ)
 function filterFlightsByShift(flights, shift) {
   if (!shift || shift === 'all') return flights;
 
   return flights.filter(f => {
     const timeStr = f.time_fuel || f.time_dep || f.time_arr || '';
     if (!timeStr || timeStr === '-') {
-      // Ca đêm/cả ngày: giữ dòng thiếu giờ (tránh mất chuyến khi Excel thiếu cột giờ)
-      return shift === 'night' || shift === 'all';
+      return shift === 'evening' || shift === 'night' || shift === 'all';
     }
 
     try {
-      const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
-      if (!match) return shift === 'night';
+      const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+      if (!match) return shift === 'evening' || shift === 'night';
 
-      const hour = parseInt(match[1]);
-      const minute = parseInt(match[2]);
+      const hour = parseInt(match[1], 10);
+      const minute = parseInt(match[2], 10);
       const minutes = hour * 60 + minute;
 
       const m_0730 = 7 * 60 + 30;
       const m_1930 = 19 * 60 + 30;
-      // Ca đêm: từ 23:00 (không chỉ đúng 23:59) đến trước 07:30 sáng
-      // 23:00–23:59 thuộc biên ca tối/đêm — ưu tiên đưa vào ca đêm khi user chọn night
-      const m_2300 = 23 * 60;
 
       if (shift === 'day') {
         return minutes >= m_0730 && minutes < m_1930;
-      } else if (shift === 'evening') {
-        return minutes >= m_1930 && minutes < m_2300;
-      } else if (shift === 'night') {
-        // Ca đêm: 23:00 ngày N → 07:30 sáng ngày N+1 (giờ trên lịch là 23:xx hoặc 00:xx–07:29)
-        return minutes >= m_2300 || minutes < m_0730;
+      }
+      if (shift === 'evening' || shift === 'night') {
+        // Ca tối: đoạn tối + đoạn sáng sớm
+        return minutes >= m_1930 || minutes < m_0730;
       }
     } catch (e) {
       console.error('[Shift Filter Error]', e.message);
@@ -3262,9 +3260,9 @@ async function handleConfirmFmsPreview() {
     if (data.success) {
       const shiftLabel = {
         all: 'cả ngày',
-        day: 'ca ngày',
-        evening: 'ca tối',
-        night: 'ca đêm'
+        day: 'ca ngày (07:30–19:30)',
+        evening: 'ca tối (19:30–07:30 sáng mai)',
+        night: 'ca tối (19:30–07:30 sáng mai)'
       }[selectedShift] || selectedShift;
       const dateVn = selectedDate ? formatDateVN(selectedDate) : '';
       showToast(
