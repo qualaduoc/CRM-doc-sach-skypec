@@ -57,8 +57,9 @@ body {
 #login-screen {
   position: relative;
   overflow: hidden;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: none;
   align-items: center;
   justify-content: center;
@@ -1223,24 +1224,34 @@ input:checked + .slider:before {
   }
 }
 
-/* --- PHẦN STYLE DROPDOWN SELECT VÀ OPTION --- */
+/* --- DROPDOWN SELECT (LIGHT MODE SKYPEC) --- */
 select {
-  color: #ffffff;
-  background-color: #0f172a;
+  color: var(--text);
+  background-color: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-width: 100%;
 }
 select option {
-  background-color: #1e293b !important;
-  color: #ffffff !important;
+  background-color: #ffffff !important;
+  color: var(--text) !important;
   padding: 8px;
 }
 #fms-crew-filter {
-  border: 1px solid var(--border);
-  color: #ffffff;
-  background-color: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(0, 114, 151, 0.22);
+  color: var(--text);
+  background-color: #ffffff;
 }
 #fms-crew-filter option {
-  background-color: #0f172a !important;
-  color: #ffffff !important;
+  background-color: #ffffff !important;
+  color: var(--text) !important;
+}
+
+/* Role select trong bảng accounts */
+.role-select {
+  color: var(--text) !important;
+  background: #ffffff !important;
+  min-height: 40px;
 }
 
 /* --- TỐI ƯU RESPONSIVE CHO MODAL CHI TIẾT CHUYẾN BAY USER --- */
@@ -1396,11 +1407,287 @@ select option {
   }
 
   .crm-table {
-    min-width: 900px !important; /* Đảm bảo bảng không bị bóp nát, cho phép cuộn ngang */
+    min-width: 720px !important; /* Đủ đọc cột chính, bớt “kéo vô tận” */
   }
 
   .crm-table th, .crm-table td {
     padding: 8px 10px !important;
     font-size: 0.85rem !important;
+  }
+}
+
+/* =========================================================
+   MOBILE UX POLISH v3.1.7 — Touch · Viewport · Thumb zone
+   Design: aviation ops dashboard, Skypec light, dense data
+   ========================================================= */
+
+/* Safe area + chống zoom iOS khi focus input */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Sticky header bảng khi cuộn ngang/dọc trong container */
+.table-container {
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.crm-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+/* Giảm motion khi user yêu cầu */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .blink-red-bg,
+  .blink-orange-bg,
+  .fms-no-refuel-blink {
+    animation: none !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  /* Tab admin dạng chip cuộn ngang + scroll-snap */
+  .admin-tabs {
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent 100%);
+  }
+  .admin-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .admin-tab-btn {
+    scroll-snap-align: start;
+    min-height: 44px !important;
+    justify-content: center;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Touch target tối thiểu ~44px (Fitts' Law / iOS HIG) */
+  .btn-glow,
+  .btn-secondary,
+  .btn-danger {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .admin-tab-btn,
+  .user-tab-btn {
+    min-height: 44px !important;
+  }
+
+  /* Input 16px tránh auto-zoom Safari iOS */
+  .input-group input,
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+
+  /* Login card gọn, không tràn ngang */
+  .login-card {
+    padding: 28px 18px !important;
+    max-width: min(440px, 100%);
+  }
+  #login-screen .subtitle {
+    font-size: 0.82rem;
+  }
+
+  /* KPI: 2 cột trên phone, tránh 1 cột quá dài */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+  .kpi-card {
+    padding: 14px 12px !important;
+  }
+  .kpi-num {
+    font-size: 1.45rem !important;
+  }
+  .kpi-label {
+    font-size: 0.72rem !important;
+  }
+
+  /* FMS toolbar / filter: xếp dọc, full width */
+  .fms-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .fms-toolbar-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+  .fms-toolbar-actions input[type="date"] {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .fms-toolbar-actions button {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+
+  .fms-filter-bar {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .fms-search-wrap,
+  .fms-crew-filter-wrap {
+    width: 100% !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+  }
+
+  /* Lịch trực: 2 cột → 1 cột */
+  .schedule-import-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  /* Member header stats */
+  .user-refuel-stats,
+  #user-refuel-stats {
+    width: 100% !important;
+    margin: 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1fr !important;
+    gap: 8px !important;
+  }
+  #user-refuel-stats .stat-box {
+    min-width: 0 !important;
+    padding: 8px 6px !important;
+  }
+  #user-refuel-stats .stat-num {
+    font-size: 1.1rem !important;
+  }
+  #user-refuel-stats .stat-desc {
+    font-size: 0.62rem !important;
+    line-height: 1.25;
+  }
+
+  /* User tab navbar full width chips */
+  #user-tab-navbar {
+    overflow-x: auto;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 8px !important;
+    padding: 8px !important;
+  }
+  #user-tab-navbar .user-tab-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Modal full-bleed hơn trên phone */
+  .modal {
+    padding: env(safe-area-inset-top, 8px) 8px env(safe-area-inset-bottom, 8px);
+    align-items: flex-end;
+  }
+  .modal.active {
+    display: flex;
+  }
+  .modal-card {
+    max-height: min(92dvh, 92vh);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  /* Action row trong bảng accounts: stack dọc, dễ bấm */
+  .crm-table td .btn-secondary,
+  .crm-table td button {
+    min-height: 40px !important;
+    white-space: nowrap;
+  }
+
+  /* Gợi ý cuộn ngang bảng */
+  .table-container {
+    position: relative;
+  }
+  .table-container::after {
+    content: "Vuốt ngang để xem thêm →";
+    display: block;
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 6px 0 2px;
+    font-weight: 600;
+  }
+
+  /* Section title buttons: full width stack */
+  .section-title > div {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+  .section-title button {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #user-refuel-stats {
+    grid-template-columns: 1fr !important;
+  }
+
+  .fms-toolbar-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Ẩn text dài tab, chỉ icon + chữ rút gọn nếu quá chật */
+  .admin-tab-btn {
+    font-size: 0.8rem !important;
+    padding: 10px 12px !important;
+  }
+
+  .header-actions {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Tablet portrait: giữ 3 KPI, toolbar gọn */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .fms-toolbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .schedule-import-grid {
+    grid-template-columns: 1fr !important;
   }
 }

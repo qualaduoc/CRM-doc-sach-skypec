@@ -2,9 +2,12 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#007297">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>FMS SkyEyes - Hệ Thống Giám Sát Lịch Bay & Tải Dầu Tra Nạp</title>
-  <link rel="stylesheet" href="style.css?v=3.1.6">
+  <link rel="stylesheet" href="style.css?v=3.1.7">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
   <style>
@@ -232,28 +235,28 @@
       <div id="tab-fms" class="admin-tab-content" style="display: none;">
         <!-- Bảng theo dõi tải dầu -->
         <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; width: 100%; box-sizing: border-box;">
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div class="fms-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
               <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
             </h4>
-            <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="fms-toolbar-actions" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <input type="date" id="fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
               <button id="btn-fms-sync-now" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: var(--success); padding: 6px 12px; font-size: 0.85rem; margin-top: 0;">
                 <i class="fa-solid fa-rotate"></i> Quét FMS Ngay
               </button>
-              <button id="btn-fms-export-excel" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: var(--success); padding: 6px 12px; font-size: 0.85rem; margin-top: 0; margin-left: 8px;">
+              <button id="btn-fms-export-excel" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: var(--success); padding: 6px 12px; font-size: 0.85rem; margin-top: 0;">
                 <i class="fa-solid fa-file-excel"></i> Xuất Excel Lịch Trực
               </button>
             </div>
           </div>
 
           <!-- Bộ lọc và tìm kiếm nhanh FMS -->
-          <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(0, 114, 151, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); margin-top: 10px; margin-bottom: 10px;">
-            <div style="flex: 1; min-width: 250px; position: relative;">
+          <div class="fms-filter-bar" style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(0, 114, 151, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); margin-top: 10px; margin-bottom: 10px;">
+            <div class="fms-search-wrap" style="flex: 1; min-width: 200px; position: relative;">
               <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
-              <input type="text" id="fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
+              <input type="text" id="fms-search-input" placeholder="Tìm chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
             </div>
-            <div style="width: 220px; min-width: 180px;">
+            <div class="fms-crew-filter-wrap" style="width: 220px; min-width: 160px; flex: 1 1 160px;">
               <select id="fms-crew-filter" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; cursor: pointer; outline: none; box-sizing: border-box;">
                 <option value="">-- Tất cả Cặp tra nạp --</option>
               </select>
@@ -483,7 +486,7 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 
       <!-- TAB CONTENT 3: NHẬP LỊCH TRỰC CA -->
       <div id="tab-fms-schedule-admin" class="admin-tab-content" style="display: none;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div class="schedule-import-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
           
           <!-- Cột nhập lịch bay trực ca -->
           <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
@@ -1333,6 +1336,6 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     </div>
   </div>
 
-  <script src="app_v3.js?v=3.1.6"></script>
+  <script src="app_v3.js?v=3.1.7"></script>
 </body>
 </html>
