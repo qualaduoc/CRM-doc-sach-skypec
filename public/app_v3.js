@@ -2055,6 +2055,30 @@ async function confirmTempImportExport(id, action) {
 }
 window.confirmTempImportExport = confirmTempImportExport;
 
+// Gửi thử kịch bản giả lập test chéo Zalo
+async function runZaloIeTest(scNum) {
+  try {
+    const res = await fetch('/api/fms/temp-import-exports/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${state.token}`
+      },
+      body: JSON.stringify({ scenario: scNum })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message, 'success', 'Thành công');
+      fetchTempImportExportData();
+    } else {
+      showToast(data.error, 'error', 'Thất bại');
+    }
+  } catch (err) {
+    showToast('Lỗi kết nối gửi test: ' + err.message, 'error', 'Lỗi kết nối');
+  }
+}
+window.runZaloIeTest = runZaloIeTest;
+
 // Thực hiện lọc và vẽ lại bảng FMS
 function renderFmsTable() {
   const tbody = document.getElementById('fms-table-body');
