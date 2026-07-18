@@ -1,3 +1,16 @@
+window.onerror = function (message, source, lineno, colno, error) {
+  const errMsg = `[Window Error] Message: ${message}\nURL: ${source}\nLine: ${lineno}:${colno}\nStack: ${error ? error.stack : 'N/A'}`;
+  console.error(errMsg);
+  alert(errMsg);
+  return false;
+};
+
+window.onunhandledrejection = function (event) {
+  const errMsg = `[Unhandled Promise Rejection] Reason: ${event.reason ? (event.reason.stack || event.reason) : 'N/A'}`;
+  console.error(errMsg);
+  alert(errMsg);
+};
+
 const state = {
   token: localStorage.getItem('crm_token'),
   role: localStorage.getItem('crm_role'),
@@ -86,33 +99,46 @@ async function syncUserPermissions() {
 }
 
 function initApp() {
-  if (state.token) {
-    // Luôn đồng bộ lấy quyền mới nhất khi khởi động hoặc F5 tải lại trang
-    syncUserPermissions().then(() => {
-      const userRole = getUserRole();
-      if (userRole === 'admin' || userRole === 'dieu_hanh') {
-        showScreen('admin-screen');
-        applyPermissionsUI();
-        loadAdminDashboard();
-      } else {
-        showScreen('user-screen');
-        applyUserPermissionsUI();
-        loadUserDashboard();
+  try {
+    if (state.token) {
+      // Luôn đồng bộ lấy quyền mới nhất khi khởi động hoặc F5 tải lại trang
+      syncUserPermissions().then(() => {
+        try {
+          const userRole = getUserRole();
+          if (userRole === 'admin' || userRole === 'dieu_hanh') {
+            showScreen('admin-screen');
+            applyPermissionsUI();
+            loadAdminDashboard();
+          } else {
+            showScreen('user-screen');
+            applyUserPermissionsUI();
+            loadUserDashboard();
+          }
+        } catch (e) {
+          alert('[Init App Permission Then Error] ' + e.stack);
+        }
+      }).catch(err => {
+        alert('[Sync Permissions Promise Error] ' + err.stack);
+      });
+      startDashboardPolling();
+    } else {
+      showScreen('login-screen');
+      stopDashboardPolling();
+      
+      // Tự động điền tài khoản đã ghi nhớ
+      const rememberedUser = localStorage.getItem('crm_remembered_user');
+      const rememberedPass = localStorage.getItem('crm_remembered_pass');
+      if (rememberedUser && rememberedPass) {
+        const usernameEl = document.getElementById('username');
+        const passwordEl = document.getElementById('password');
+        const rememberMeEl = document.getElementById('remember-me');
+        if (usernameEl) usernameEl.value = rememberedUser;
+        if (passwordEl) passwordEl.value = rememberedPass;
+        if (rememberMeEl) rememberMeEl.checked = true;
       }
-    });
-    startDashboardPolling();
-  } else {
-    showScreen('login-screen');
-    stopDashboardPolling();
-    
-    // Tự động điền tài khoản đã ghi nhớ
-    const rememberedUser = localStorage.getItem('crm_remembered_user');
-    const rememberedPass = localStorage.getItem('crm_remembered_pass');
-    if (rememberedUser && rememberedPass) {
-      document.getElementById('username').value = rememberedUser;
-      document.getElementById('password').value = rememberedPass;
-      document.getElementById('remember-me').checked = true;
     }
+  } catch (err) {
+    alert('[Init App Error] ' + err.stack);
   }
 }
 
