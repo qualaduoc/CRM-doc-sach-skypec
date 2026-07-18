@@ -2280,7 +2280,7 @@ function renderFmsTable() {
       <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
         ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
         <div>Cất: ${depTimeHtml}</div>
-        ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+        ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed var(--border); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
       </div>
     `;
     
@@ -2380,17 +2380,17 @@ function renderUserFmsTable() {
         <td style="font-weight: 700; color: #38bdf8; font-size: 1rem;">${r.flight_no}</td>
         <td><span style="font-weight: 600; color: #fb923c;">${r.crew_info || '-'}</span> ${r.truck_no && r.truck_no !== '-' ? `<span style="font-size: 0.85em; color: var(--primary);"> (Xe ${r.truck_no})</span>` : ''}</td>
         <td style="text-align: center;">
-          <span style="font-weight: bold; color: #fff;">${r.ac_reg || '-'}</span>
+          <span style="font-weight: bold; color: var(--text);">${r.ac_reg || '-'}</span>
           <span style="color: var(--text-muted); font-size: 0.8em;"> (${r.ac_type || '-'})</span>
           <br>
-          <span style="color: #60a5fa; font-size: 0.85em;">${r.route || '-'}</span>
+          <span style="color: #007297; font-size: 0.85em; font-weight: bold;">${r.route || '-'}</span>
         </td>
         <td style="text-align: center; font-weight: bold; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
         <td>
           <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
             ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
             ${r.time_dep ? `<div>Cất: <span>${r.time_dep}</span></div>` : ''}
-            ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+            ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed var(--border); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
           </div>
         </td>
         <td style="text-align: center; font-weight: 600; color: #a3e635;">${r.standby_fuel ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</td>
