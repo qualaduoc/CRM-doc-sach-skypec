@@ -1649,6 +1649,114 @@ html[data-theme="dark"] .admin-sidebar {
   box-shadow: var(--card-shadow), inset 0 1px 0 rgba(224, 195, 106, 0.06);
 }
 
+/* =========================================================
+   DROPDOWN NHÓM ZALO — luôn đọc được (Sáng / Tối)
+   ========================================================= */
+#skyeyes-groups-display,
+#skyeyes-ie-groups-display,
+#skyeyes-airline-groups-display {
+  background: var(--input-bg) !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+#skyeyes-groups-display-text,
+#skyeyes-ie-groups-display-text,
+#skyeyes-airline-groups-display-text {
+  color: var(--text) !important;
+}
+
+#skyeyes-groups-dropdown,
+#skyeyes-ie-groups-dropdown,
+#skyeyes-airline-groups-dropdown {
+  background: var(--panel-bg) !important;
+  border: 1px solid var(--border-strong) !important;
+  box-shadow: var(--card-shadow) !important;
+  color: var(--text) !important;
+}
+
+#skyeyes-groups-dropdown > div:first-child,
+#skyeyes-ie-groups-dropdown > div:first-child,
+#skyeyes-airline-groups-dropdown > div:first-child {
+  background: var(--panel-elevated) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+#skyeyes-group-search,
+#skyeyes-ie-group-search,
+#skyeyes-airline-group-search {
+  background: var(--input-bg) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px !important;
+  min-height: 36px !important;
+  padding: 6px 10px !important;
+}
+
+#skyeyes-group-search::placeholder,
+#skyeyes-ie-group-search::placeholder,
+#skyeyes-airline-group-search::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.9;
+}
+
+#skyeyes-groups-list,
+#skyeyes-ie-groups-list,
+#skyeyes-airline-groups-list {
+  background: var(--panel-bg) !important;
+  color: var(--text) !important;
+}
+
+#skyeyes-groups-list label,
+#skyeyes-ie-groups-list label,
+#skyeyes-airline-groups-list label,
+.group-item-hover {
+  background: transparent !important;
+  color: var(--text) !important;
+}
+
+#skyeyes-groups-list label:hover,
+#skyeyes-ie-groups-list label:hover,
+#skyeyes-airline-groups-list label:hover,
+.group-item-hover:hover {
+  background: var(--table-row-hover) !important;
+}
+
+#skyeyes-groups-list label span,
+#skyeyes-ie-groups-list label span,
+#skyeyes-airline-groups-list label span {
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text) !important;
+}
+
+#skyeyes-groups-list input[type="checkbox"],
+#skyeyes-ie-groups-list input[type="checkbox"],
+#skyeyes-airline-groups-list input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
+html[data-theme="dark"] #skyeyes-groups-dropdown,
+html[data-theme="dark"] #skyeyes-ie-groups-dropdown,
+html[data-theme="dark"] #skyeyes-airline-groups-dropdown {
+  background: #121a27 !important;
+  border-color: rgba(56, 189, 248, 0.28) !important;
+}
+
+html[data-theme="dark"] #skyeyes-groups-list label span,
+html[data-theme="dark"] #skyeyes-ie-groups-list label span,
+html[data-theme="dark"] #skyeyes-airline-groups-list label span {
+  color: #e8eef6 !important;
+  -webkit-text-fill-color: #e8eef6 !important;
+}
+
+html[data-theme="dark"] #skyeyes-group-search,
+html[data-theme="dark"] #skyeyes-ie-group-search,
+html[data-theme="dark"] #skyeyes-airline-group-search {
+  background: #0e1522 !important;
+  color: #e8eef6 !important;
+  border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
 /* --- TỐI ƯU RESPONSIVE CHO MODAL CHI TIẾT CHUYẾN BAY USER --- */
 .fms-detail-modal-card {
   width: 92%;

@@ -3998,9 +3998,9 @@ async function loadSkyEyesGroups() {
         listEl.innerHTML = groups.map(g => {
           const isChecked = savedIds.includes(String(g.groupId).trim());
           return `
-            <label style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; user-select: none; transition: background 0.2s; justify-content: flex-start; text-align: left; width: 100%;" class="group-item-hover">
-              <input type="checkbox" class="${className}" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
-              <span style="font-size: 0.78rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${g.groupName}</span>
+            <label class="group-item-hover skyeyes-group-label" style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; cursor: pointer; user-select: none; transition: background 0.2s; justify-content: flex-start; text-align: left; width: 100%; box-sizing: border-box;">
+              <input type="checkbox" class="${className}" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 16px; height: 16px; flex-shrink: 0;">
+              <span class="skyeyes-group-label-text" style="font-size: 0.82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;">${g.groupName}</span>
             </label>
           `;
         }).join('');
