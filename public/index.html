@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FMS SkyEyes - Hệ Thống Giám Sát Lịch Bay & Tải Dầu Tra Nạp</title>
-  <link rel="stylesheet" href="style.css?v=3.1.5">
+  <link rel="stylesheet" href="style.css?v=3.1.6">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
   <style>
@@ -545,173 +545,8 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             </div>
           </div>
 
-        </div> <!-- Đóng tab-fms-schedule-admin -->
-      </div> <!-- Đóng tab-contents-container -->
-    </div> <!-- Đóng admin-main-content -->
-  </div> <!-- Đóng admin-wrapper -->
-</div> <!-- Đóng container -->
-</div> <!-- Đóng admin-screen -->
-
-  <!-- ================= MÀN HÌNH CHI TIẾT NHÂN VIÊN / USER PANEL ================= -->
-  <div id="user-screen" class="screen">
-    <div class="container">
-      <header class="glass-panel app-header" style="padding: 15px 24px; border-color: rgba(0, 114, 151, 0.25);">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <img src="logo.png" alt="Skypec Logo" style="height: 38px; vertical-align: middle;">
-          <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.15);"></div>
-          <div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-size: 1.25rem; font-weight: 800; color: var(--primary); letter-spacing: 0.5px;">SkyEyes</span>
-              <span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #059669; font-size: 0.62rem; padding: 1px 5px; border-radius: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">MEMBER</span>
-            </div>
-            <span style="display: block; font-size: 0.65rem; color: var(--text-muted); font-weight: 600; margin-top: 1px;" id="user-title-name">Đang tải tên...</span>
-            <span style="display: block; font-size: 0.6rem; color: var(--text-muted); margin-top: 1px;" id="user-title-dept">Đang tải đơn vị...</span>
-          </div>
-        </div>
-        
-        <!-- Thống kê số chuyến trực ca -->
-        <div class="user-refuel-stats" id="user-refuel-stats" style="display: flex; gap: 15px; align-items: center; justify-content: center; flex: 1; margin: 0 20px; flex-wrap: wrap;">
-          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('today')" style="cursor: pointer; background: rgba(0, 114, 151, 0.05); border: 1px solid rgba(0, 114, 151, 0.18); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
-            <span class="stat-num" id="user-stat-today" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--primary);">0</span>
-            <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính trong ngày</span>
-          </div>
-          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('month')" style="cursor: pointer; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.18); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
-            <span class="stat-num" id="user-stat-month" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--success);">0</span>
-            <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính trong tháng</span>
-          </div>
-          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('last-month')" style="cursor: pointer; background: rgba(227, 168, 19, 0.05); border: 1px solid rgba(227, 168, 19, 0.18); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
-            <span class="stat-num" id="user-stat-last-month" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--warning);">0</span>
-            <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính tháng trước</span>
-          </div>
-        </div>
-        
-        <div class="header-actions">
-          <button id="btn-back-to-admin" class="btn-secondary hidden" onclick="showAdminDashboard()">
-            <i class="fa-solid fa-arrow-left"></i> Quay lại Admin
-          </button>
-          <button id="btn-user-logout" class="btn-danger">
-            <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
-          </button>
-        </div>
-      </header>
-
-      <!-- Quay lại nếu là Admin đang xem -->
-      <div class="back-bar hidden" id="back-bar">
-        <button class="btn-secondary" onclick="showAdminDashboard()">
-          <i class="fa-solid fa-chevron-left"></i> Danh sách tài khoản quản lý
-        </button>
-      </div>
-
-      <!-- Tab Menu chuyển đổi của màn hình User (Navbar) -->
-      <div id="user-tab-navbar" class="glass-panel" style="padding: 10px; display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap;">
-        <button class="user-tab-btn active" data-user-tab="tab-user-fms" style="background: none; border: none; color: var(--primary); font-size: 0.95rem; font-weight: bold; cursor: pointer; padding: 8px 16px; border-bottom: 2px solid var(--primary); transition: all 0.3s; display: flex; align-items: center; gap: 8px; outline: none;">
-          <i class="fa-solid fa-calendar-days"></i> Theo dõi lịch làm việc
-        </button>
-        <button id="user-tab-btn-elearning" class="user-tab-btn" data-user-tab="tab-user-elearning" style="background: none; border: none; color: var(--text-muted); font-size: 0.95rem; font-weight: bold; cursor: pointer; padding: 8px 16px; border-bottom: 2px solid transparent; transition: all 0.3s; display: flex; align-items: center; gap: 8px; outline: none;">
-          <i class="fa-solid fa-graduation-cap"></i> Học E-learning
-        </button>
-      </div>
-
-      <!-- Group các nội dung liên quan tới E-learning (Học tập) để dễ quản lý ẩn/hiện -->
-      <div id="user-elearning-section" style="display: none; flex-direction: column; gap: 20px;">
-        <!-- KPI cá nhân từ Skypec -->
-        <div class="kpi-grid">
-          <div class="glass-panel kpi-card blue" style="background: #ffffff;">
-            <span class="kpi-num" id="kpi-user-total-classes" style="color: var(--primary);">0</span>
-            <span class="kpi-label">Lớp đang học</span>
-          </div>
-          <div class="glass-panel kpi-card purple" style="background: #ffffff;">
-            <span class="kpi-num" id="kpi-user-kpi" style="color: #ea580c;">0%</span>
-            <span class="kpi-label" id="kpi-user-kpi-detail">KPI: 0/0 giờ</span>
-          </div>
-          <div class="glass-panel kpi-card purple" style="background: #ffffff;">
-            <span class="kpi-num" id="kpi-user-running-classes" style="color: var(--warning);">0</span>
-            <span class="kpi-label">Đang treo máy</span>
-          </div>
-          <div class="glass-panel kpi-card green" style="background: #ffffff;">
-            <span class="kpi-num" id="kpi-user-certificates" style="color: var(--success);">0</span>
-            <span class="kpi-label">Chứng chỉ đã cấp</span>
-          </div>
-        </div>
-
-
-
-        <div class="section-title">
-          <h3>Tiến độ Học tập Chi tiết</h3>
-          <div style="display: flex; gap: 10px;">
-            <button id="btn-explore-classes" class="btn-glow" style="padding: 10px 16px; width: auto; font-size: 0.9rem; margin-top: 0;">
-              <i class="fa-solid fa-compass"></i> Khám phá khóa học
-            </button>
-            <button id="btn-sync-progress" class="btn-secondary">
-              <i class="fa-solid fa-rotate"></i> Đồng bộ tiến độ từ Skypec
-            </button>
-          </div>
-        </div>
-
-        <div class="glass-panel table-container">
-          <table class="crm-table">
-            <thead>
-              <tr>
-                <th>Lớp học</th>
-                <th style="text-align: center; width: 200px;">Tiến độ tích lũy</th>
-                <th style="text-align: center; width: 120px;">Trạng thái</th>
-                <th style="text-align: center; width: 120px;">Tự học ngầm</th>
-              </tr>
-            </thead>
-            <tbody id="classes-table-body">
-              <!-- Render động từ JS -->
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Bảng theo dõi tải dầu FMS dành cho nhân viên (C1, C2) chỉ xem -->
-      <div id="user-fms-section" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
-            <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
-          </h4>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <input type="date" id="user-fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
-          </div>
-        </div>
-
-        <!-- Bộ lọc và tìm kiếm nhanh FMS -->
-        <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(0, 114, 151, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); margin-top: 10px; margin-bottom: 10px;">
-          <div style="flex: 1; min-width: 250px; position: relative;">
-            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
-            <input type="text" id="user-fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
-          </div>
-        </div>
-        
-        <div class="table-container" style="margin-top: 5px;">
-          <table class="crm-table">
-            <thead>
-              <tr>
-                <th>Chuyến bay</th>
-                <th>Nhân viên / Xe trực</th>
-                <th style="text-align: center;">Tàu / Loại / Đường bay</th>
-                <th style="text-align: center;">Vị trí đỗ</th>
-                <th style="text-align: center;">Hạ / Cất / Tra nạp</th>
-                <th style="text-align: center;">Standby Fuel</th>
-                <th style="text-align: center;">Fuel Order</th>
-                <th style="text-align: center;" class="hide-on-mobile">Trip Fuel</th>
-                <th style="text-align: center;">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody id="user-fms-table-body">
-              <tr>
-                <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
-                  Chưa có lịch bay được phân công cho ngày hôm nay.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </div>
-  </div>
+        </div> <!-- Đóng grid nhập lịch + unmapped -->
+      </div> <!-- Đóng tab-fms-schedule-admin -->
 
   <!-- ================= TAB CONTENT 3: CẤU HÌNH & KẾT NỐI ================= -->
   <div id="tab-settings" class="admin-tab-content" style="display: none; padding: 15px 0;">
@@ -970,6 +805,173 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     </div>
   </div>
 </div>
+
+      </div> <!-- Đóng tab-contents-container -->
+    </div> <!-- Đóng admin-main-content -->
+  </div> <!-- Đóng admin-wrapper -->
+</div> <!-- Đóng container -->
+</div> <!-- Đóng admin-screen -->
+
+  <!-- ================= MÀN HÌNH CHI TIẾT NHÂN VIÊN / USER PANEL ================= -->
+  <div id="user-screen" class="screen">
+    <div class="container">
+      <header class="glass-panel app-header" style="padding: 15px 24px; border-color: rgba(0, 114, 151, 0.25);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <img src="logo.png" alt="Skypec Logo" style="height: 38px; vertical-align: middle;">
+          <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.15);"></div>
+          <div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 1.25rem; font-weight: 800; color: var(--primary); letter-spacing: 0.5px;">SkyEyes</span>
+              <span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #059669; font-size: 0.62rem; padding: 1px 5px; border-radius: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">MEMBER</span>
+            </div>
+            <span style="display: block; font-size: 0.65rem; color: var(--text-muted); font-weight: 600; margin-top: 1px;" id="user-title-name">Đang tải tên...</span>
+            <span style="display: block; font-size: 0.6rem; color: var(--text-muted); margin-top: 1px;" id="user-title-dept">Đang tải đơn vị...</span>
+          </div>
+        </div>
+        
+        <!-- Thống kê số chuyến trực ca -->
+        <div class="user-refuel-stats" id="user-refuel-stats" style="display: flex; gap: 15px; align-items: center; justify-content: center; flex: 1; margin: 0 20px; flex-wrap: wrap;">
+          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('today')" style="cursor: pointer; background: rgba(0, 114, 151, 0.05); border: 1px solid rgba(0, 114, 151, 0.18); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
+            <span class="stat-num" id="user-stat-today" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--primary);">0</span>
+            <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính trong ngày</span>
+          </div>
+          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('month')" style="cursor: pointer; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.18); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
+            <span class="stat-num" id="user-stat-month" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--success);">0</span>
+            <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính trong tháng</span>
+          </div>
+          <div class="stat-box" onclick="window.currentViewingFmsName = ''; showUserFmsDetailModal('last-month')" style="cursor: pointer; background: rgba(227, 168, 19, 0.05); border: 1px solid rgba(227, 168, 19, 0.18); padding: 8px 16px; border-radius: 10px; text-align: center; min-width: 130px; transition: all 0.2s;">
+            <span class="stat-num" id="user-stat-last-month" style="display: block; font-size: 1.4rem; font-weight: 800; color: var(--warning);">0</span>
+            <span class="stat-desc" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Ước tính tháng trước</span>
+          </div>
+        </div>
+        
+        <div class="header-actions">
+          <button id="btn-back-to-admin" class="btn-secondary hidden" onclick="showAdminDashboard()">
+            <i class="fa-solid fa-arrow-left"></i> Quay lại Admin
+          </button>
+          <button id="btn-user-logout" class="btn-danger">
+            <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
+          </button>
+        </div>
+      </header>
+
+      <!-- Quay lại nếu là Admin đang xem -->
+      <div class="back-bar hidden" id="back-bar">
+        <button class="btn-secondary" onclick="showAdminDashboard()">
+          <i class="fa-solid fa-chevron-left"></i> Danh sách tài khoản quản lý
+        </button>
+      </div>
+
+      <!-- Tab Menu chuyển đổi của màn hình User (Navbar) -->
+      <div id="user-tab-navbar" class="glass-panel" style="padding: 10px; display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap;">
+        <button class="user-tab-btn active" data-user-tab="tab-user-fms" style="background: none; border: none; color: var(--primary); font-size: 0.95rem; font-weight: bold; cursor: pointer; padding: 8px 16px; border-bottom: 2px solid var(--primary); transition: all 0.3s; display: flex; align-items: center; gap: 8px; outline: none;">
+          <i class="fa-solid fa-calendar-days"></i> Theo dõi lịch làm việc
+        </button>
+        <button id="user-tab-btn-elearning" class="user-tab-btn" data-user-tab="tab-user-elearning" style="background: none; border: none; color: var(--text-muted); font-size: 0.95rem; font-weight: bold; cursor: pointer; padding: 8px 16px; border-bottom: 2px solid transparent; transition: all 0.3s; display: flex; align-items: center; gap: 8px; outline: none;">
+          <i class="fa-solid fa-graduation-cap"></i> Học E-learning
+        </button>
+      </div>
+
+      <!-- Group các nội dung liên quan tới E-learning (Học tập) để dễ quản lý ẩn/hiện -->
+      <div id="user-elearning-section" style="display: none; flex-direction: column; gap: 20px;">
+        <!-- KPI cá nhân từ Skypec -->
+        <div class="kpi-grid">
+          <div class="glass-panel kpi-card blue" style="background: #ffffff;">
+            <span class="kpi-num" id="kpi-user-total-classes" style="color: var(--primary);">0</span>
+            <span class="kpi-label">Lớp đang học</span>
+          </div>
+          <div class="glass-panel kpi-card purple" style="background: #ffffff;">
+            <span class="kpi-num" id="kpi-user-kpi" style="color: #ea580c;">0%</span>
+            <span class="kpi-label" id="kpi-user-kpi-detail">KPI: 0/0 giờ</span>
+          </div>
+          <div class="glass-panel kpi-card purple" style="background: #ffffff;">
+            <span class="kpi-num" id="kpi-user-running-classes" style="color: var(--warning);">0</span>
+            <span class="kpi-label">Đang treo máy</span>
+          </div>
+          <div class="glass-panel kpi-card green" style="background: #ffffff;">
+            <span class="kpi-num" id="kpi-user-certificates" style="color: var(--success);">0</span>
+            <span class="kpi-label">Chứng chỉ đã cấp</span>
+          </div>
+        </div>
+
+
+
+        <div class="section-title">
+          <h3>Tiến độ Học tập Chi tiết</h3>
+          <div style="display: flex; gap: 10px;">
+            <button id="btn-explore-classes" class="btn-glow" style="padding: 10px 16px; width: auto; font-size: 0.9rem; margin-top: 0;">
+              <i class="fa-solid fa-compass"></i> Khám phá khóa học
+            </button>
+            <button id="btn-sync-progress" class="btn-secondary">
+              <i class="fa-solid fa-rotate"></i> Đồng bộ tiến độ từ Skypec
+            </button>
+          </div>
+        </div>
+
+        <div class="glass-panel table-container">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Lớp học</th>
+                <th style="text-align: center; width: 200px;">Tiến độ tích lũy</th>
+                <th style="text-align: center; width: 120px;">Trạng thái</th>
+                <th style="text-align: center; width: 120px;">Tự học ngầm</th>
+              </tr>
+            </thead>
+            <tbody id="classes-table-body">
+              <!-- Render động từ JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Bảng theo dõi tải dầu FMS dành cho nhân viên (C1, C2) chỉ xem -->
+      <div id="user-fms-section" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
+            <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
+          </h4>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="date" id="user-fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
+          </div>
+        </div>
+
+        <!-- Bộ lọc và tìm kiếm nhanh FMS -->
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(0, 114, 151, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 114, 151, 0.12); margin-top: 10px; margin-bottom: 10px;">
+          <div style="flex: 1; min-width: 250px; position: relative;">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
+            <input type="text" id="user-fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
+          </div>
+        </div>
+        
+        <div class="table-container" style="margin-top: 5px;">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Chuyến bay</th>
+                <th>Nhân viên / Xe trực</th>
+                <th style="text-align: center;">Tàu / Loại / Đường bay</th>
+                <th style="text-align: center;">Vị trí đỗ</th>
+                <th style="text-align: center;">Hạ / Cất / Tra nạp</th>
+                <th style="text-align: center;">Standby Fuel</th>
+                <th style="text-align: center;">Fuel Order</th>
+                <th style="text-align: center;" class="hide-on-mobile">Trip Fuel</th>
+                <th style="text-align: center;">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody id="user-fms-table-body">
+              <tr>
+                <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                  Chưa có lịch bay được phân công cho ngày hôm nay.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
 
   <!-- ================= MODAL THÊM TÀI KHOẢN (CHO ADMIN) ================= -->
   <div id="add-account-modal" class="modal">
@@ -1331,6 +1333,6 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     </div>
   </div>
 
-  <script src="app_v3.js?v=3.1.5"></script>
+  <script src="app_v3.js?v=3.1.6"></script>
 </body>
 </html>

@@ -1,17 +1,19 @@
 window.onerror = function (message, source, lineno, colno, error) {
   const errMsg = `[Window Error] Message: ${message}\nURL: ${source}\nLine: ${lineno}:${colno}\nStack: ${error ? error.stack : 'N/A'}`;
   console.error(errMsg);
-  showGlobalErrorBanner(errMsg);
+  // Banner không chặn UI (tránh alert treo trang trắng)
+  try { showGlobalErrorBanner(errMsg); } catch (e) {}
   return false;
 };
 
 window.onunhandledrejection = function (event) {
   const errMsg = `[Unhandled Promise Rejection] Reason: ${event.reason ? (event.reason.stack || event.reason) : 'N/A'}`;
   console.error(errMsg);
-  showGlobalErrorBanner(errMsg);
+  try { showGlobalErrorBanner(errMsg); } catch (e) {}
 };
 
 function showGlobalErrorBanner(msg) {
+  if (!document.body) return;
   let errDiv = document.getElementById('global-error-reporter');
   if (!errDiv) {
     errDiv = document.createElement('div');
@@ -31,7 +33,6 @@ function showGlobalErrorBanner(msg) {
     errDiv.style.whiteSpace = 'pre-wrap';
     errDiv.style.boxShadow = '0 10px 25px rgba(0,0,0,0.3)';
     
-    // Nút đóng banner
     const closeBtn = document.createElement('button');
     closeBtn.textContent = 'Đóng [X]';
     closeBtn.style.float = 'right';
@@ -53,7 +54,18 @@ function showGlobalErrorBanner(msg) {
     
     document.body.appendChild(errDiv);
   }
-  document.getElementById('global-error-text').textContent = msg;
+  const textEl = document.getElementById('global-error-text');
+  if (textEl) textEl.textContent = msg;
+}
+
+function safeParseJSON(raw, fallback) {
+  try {
+    if (raw == null || raw === '' || raw === 'undefined' || raw === 'null') return fallback;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('[safeParseJSON] Invalid JSON in localStorage, using fallback.', e.message);
+    return fallback;
+  }
 }
 
 const state = {
@@ -62,7 +74,7 @@ const state = {
   username: localStorage.getItem('crm_username'),
   displayName: localStorage.getItem('crm_display_name'),
   department: localStorage.getItem('crm_department'),
-  permissions: JSON.parse(localStorage.getItem('crm_permissions') || '{}'),
+  permissions: safeParseJSON(localStorage.getItem('crm_permissions'), {}),
   selectedUser: null,
   zaloMembers: [],
   zaloMappings: []
@@ -95,9 +107,22 @@ let dashboardInterval = null;
 
 // --- KHỞI CHẠY KHI ĐÃ TẢI XONG TRANG ---
 document.addEventListener('DOMContentLoaded', () => {
-  initApp();
-  setupEventListeners();
-  initSpaceBackground();
+  try {
+    setupEventListeners();
+  } catch (err) {
+    console.error('[setupEventListeners] Lỗi gắn sự kiện (app vẫn chạy):', err);
+  }
+  try {
+    initApp();
+  } catch (err) {
+    console.error('[initApp] Lỗi khởi tạo:', err);
+    forceLogoutToLogin(err.message);
+  }
+  try {
+    initSpaceBackground();
+  } catch (err) {
+    console.error('[initSpaceBackground]', err);
+  }
 });
 
 function getUserRole() {
@@ -107,19 +132,67 @@ function getUserRole() {
   return 'nv_c2';
 }
 
+// Xóa phiên đăng nhập hỏng / hết hạn và đưa về màn hình login (không confirm)
+function forceLogoutToLogin(reason) {
+  console.warn('[Auth] Force logout:', reason || 'unknown');
+  const rememberedUser = localStorage.getItem('crm_remembered_user');
+  const rememberedPass = localStorage.getItem('crm_remembered_pass');
+  localStorage.removeItem('crm_token');
+  localStorage.removeItem('crm_role');
+  localStorage.removeItem('crm_username');
+  localStorage.removeItem('crm_display_name');
+  localStorage.removeItem('crm_department');
+  localStorage.removeItem('crm_permissions');
+  // Giữ "ghi nhớ đăng nhập" nếu có
+  if (rememberedUser) localStorage.setItem('crm_remembered_user', rememberedUser);
+  if (rememberedPass) localStorage.setItem('crm_remembered_pass', rememberedPass);
+
+  state.token = null;
+  state.role = null;
+  state.username = null;
+  state.displayName = null;
+  state.department = null;
+  state.permissions = {};
+  state.selectedUser = null;
+  stopDashboardPolling();
+  showScreen('login-screen');
+
+  if (rememberedUser && rememberedPass) {
+    const usernameEl = document.getElementById('username');
+    const passwordEl = document.getElementById('password');
+    const rememberMeEl = document.getElementById('remember-me');
+    if (usernameEl) usernameEl.value = rememberedUser;
+    if (passwordEl) passwordEl.value = rememberedPass;
+    if (rememberMeEl) rememberMeEl.checked = true;
+  }
+}
+
 // Đồng bộ thông tin phân quyền mới nhất của chính mình từ server
 async function syncUserPermissions() {
-  if (!state.token) return;
+  if (!state.token) return false;
   try {
     const res = await fetch('/api/me', {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
+    // Token hết hạn / không hợp lệ → quay về login thay vì màn hình trắng
+    if (res.status === 401 || res.status === 403) {
+      forceLogoutToLogin(`API /api/me HTTP ${res.status}`);
+      return false;
+    }
     const data = await res.json();
     if (data.success && data.user) {
       const oldRole = getUserRole();
       
       // Cập nhật state và localStorage
       state.permissions = data.user.permissions || {};
+      if (data.user.display_name) {
+        state.displayName = data.user.display_name;
+        localStorage.setItem('crm_display_name', data.user.display_name);
+      }
+      if (data.user.department) {
+        state.department = data.user.department;
+        localStorage.setItem('crm_department', data.user.department);
+      }
       localStorage.setItem('crm_permissions', JSON.stringify(state.permissions));
       
       const newRole = getUserRole();
@@ -137,9 +210,16 @@ async function syncUserPermissions() {
           loadUserDashboard();
         }
       }
+      return true;
     }
+    if (data && data.success === false) {
+      forceLogoutToLogin(data.error || 'Phiên đăng nhập không hợp lệ');
+      return false;
+    }
+    return true;
   } catch (err) {
     console.error('[Permission Sync Error]', err.message);
+    return true; // Lỗi mạng: giữ session, không đá logout
   }
 }
 
@@ -147,7 +227,8 @@ function initApp() {
   try {
     if (state.token) {
       // Luôn đồng bộ lấy quyền mới nhất khi khởi động hoặc F5 tải lại trang
-      syncUserPermissions().then(() => {
+      syncUserPermissions().then((ok) => {
+        if (ok === false || !state.token) return; // đã force logout
         try {
           const userRole = getUserRole();
           if (userRole === 'admin' || userRole === 'dieu_hanh') {
@@ -160,10 +241,26 @@ function initApp() {
             loadUserDashboard();
           }
         } catch (e) {
-          alert('[Init App Permission Then Error] ' + e.stack);
+          console.error('[Init App Permission Then Error]', e);
+          forceLogoutToLogin(e.message);
         }
       }).catch(err => {
-        alert('[Sync Permissions Promise Error] ' + err.stack);
+        console.error('[Sync Permissions Promise Error]', err);
+        // Không chặn UI: vẫn cố hiển thị dashboard theo token local
+        try {
+          const userRole = getUserRole();
+          if (userRole === 'admin' || userRole === 'dieu_hanh') {
+            showScreen('admin-screen');
+            applyPermissionsUI();
+            loadAdminDashboard();
+          } else {
+            showScreen('user-screen');
+            applyUserPermissionsUI();
+            loadUserDashboard();
+          }
+        } catch (e2) {
+          forceLogoutToLogin(e2.message);
+        }
       });
       startDashboardPolling();
     } else {
@@ -183,7 +280,8 @@ function initApp() {
       }
     }
   } catch (err) {
-    alert('[Init App Error] ' + err.stack);
+    console.error('[Init App Error]', err);
+    forceLogoutToLogin(err.message);
   }
 }
 
@@ -394,23 +492,43 @@ function stopDashboardPolling() {
   }
 }
 
-// Chuyển đổi giữa các màn hình
+// Chuyển đổi giữa các màn hình (an toàn khi thiếu node)
 function showScreen(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(screenId).classList.add('active');
+  const el = document.getElementById(screenId);
+  if (el) {
+    el.classList.add('active');
+  } else {
+    console.error('[showScreen] Không tìm thấy màn hình:', screenId);
+    const login = document.getElementById('login-screen');
+    if (login) login.classList.add('active');
+  }
+}
+
+function bindClick(id, handler) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('click', handler);
+  else console.warn('[bindClick] Missing element #' + id);
+}
+
+function bindChange(id, handler) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', handler);
+  else console.warn('[bindChange] Missing element #' + id);
 }
 
 // Cài đặt các sự kiện lắng nghe
 function setupEventListeners() {
   // Đăng nhập
-  document.getElementById('login-form').addEventListener('submit', handleLogin);
+  const loginForm = document.getElementById('login-form');
+  if (loginForm) loginForm.addEventListener('submit', handleLogin);
 
   // Đăng xuất
-  document.getElementById('btn-admin-logout').addEventListener('click', handleLogout);
-  document.getElementById('btn-user-logout').addEventListener('click', handleLogout);
+  bindClick('btn-admin-logout', handleLogout);
+  bindClick('btn-user-logout', handleLogout);
 
   // Lưu cấu hình Admin
-  document.getElementById('btn-save-settings').addEventListener('click', saveSystemSettings);
+  bindClick('btn-save-settings', saveSystemSettings);
 
   // Modal Thêm Tài Khoản (Admin)
   const modal = document.getElementById('add-account-modal');
@@ -797,9 +915,12 @@ function setupEventListeners() {
     rad.addEventListener('change', handleSaveSkyEyesSettings);
   });
 
-  document.getElementById('skyeyes-notify-enabled').addEventListener('change', handleSaveSkyEyesSettings);
-  document.getElementById('skyeyes-template-presets').addEventListener('change', handleSkyEyesPresetChange);
-  document.getElementById('skyeyes-template-input').addEventListener('blur', handleSaveSkyEyesSettings);
+  const skyeyesNotify = document.getElementById('skyeyes-notify-enabled');
+  if (skyeyesNotify) skyeyesNotify.addEventListener('change', handleSaveSkyEyesSettings);
+  const skyeyesPresets = document.getElementById('skyeyes-template-presets');
+  if (skyeyesPresets) skyeyesPresets.addEventListener('change', handleSkyEyesPresetChange);
+  const skyeyesTemplate = document.getElementById('skyeyes-template-input');
+  if (skyeyesTemplate) skyeyesTemplate.addEventListener('blur', handleSaveSkyEyesSettings);
 
   // Đăng ký Auto-save cho các checkbox bộ lọc thông báo Zalo FMS
   [
@@ -1272,6 +1393,10 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
     const userRes = await fetch(`/api/accounts/${username}`, {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
+    if (userRes.status === 401 || userRes.status === 403) {
+      forceLogoutToLogin(`API /api/accounts HTTP ${userRes.status}`);
+      return;
+    }
     const userData = await userRes.json();
     if (userData.success) {
       const u = userData.user;
@@ -1327,6 +1452,10 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
     const res = await fetch('/api/classes', {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
+    if (res.status === 401 || res.status === 403) {
+      forceLogoutToLogin(`API /api/classes HTTP ${res.status}`);
+      return;
+    }
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
 
