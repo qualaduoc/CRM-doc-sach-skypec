@@ -366,18 +366,18 @@
               background: rgba(0, 0, 0, 0.15) !important;
             }
             .scenario-item {
-              background: rgba(0, 0, 0, 0.25);
-              border: 1px solid rgba(255, 255, 255, 0.05);
-              border-radius: 6px;
-              padding: 8px;
+              background: #ffffff;
+              border: 1px solid rgba(0, 114, 151, 0.12);
+              border-radius: 8px;
+              padding: 10px;
               display: flex;
               flex-direction: column;
               gap: 6px;
               transition: all 0.2s;
             }
             .scenario-item:hover {
-              border-color: rgba(245, 158, 11, 0.3);
-              background: rgba(0, 0, 0, 0.35);
+              border-color: var(--primary);
+              box-shadow: 0 4px 12px rgba(0, 114, 151, 0.06);
             }
           </style>
           <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 12px;">
@@ -390,20 +390,20 @@
           </div>
 
           <!-- Panel Danh sách tin nhắn mẫu để test -->
-          <div id="fms-test-scenarios-panel" style="display: none; flex-direction: column; gap: 10px; background: rgba(245, 158, 11, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25); margin-bottom: 5px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed rgba(245, 158, 11, 0.25); padding-bottom: 6px; margin-bottom: 2px;">
-              <span style="font-size: 0.8rem; font-weight: bold; color: #f59e0b;"><i class="fa-solid fa-vial"></i> Xem trước & Gửi thử các tin nhắn mẫu:</span>
+          <div id="fms-test-scenarios-panel" style="display: none; flex-direction: column; gap: 10px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 5px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed var(--border); padding-bottom: 6px; margin-bottom: 2px;">
+              <span style="font-size: 0.8rem; font-weight: bold; color: var(--primary);"><i class="fa-solid fa-vial"></i> Xem trước & Gửi thử các tin nhắn mẫu:</span>
               <i class="fa-solid fa-xmark" id="btn-close-test-panel" style="cursor: pointer; font-size: 0.95rem; color: var(--text-muted); padding: 2px 6px;"></i>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px;">
+            <div style="display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
               
               <!-- Kịch bản 1 -->
               <div class="scenario-item">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-size:0.75rem; font-weight:bold; color:#38bdf8;">1. Nội địa ➔ Quốc tế (Tạm nhập - Tái xuất)</span>
-                  <button onclick="runZaloIeTest(1)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; width: 100%;">
+                  <span style="font-size:0.8rem; font-weight:bold; color:#007297;">1. Nội địa ➔ Quốc tế (Tạm nhập - Tái xuất)</span>
+                  <button onclick="runZaloIeTest(1)" class="btn-glow" style="margin-top:0; padding:4px 12px; font-size:0.75rem; background:#16a34a; border:none; width: auto !important; border-radius: 6px;">Gửi thử</button>
                 </div>
-                <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO]
+                <pre style="margin:0; font-family:monospace; font-size:0.72rem; color:#334155; background:#f1f5f9; padding:6px 10px; border-radius:4px; white-space:pre-wrap; border:1px solid #cbd5e1;">⚠️ [CẢNH BÁO]
 Tàu bay VNA612 đã nạp 4,576 kg dầu cho chuyến bay nội địa VN7559 (HAN-CXR lúc 19:55) nhưng đổi tàu.
 Hiện tại, tàu VNA612 đang được phân công bay chuyến bay Quốc tế VN661 (HAN-SIN).
 Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
@@ -412,11 +412,11 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 
               <!-- Kịch bản 2 -->
               <div class="scenario-item">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-size:0.75rem; font-weight:bold; color:#fb923c;">2. Quốc tế ➔ Nội địa (Truy thu thuế GTGT)</span>
-                  <button onclick="runZaloIeTest(2)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; width: 100%;">
+                  <span style="font-size:0.8rem; font-weight:bold; color:#c2410c;">2. Quốc tế ➔ Nội địa (Truy thu thuế GTGT)</span>
+                  <button onclick="runZaloIeTest(2)" class="btn-glow" style="margin-top:0; padding:4px 12px; font-size:0.75rem; background:#16a34a; border:none; width: auto !important; border-radius: 6px;">Gửi thử</button>
                 </div>
-                <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
+                <pre style="margin:0; font-family:monospace; font-size:0.72rem; color:#334155; background:#f1f5f9; padding:6px 10px; border-radius:4px; white-space:pre-wrap; border:1px solid #cbd5e1;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
 Điều hành chú ý: Sử dụng tàu đã nạp Quốc tế cho chuyến bay Nội địa.
 ✈️ Tàu bay: VNA321
 ⛽ Đã nạp chặng Quốc tế: 12,500 kg (Chuyến cũ: VN513 lúc 08:35 chặng HAN-NRT)
@@ -426,11 +426,11 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 
               <!-- Kịch bản 3 -->
               <div class="scenario-item">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-size:0.75rem; font-weight:bold; color:#c084fc;">3. HAN-HAN ➔ Nội địa (Dầu kỹ thuật nội địa)</span>
-                  <button onclick="runZaloIeTest(3)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; width: 100%;">
+                  <span style="font-size:0.8rem; font-weight:bold; color:#b45309;">3. HAN-HAN ➔ Nội địa (Dầu kỹ thuật nội địa)</span>
+                  <button onclick="runZaloIeTest(3)" class="btn-glow" style="margin-top:0; padding:4px 12px; font-size:0.75rem; background:#16a34a; border:none; width: auto !important; border-radius: 6px;">Gửi thử</button>
                 </div>
-                <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
+                <pre style="margin:0; font-family:monospace; font-size:0.72rem; color:#334155; background:#f1f5f9; padding:6px 10px; border-radius:4px; white-space:pre-wrap; border:1px solid #cbd5e1;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
 Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật cho chuyến bay nội địa.
 ✈️ Tàu bay: VNA990
 ⛽ Đã nạp kỹ thuật chặng HAN-HAN: 5,000 kg (Chuyến cũ: VN990 lúc 14:20)
@@ -440,11 +440,11 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 
               <!-- Kịch bản 4 -->
               <div class="scenario-item">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-size:0.75rem; font-weight:bold; color:#a7f3d0;">4. HAN-HAN ➔ Quốc tế (Dầu kỹ thuật quốc tế)</span>
-                  <button onclick="runZaloIeTest(4)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; width: 100%;">
+                  <span style="font-size:0.8rem; font-weight:bold; color:#15803d;">4. HAN-HAN ➔ Quốc tế (Dầu kỹ thuật quốc tế)</span>
+                  <button onclick="runZaloIeTest(4)" class="btn-glow" style="margin-top:0; padding:4px 12px; font-size:0.75rem; background:#16a34a; border:none; width: auto !important; border-radius: 6px;">Gửi thử</button>
                 </div>
-                <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
+                <pre style="margin:0; font-family:monospace; font-size:0.72rem; color:#334155; background:#f1f5f9; padding:6px 10px; border-radius:4px; white-space:pre-wrap; border:1px solid #cbd5e1;">⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
 Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật Han-Han cho chuyến bay Quốc Tế.
 ✈️ Tàu bay: VNA990
 ⛽ Đã nạp kỹ thuật chặng HAN-HAN: 5,000 kg (Chuyến cũ: VN990 lúc 14:20)
