@@ -1261,40 +1261,42 @@ app.post('/api/admin/change-password', authenticateToken, async (req, res) => {
 
 // --- API QUẢN LÝ TẢI DẦU FMS VIETNAM AIRLINES ---
 // Cập nhật lịch bay trực ca (chỉ Admin)
+// Cộng/trừ ngày YYYY-MM-DD an toàn (tránh lệch timezone toISOString)
+function addDaysYmd(dateStr, deltaDays) {
+  const parts = String(dateStr).split('-').map(Number);
+  if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return dateStr;
+  const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // Hàm tính toán ngày bay thực tế FMS dựa trên giờ tra nạp
+// dateStr = ngày BẮT ĐẦU ca trực (user chọn khi nhập lịch)
+// hasNightFlights = ca đêm vượt ngày (23h → sáng hôm sau)
 function calculateFmsDate(dateStr, timeStr, hasNightFlights = false) {
   if (!timeStr || timeStr === '-') return dateStr;
   try {
     const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
     if (match) {
-      const hour = parseInt(match[1]);
-      const minute = parseInt(match[2]);
+      const hour = parseInt(match[1], 10);
+      const minute = parseInt(match[2], 10);
       
-      // Nếu giờ nạp nằm trong khoảng sáng sớm (00h00 - 07h30)
+      // Khoảng sáng sớm / rạng sáng (00:00 - 07:30)
       if (hour < 7 || (hour === 7 && minute <= 30)) {
         if (hasNightFlights) {
-          // Ca đêm vượt ngày: các chuyến sáng sớm bay vào ngày hôm sau (date + 1)
-          if (hour < 6) {
-            // Từ 00h00 đến 05h55 ngày hôm sau -> ngày FMS thực tế là chính ngày trực (date)
-            return dateStr;
-          } else {
-            // Từ 06h00 đến 07h30 ngày hôm sau -> ngày FMS thực tế là ngày hôm sau (date + 1)
-            const d = new Date(dateStr + 'T00:00:00');
-            d.setDate(d.getDate() + 1);
-            return d.toISOString().split('T')[0];
-          }
-        } else {
-          // Lịch ca ngày/ca sáng riêng lẻ: các chuyến sáng sớm bay vào chính ngày trực (date)
-          if (hour < 6) {
-            // Từ 00h00 đến 05h55 chính ngày -> ngày FMS thực tế là ngày hôm trước (date - 1)
-            const d = new Date(dateStr + 'T00:00:00');
-            d.setDate(d.getDate() - 1);
-            return d.toISOString().split('T')[0];
-          } else {
-            // Từ 06h00 đến 07h30 chính ngày -> ngày FMS thực tế là chính ngày trực (date)
-            return dateStr;
-          }
+          // Ca đêm: chuyến 00:00–07:30 là SÁNG HÔM SAU so với ngày bắt đầu ca
+          // → ngày FMS thực tế = date + 1 (để khớp lệnh fuel FMS theo ngày bay)
+          return addDaysYmd(dateStr, 1);
         }
+        // Không phải ca đêm: 00:00–05:59 thường thuộc ngày FMS hôm trước
+        if (hour < 6) {
+          return addDaysYmd(dateStr, -1);
+        }
+        // 06:00–07:30 cùng ngày trực
+        return dateStr;
       }
     }
   } catch (e) {
@@ -1418,9 +1420,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     }
 
     // Chỉ dọn dẹp lịch bay cũ hơn ngày hôm trước (date < targetDate - 1 ngày) để giữ lại ca đêm hôm trước
-    const targetDateObj = new Date(targetDate + 'T00:00:00');
-    const limitDateObj = new Date(targetDateObj.getTime() - 24 * 60 * 60 * 1000);
-    const limitDateStr = limitDateObj.toISOString().split('T')[0];
+    const limitDateStr = addDaysYmd(targetDate, -1);
     await db.run('DELETE FROM fms_schedules WHERE date < ?', limitDateStr);
 
     // Xóa tải dầu FMS cũ của các ngày trước ngày import (date < targetDate) để tránh báo tin nhầm lẫn

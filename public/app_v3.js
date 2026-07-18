@@ -2098,8 +2098,12 @@ async function loadFmsSchedules(isSilent = false) {
     if (rows.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            Chưa có lịch bay được phân công cho ngày ${selectedDate ? formatDateVN(selectedDate) : 'được chọn'}.
+          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px; line-height: 1.6;">
+            <div style="font-weight: 600; margin-bottom: 6px;">Chưa có lịch bay phân công cho ngày ${selectedDate ? formatDateVN(selectedDate) : 'được chọn'}.</div>
+            <div style="font-size: 0.85rem;">
+              Lịch được lưu theo <strong>ngày bắt đầu ca trực</strong> (ô lọc ngày phía trên).<br>
+              Ví dụ ca đêm 18/07 (23:59 → 07:30 sáng 19/07) phải chọn bộ lọc <strong>18/07</strong>, không phải 19/07.
+            </div>
           </td>
         </tr>
       `;
@@ -2814,11 +2818,14 @@ function filterFlightsByShift(flights, shift) {
 
   return flights.filter(f => {
     const timeStr = f.time_fuel || f.time_dep || f.time_arr || '';
-    if (!timeStr || timeStr === '-') return false;
+    if (!timeStr || timeStr === '-') {
+      // Ca đêm/cả ngày: giữ dòng thiếu giờ (tránh mất chuyến khi Excel thiếu cột giờ)
+      return shift === 'night' || shift === 'all';
+    }
 
     try {
       const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
-      if (!match) return false;
+      if (!match) return shift === 'night';
 
       const hour = parseInt(match[1]);
       const minute = parseInt(match[2]);
@@ -2826,15 +2833,17 @@ function filterFlightsByShift(flights, shift) {
 
       const m_0730 = 7 * 60 + 30;
       const m_1930 = 19 * 60 + 30;
-      const m_2359 = 23 * 60 + 59;
+      // Ca đêm: từ 23:00 (không chỉ đúng 23:59) đến trước 07:30 sáng
+      // 23:00–23:59 thuộc biên ca tối/đêm — ưu tiên đưa vào ca đêm khi user chọn night
+      const m_2300 = 23 * 60;
 
       if (shift === 'day') {
         return minutes >= m_0730 && minutes < m_1930;
       } else if (shift === 'evening') {
-        return minutes >= m_1930 && minutes <= m_2359;
+        return minutes >= m_1930 && minutes < m_2300;
       } else if (shift === 'night') {
-        // Ca đêm: từ 23h59 ngày N đến 07h30 sáng ngày N+1
-        return minutes >= m_2359 || minutes < m_0730;
+        // Ca đêm: 23:00 ngày N → 07:30 sáng ngày N+1 (giờ trên lịch là 23:xx hoặc 00:xx–07:29)
+        return minutes >= m_2300 || minutes < m_0730;
       }
     } catch (e) {
       console.error('[Shift Filter Error]', e.message);
@@ -3226,10 +3235,14 @@ async function handleConfirmFmsPreview() {
     });
 
     // 3. Gọi API lưu lịch bay và mapping học hỏi
+    // Ưu tiên ca/ngày trên Modal Preview (đúng chỗ user vừa chọn), fallback form bên ngoài
     const dateInput = document.getElementById('fms-preview-date-input');
     const selectedDate = dateInput ? dateInput.value : '';
-    const shiftSelect = document.getElementById('fms-filter-shift');
-    const selectedShift = shiftSelect ? shiftSelect.value : 'all';
+    const previewShiftEl = document.getElementById('fms-preview-shift-input');
+    const outerShiftEl = document.getElementById('fms-filter-shift');
+    const selectedShift = (previewShiftEl && previewShiftEl.value)
+      ? previewShiftEl.value
+      : (outerShiftEl ? outerShiftEl.value : 'all');
 
     const res = await fetch('/api/fms/schedule', {
       method: 'POST',
@@ -3247,7 +3260,18 @@ async function handleConfirmFmsPreview() {
     
     const data = await res.json();
     if (data.success) {
-      showToast(data.message, 'success', 'Thành công');
+      const shiftLabel = {
+        all: 'cả ngày',
+        day: 'ca ngày',
+        evening: 'ca tối',
+        night: 'ca đêm'
+      }[selectedShift] || selectedShift;
+      const dateVn = selectedDate ? formatDateVN(selectedDate) : '';
+      showToast(
+        `${data.message || 'Đã lưu lịch trực.'} Đang mở Kế hoạch FMS ngày ${dateVn} (${shiftLabel}).`,
+        'success',
+        'Thành công'
+      );
       document.getElementById('fms-preview-modal').classList.remove('active');
       if (selectedDate) {
         const schedInput = document.getElementById('fms-schedule-date');
@@ -3255,7 +3279,13 @@ async function handleConfirmFmsPreview() {
         if (schedInput) schedInput.value = selectedDate;
         if (filtInput) filtInput.value = selectedDate;
       }
-      loadFmsSchedules();
+      // Đồng bộ dropdown ca ngoài form nhập với ca vừa lưu
+      if (outerShiftEl && selectedShift) outerShiftEl.value = selectedShift;
+
+      // Chuyển sang tab Kế hoạch bay FMS để user thấy ngay dữ liệu vừa nhập
+      const fmsTabBtn = document.getElementById('tab-btn-fms') || document.querySelector('[data-tab="tab-fms"]');
+      if (fmsTabBtn) fmsTabBtn.click();
+      else loadFmsSchedules();
     } else {
       throw new Error(data.error);
     }
