@@ -94,93 +94,110 @@
 
   <!-- ================= MÀN HÌNH DASHBOARD ADMIN ================= -->
   <div id="admin-screen" class="screen">
-    <div class="container">
-      <header class="glass-panel app-header" style="padding: 15px 24px; border-color: rgba(0, 114, 151, 0.25);">
-        <div style="display: flex; align-items: center; gap: 15px;">
-          <img src="logo.png" alt="Skypec Logo" style="height: 42px; vertical-align: middle; filter: drop-shadow(0 2px 8px rgba(0, 114, 151, 0.35));">
-          <div style="width: 1px; height: 35px; background: rgba(255,255,255,0.15);"></div>
-          <div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 1.4rem; font-weight: 800; color: #fff; letter-spacing: 0.5px; font-family: 'Outfit', sans-serif;">SkyEyes</span>
-              <span style="background: rgba(0, 114, 151, 0.2); border: 1px solid rgba(0, 114, 151, 0.4); color: #38bdf8; font-size: 0.65rem; padding: 2px 6px; border-radius: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">ADMIN</span>
+    <div class="container" style="max-width: 1800px; margin: 0 auto; padding: 20px; width: 98%;">
+      
+      <div class="admin-wrapper" style="display: flex; gap: 24px; align-items: flex-start;">
+        
+        <!-- SIDEBAR DỌC BÊN TRÁI -->
+        <div class="glass-panel admin-sidebar" style="width: 280px; padding: 24px; display: flex; flex-direction: column; gap: 20px; flex-shrink: 0; border-color: rgba(0, 114, 151, 0.2); background: rgba(255, 255, 255, 0.85); box-sizing: border-box;">
+          
+          <!-- Brand Logo & Name -->
+          <div style="text-align: center; border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 5px;">
+            <img src="logo.png" alt="Skypec Logo" style="height: 48px; margin: 0 auto 12px auto; display: block; filter: drop-shadow(0 2px 8px rgba(0, 114, 151, 0.35));">
+            <span style="font-size: 1.45rem; font-weight: 800; color: var(--primary); letter-spacing: 0.5px; font-family: 'Outfit', sans-serif; display: block;">SkyEyes</span>
+            <span style="display: block; font-size: 0.65rem; color: var(--text-muted); font-weight: bold; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.3px;">Chi nhánh miền Bắc</span>
+          </div>
+          
+          <!-- Menu Điều Hướng Dọc -->
+          <div class="admin-tabs" style="display: flex; flex-direction: column; gap: 8px;">
+            <button class="admin-tab-btn active" data-tab="tab-accounts" style="outline: none;">
+              <i class="fa-solid fa-users" style="font-size: 1rem;"></i> Quản lý Học viên
+            </button>
+            <button id="tab-btn-fms" class="admin-tab-btn" data-tab="tab-fms" style="outline: none;">
+              <i class="fa-solid fa-gas-pump" style="font-size: 1rem;"></i> Kế hoạch bay FMS
+            </button>
+            <button id="tab-btn-temp-import-export" class="admin-tab-btn" data-tab="tab-temp-import-export" style="outline: none;">
+              <i class="fa-solid fa-plane-circle-exclamation" style="font-size: 1rem;"></i> Giám sát Tạm nhập
+            </button>
+            <button id="tab-btn-fms-schedule-admin" class="admin-tab-btn" data-tab="tab-fms-schedule-admin" style="outline: none;">
+              <i class="fa-solid fa-calendar-check" style="font-size: 1rem;"></i> Nhập lịch trực ca
+            </button>
+            <button id="tab-btn-settings" class="admin-tab-btn" data-tab="tab-settings" style="outline: none;">
+              <i class="fa-solid fa-screwdriver-wrench" style="font-size: 1rem;"></i> Cấu hình & Kết nối
+            </button>
+            <button id="tab-btn-fms-stats" class="admin-tab-btn" data-tab="tab-fms-stats" style="outline: none;">
+              <i class="fa-solid fa-square-poll-vertical" style="font-size: 1rem;"></i> Thống kê KPI
+            </button>
+          </div>
+
+        </div>
+
+        <!-- NỘI DUNG CHÍNH BÊN PHẢI -->
+        <div class="admin-main-content" style="flex: 1; display: flex; flex-direction: column; gap: 20px; box-sizing: border-box; min-width: 0;">
+          
+          <!-- TOPBAR HEADER -->
+          <header class="glass-panel app-header" style="padding: 15px 24px; border-color: rgba(0, 114, 151, 0.25); display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box; background: rgba(255, 255, 255, 0.85);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-shield-halved" style="font-size: 1.4rem; color: var(--primary);"></i>
+              <div>
+                <h4 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text);">SkyEyes Operations Dashboard</h4>
+                <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Vai trò: Quản trị viên chi nhánh</p>
+              </div>
             </div>
-            <span style="display: block; font-size: 0.72rem; color: var(--warning); font-weight: bold; letter-spacing: 0.4px; margin-top: 1px; text-transform: uppercase; font-family: 'Outfit', sans-serif;">Trung tâm khai thác - Chi nhánh Skypec khu vực miền Bắc</span>
+            <div class="header-actions" style="display: flex; gap: 10px;">
+              <button id="btn-admin-change-pass" class="btn-secondary" style="padding: 8px 14px; font-size: 0.85rem;">
+                <i class="fa-solid fa-key"></i> Đổi mật khẩu
+              </button>
+              <button id="btn-admin-logout" class="btn-danger" style="padding: 8px 14px; font-size: 0.85rem;">
+                <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
+              </button>
+            </div>
+          </header>
+
+          <!-- Cấu hình giới hạn nhanh -->
+          <div class="glass-panel" style="padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; background: rgba(255, 255, 255, 0.85);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-sliders" style="font-size: 1.3rem; color: var(--primary);"></i>
+              <div>
+                <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700;">Giới hạn chạy LMS song song</h4>
+                <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted);">Thiết lập số lượng lớp học tự động chạy đồng thời của học viên</p>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 0.85rem; font-weight: 600;">Lớp treo song song:</span>
+              <input type="number" id="setting-max-classes" min="1" max="10" value="3" style="width: 60px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: #ffffff; color: var(--text); text-align: center; font-weight: bold; outline: none;">
+              <button id="btn-save-settings" class="btn-glow" style="margin-top: 0; padding: 7px 15px; width: auto; font-size: 0.82rem; height: 32px;"><i class="fa-solid fa-floppy-disk"></i> Lưu</button>
+            </div>
           </div>
-        </div>
-        <div class="header-actions" style="display: flex; gap: 10px;">
-          <button id="btn-admin-change-pass" class="btn-secondary" style="border-color: rgba(245, 158, 11, 0.3); color: var(--warning);">
-            <i class="fa-solid fa-key"></i> Đổi mật khẩu
-          </button>
-          <button id="btn-admin-logout" class="btn-danger">
-            <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
-          </button>
-        </div>
-      </header>
 
-      <!-- Cấu hình giới hạn -->
-      <div class="glass-panel" style="margin-bottom: 20px; padding: 15px; display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <i class="fa-solid fa-gears" style="font-size: 1.5rem; color: var(--primary);"></i>
-          <div>
-            <h4 style="margin: 0; font-size: 1rem;">Cấu hình hệ thống</h4>
-            <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">Thiết lập giới hạn học tập cho toàn bộ học viên</p>
+          <!-- KPI Grid -->
+          <div class="kpi-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; width: 100%;">
+            <div class="glass-panel kpi-card blue" style="background: rgba(255, 255, 255, 0.85);">
+              <span class="kpi-num" id="kpi-total-accounts" style="color: var(--primary);">0</span>
+              <span class="kpi-label">Tổng số tài khoản học viên</span>
+            </div>
+            <div class="glass-panel kpi-card green" style="background: rgba(255, 255, 255, 0.85);">
+              <span class="kpi-num" id="kpi-active-accounts" style="color: var(--success);">0</span>
+              <span class="kpi-label">Đang chạy ngầm tự động</span>
+            </div>
+            <div class="glass-panel kpi-card purple" style="background: rgba(255, 255, 255, 0.85);">
+              <span class="kpi-num" id="kpi-total-classes-admin" style="color: var(--warning);">0</span>
+              <span class="kpi-label">Tổng số lớp học quản lý</span>
+            </div>
           </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <span style="font-size: 0.9rem; font-weight: 500;">Giới hạn lớp treo song song:</span>
-          <input type="number" id="setting-max-classes" min="1" max="10" value="3" style="width: 70px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; text-align: center; font-weight: bold;">
-          <button id="btn-save-settings" class="btn-glow" style="margin-top: 0; padding: 8px 15px; width: auto; font-size: 0.85rem;"><i class="fa-solid fa-floppy-disk"></i> Lưu</button>
-        </div>
-      </div>
 
-      <!-- KPI Grid -->
-      <div class="kpi-grid">
-        <div class="glass-panel kpi-card blue">
-          <span class="kpi-num" id="kpi-total-accounts">0</span>
-          <span class="kpi-label">Tổng số tài khoản</span>
-        </div>
-        <div class="glass-panel kpi-card green">
-          <span class="kpi-num" id="kpi-active-accounts">0</span>
-          <span class="kpi-label">Đang chạy ngầm</span>
-        </div>
-        <div class="glass-panel kpi-card purple">
-          <span class="kpi-num" id="kpi-total-classes-admin">0</span>
-          <span class="kpi-label">Tổng số lớp học quản lý</span>
-        </div>
-      </div>
+          <!-- Banner thông báo khảo sát màu cam -->
+          <div id="survey-notice-banner-admin" class="glass-panel" style="border-color: rgba(249, 115, 22, 0.3); background: rgba(249, 115, 22, 0.05); display: flex; align-items: center; gap: 15px; padding: 12px 20px; width: 100%; box-sizing: border-box;">
+            <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.3rem; color: #f97316;"></i>
+            <div style="font-size: 0.88rem; color: #ea580c; font-weight: 500; line-height: 1.5;">
+              <span style="color: #ea580c; font-weight: 700; text-transform: uppercase;">Chú ý:</span> 
+              Hãy bấm <strong style="color: #fff; background: #ea580c; padding: 2px 6px; border-radius: 4px; font-weight: 600;">"Đồng bộ"</strong> trên từng tài khoản để hệ thống Tự động khảo sát mọi bài học cho học viên đó!
+            </div>
+          </div>
 
-      <!-- Banner thông báo khảo sát màu cam -->
-      <div id="survey-notice-banner-admin" class="glass-panel" style="margin-bottom: 20px; border-color: rgba(249, 115, 22, 0.3); background: rgba(249, 115, 22, 0.05); display: flex; align-items: center; gap: 15px; padding: 15px 20px;">
-        <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.5rem; color: #f97316;"></i>
-        <div style="font-size: 0.95rem; color: #fdba74; font-weight: 500; line-height: 1.5;">
-          <span style="color: #f97316; font-weight: 700; text-transform: uppercase;">Chú ý:</span> 
-          Hãy bấm <strong style="color: #fff; background: rgba(255, 255, 255, 0.1); padding: 2px 6px; border-radius: 4px; font-weight: 600;">"Đồng bộ"</strong> trên từng tài khoản để hệ thống Tự động khảo sát mọi bài học cho học viên đó!
-        </div>
-      </div>
-
-      <!-- Tab điều hướng Admin -->
-      <div class="admin-tabs" style="display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap;">
-        <button class="admin-tab-btn active" data-tab="tab-accounts" style="background: none; border: none; color: var(--primary); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid var(--primary); transition: all 0.3s; outline: none;">
-          <i class="fa-solid fa-users"></i> Quản lý Học viên
-        </button>
-        <button id="tab-btn-fms" class="admin-tab-btn" data-tab="tab-fms" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
-          <i class="fa-solid fa-gas-pump"></i> Kế hoạch bay FMS
-        </button>
-        <button id="tab-btn-temp-import-export" class="admin-tab-btn" data-tab="tab-temp-import-export" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
-          <i class="fa-solid fa-plane-circle-exclamation"></i> Giám sát Tạm nhập - Tái xuất
-        </button>
-        <button id="tab-btn-fms-schedule-admin" class="admin-tab-btn" data-tab="tab-fms-schedule-admin" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
-          <i class="fa-solid fa-calendar-check"></i> Nhập lịch trực ca
-        </button>
-        <button id="tab-btn-settings" class="admin-tab-btn" data-tab="tab-settings" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
-          <i class="fa-solid fa-screwdriver-wrench"></i> Cấu hình & Kết nối
-        </button>
-        <button id="tab-btn-fms-stats" class="admin-tab-btn" data-tab="tab-fms-stats" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
-          <i class="fa-solid fa-square-poll-vertical"></i> Thống kê KPI Chuyến
-        </button>
-      </div>
-
-      <!-- TAB CONTENT 1: QUẢN LÝ HỌC VIÊN -->
+          <!-- KHU VỰC CHỨA CÁC TAB CONTENT (SẼ RENDER TẠI ĐÂY) -->
+          <div class="tab-contents-container" style="width: 100%;">
+            <!-- TAB CONTENT 1: QUẢN LÝ HỌC VIÊN -->
       <div id="tab-accounts" class="admin-tab-content active-content">
         <div class="section-title">
           <h3>Danh sách Tài khoản Học viên</h3>
@@ -535,8 +552,12 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             </div>
           </div>
 
-        </div>
-      </div>
+        </div> <!-- Đóng tab-fms-schedule-admin -->
+      </div> <!-- Đóng tab-contents-container -->
+    </div> <!-- Đóng admin-main-content -->
+  </div> <!-- Đóng admin-wrapper -->
+</div> <!-- Đóng container -->
+</div> <!-- Đóng admin-screen -->
 
   <!-- ================= MÀN HÌNH CHI TIẾT NHÂN VIÊN / USER PANEL ================= -->
   <div id="user-screen" class="screen">
