@@ -424,16 +424,68 @@ function fetchClassDetails(token, classId) {
 }
 
 // --- MIDDLEWARE XÁC THỰC TOKEN ---
+// JWT chỉ dùng để xác định username/role phiên; quyền perm_* luôn đọc lại từ DB
+// → Admin hạ/nâng quyền có hiệu lực ngay, không cần user login lại.
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) return res.status(401).json({ success: false, error: 'Chưa cung cấp mã xác thực JWT' });
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, async (err, user) => {
     if (err) return res.status(403).json({ success: false, error: 'Mã xác thực không hợp lệ hoặc đã hết hạn' });
-    req.user = user;
-    next();
+
+    try {
+      // Super Admin hệ thống (bảng admin) — full quyền cố định
+      if (user && user.role === 'admin' && user.username === 'admin') {
+        req.user = {
+          ...user,
+          role: 'admin',
+          username: 'admin',
+          perm_admin: 1,
+          perm_fms: 1,
+          perm_zalo: 1,
+          perm_gemini: 1,
+          perm_gate: 1
+        };
+        return next();
+      }
+
+      if (!user || !user.username) {
+        return res.status(403).json({ success: false, error: 'Mã xác thực không hợp lệ' });
+      }
+
+      const db = await getDb();
+      const row = await db.get(
+        'SELECT perm_admin, perm_fms, perm_zalo, perm_gemini, perm_gate, status FROM accounts WHERE username = ?',
+        user.username
+      );
+
+      if (!row) {
+        return res.status(403).json({ success: false, error: 'Tài khoản không tồn tại hoặc đã bị xóa' });
+      }
+
+      if (row.status && String(row.status).toLowerCase() === 'disabled') {
+        return res.status(403).json({ success: false, error: 'Tài khoản đã bị vô hiệu hóa' });
+      }
+
+      // Ghi đè perm_* từ DB (bỏ qua giá trị cũ trong JWT).
+      // role JWT 'admin' chỉ hợp lệ với super admin ở nhánh trên — account Skypec luôn role=user.
+      req.user = {
+        ...user,
+        role: 'user',
+        username: user.username,
+        perm_admin: row.perm_admin ? 1 : 0,
+        perm_fms: row.perm_fms ? 1 : 0,
+        perm_zalo: row.perm_zalo ? 1 : 0,
+        perm_gemini: row.perm_gemini ? 1 : 0,
+        perm_gate: row.perm_gate ? 1 : 0
+      };
+      next();
+    } catch (e) {
+      console.error('[Auth] Lỗi làm mới quyền từ DB:', e.message);
+      return res.status(500).json({ success: false, error: 'Lỗi xác thực quyền truy cập' });
+    }
   });
 }
 
@@ -741,8 +793,8 @@ async function syncUserClasses(username, token) {
 // Lấy thông tin cá nhân hiện tại
 app.get('/api/me', authenticateToken, async (req, res) => {
   try {
-    const db = await getDb();
-    if (req.user.role === 'admin') {
+    // authenticateToken đã refresh perm_* từ DB — /api/me phản ánh đúng quyền hiện tại
+    if (req.user.role === 'admin' && req.user.username === 'admin') {
       return res.json({ 
         success: true, 
         user: { 
@@ -761,21 +813,28 @@ app.get('/api/me', authenticateToken, async (req, res) => {
       });
     }
 
+    const db = await getDb();
     const user = await db.get('SELECT username, display_name, department, email, phone, position_name, kpi_percent, kpi_total, kpi_current, total_certificate, class_total, perm_admin, perm_fms, perm_zalo, perm_gemini, perm_gate FROM accounts WHERE username = ?', req.user.username);
     if (!user) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản nhân viên' });
     }
+    // Ưu tiên perm vừa refresh trên req.user (đồng bộ tuyệt đối với middleware)
     res.json({ 
       success: true, 
       user: { 
         ...user, 
         role: 'user',
+        perm_admin: req.user.perm_admin,
+        perm_fms: req.user.perm_fms,
+        perm_zalo: req.user.perm_zalo,
+        perm_gemini: req.user.perm_gemini,
+        perm_gate: req.user.perm_gate,
         permissions: {
-          perm_admin: user.perm_admin,
-          perm_fms: user.perm_fms,
-          perm_zalo: user.perm_zalo,
-          perm_gemini: user.perm_gemini,
-          perm_gate: user.perm_gate
+          perm_admin: req.user.perm_admin,
+          perm_fms: req.user.perm_fms,
+          perm_zalo: req.user.perm_zalo,
+          perm_gemini: req.user.perm_gemini,
+          perm_gate: req.user.perm_gate
         }
       } 
     });
