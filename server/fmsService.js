@@ -515,18 +515,27 @@ async function syncFMSData(forceDate = null, forceShift = null) {
     const db = await getDb();
     const todayDb = getVietnamDbDateStr();
 
-    // Dọn dẹp dữ liệu lịch bay và kế hoạch trực ca cũ của những ngày trước để tránh quá tải DB
+    // Dọn dẹp dữ liệu lịch bay cũ — GIỮ HÔM QUA + HÔM NAY
+    // (Ca đêm bắt đầu hôm qua 23h → 07h30 sáng nay vẫn cần lịch date = hôm qua)
     try {
-      // Xóa sạch toàn bộ lịch trực cũ của tất cả các ngày trước ngày hôm nay (date < todayDb)
-      const deletedRows = await db.run('DELETE FROM fms_schedules WHERE date < ?', todayDb);
-      if (deletedRows && deletedRows.changes > 0) {
-        log(`[Dọn dẹp DB] Đã xóa ${deletedRows.changes} dòng lịch bay cũ trước ngày hôm nay.`);
+      const keepFromParts = String(todayDb).split('-').map(Number);
+      let keepFromStr = todayDb;
+      if (keepFromParts.length === 3 && keepFromParts.every(n => Number.isFinite(n))) {
+        const kd = new Date(Date.UTC(keepFromParts[0], keepFromParts[1] - 1, keepFromParts[2]));
+        kd.setUTCDate(kd.getUTCDate() - 1); // giữ từ hôm qua
+        keepFromStr = `${kd.getUTCFullYear()}-${String(kd.getUTCMonth() + 1).padStart(2, '0')}-${String(kd.getUTCDate()).padStart(2, '0')}`;
       }
 
-      // Xóa sạch toàn bộ tải dầu FMS của các ngày trước ngày hôm nay (date < todayDb) để tránh so sánh nhầm
-      const deletedOrders = await db.run("DELETE FROM fms_fuel_orders WHERE flight_no LIKE '%_%' AND substr(flight_no, instr(flight_no, '_') + 1) < ?", todayDb);
+      // Xóa lịch trực cũ hơn "hôm qua" (không xóa lịch ca đêm ngày hôm qua)
+      const deletedRows = await db.run('DELETE FROM fms_schedules WHERE date < ?', keepFromStr);
+      if (deletedRows && deletedRows.changes > 0) {
+        log(`[Dọn dẹp DB] Đã xóa ${deletedRows.changes} dòng lịch bay cũ trước ${keepFromStr} (giữ từ hôm qua trở đi).`);
+      }
+
+      // Tải dầu FMS: giữ từ hôm qua (khớp ca đêm / fms_date)
+      const deletedOrders = await db.run("DELETE FROM fms_fuel_orders WHERE flight_no LIKE '%_%' AND substr(flight_no, instr(flight_no, '_') + 1) < ?", keepFromStr);
       if (deletedOrders && deletedOrders.changes > 0) {
-        log(`[Dọn dẹp DB] Đã xóa ${deletedOrders.changes} bản ghi tải dầu FMS cũ của các ngày trước.`);
+        log(`[Dọn dẹp DB] Đã xóa ${deletedOrders.changes} bản ghi tải dầu FMS cũ trước ${keepFromStr}.`);
       }
 
       // Đọc cấu hình thời gian giám sát Tạm nhập - Tái xuất
@@ -553,10 +562,14 @@ async function syncFMSData(forceDate = null, forceShift = null) {
     if (forceDate) {
       const selectedDateStr = String(forceDate).trim();
       if (forceShift === 'night') {
-        // Ca đêm vượt ngày: các chuyến rạng sáng bay vào ngày hôm sau, do đó cần quét cả 2 ngày
-        const d = new Date(selectedDateStr + 'T00:00:00');
-        d.setDate(d.getDate() + 1);
-        const nextDayStr = d.toISOString().split('T')[0];
+        // Ca đêm vượt ngày: quét cả ngày bắt đầu ca + ngày hôm sau (rạng sáng)
+        const parts = selectedDateStr.split('-').map(Number);
+        let nextDayStr = selectedDateStr;
+        if (parts.length === 3 && parts.every(n => Number.isFinite(n))) {
+          const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+          d.setUTCDate(d.getUTCDate() + 1);
+          nextDayStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        }
         targetDates = [selectedDateStr, nextDayStr];
       } else {
         targetDates = [selectedDateStr];

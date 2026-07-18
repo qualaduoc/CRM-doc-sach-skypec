@@ -1484,10 +1484,18 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
       );
     }
 
-    // Trích xuất bất đồng bộ để quét dữ liệu FMS ngay lập tức
-    syncFMSData().catch(err => console.error('[FMS] Lỗi quét nhanh sau khi cập nhật lịch:', err.message));
+    // Quét FMS ngay — truyền đúng ngày/ca vừa import (tránh worker dọn nhầm / quét sai ngày)
+    const shiftForSync = (shift && String(shift).trim()) ? String(shift).trim() : 'all';
+    console.log(`[FMS Schedule] Đã lưu ${schedules.length} chuyến date=${targetDate} shift=${shiftForSync} hasNight=${hasNightFlights}`);
+    syncFMSData(targetDate, shiftForSync).catch(err => console.error('[FMS] Lỗi quét nhanh sau khi cập nhật lịch:', err.message));
 
-    res.json({ success: true, message: `Đã cập nhật lịch trực ca thành công (${schedules.length} chuyến)!` });
+    res.json({
+      success: true,
+      message: `Đã cập nhật lịch trực ca thành công (${schedules.length} chuyến)! Chọn ngày ${targetDate} trên Kế hoạch FMS để xem.`,
+      date: targetDate,
+      shift: shiftForSync,
+      count: schedules.length
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
