@@ -855,6 +855,10 @@ function setupEventListeners() {
   if (userFmsSearch) {
     userFmsSearch.addEventListener('input', () => renderUserFmsTable());
   }
+  const userFmsCrewFilter = document.getElementById('user-fms-crew-filter');
+  if (userFmsCrewFilter) {
+    userFmsCrewFilter.addEventListener('change', () => renderUserFmsTable());
+  }
 
   // Đóng Modal Preview FMS
   document.getElementById('btn-close-fms-preview-modal').addEventListener('click', () => {
@@ -2185,9 +2189,9 @@ async function loadFmsSchedules(isSilent = false) {
   }
 }
 
-// Cập nhật danh sách cặp tra nạp vào Dropdown filter
-function updateFmsCrewFilter(rows) {
-  const crewSelect = document.getElementById('fms-crew-filter');
+// Cập nhật danh sách cặp tra nạp vào Dropdown filter (admin và/hoặc user)
+function updateFmsCrewFilter(rows, selectId = 'fms-crew-filter') {
+  const crewSelect = document.getElementById(selectId);
   if (!crewSelect) return;
 
   // Lưu giữ giá trị đang chọn hiện tại để không bị mất trạng thái
@@ -2199,10 +2203,22 @@ function updateFmsCrewFilter(rows) {
   let html = '<option value="">-- Tất cả Cặp tra nạp --</option>';
   crews.forEach(c => {
     const selectedAttr = c === currentVal ? 'selected' : '';
-    html += `<option value="${c}" ${selectedAttr}>${c}</option>`;
+    const safe = String(c)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+    html += `<option value="${safe}" ${selectedAttr}>${safe}</option>`;
   });
 
   crewSelect.innerHTML = html;
+  // Khôi phục selection (trình duyệt decode entity trong value)
+  if (currentVal && crews.includes(currentVal)) {
+    crewSelect.value = currentVal;
+  }
+}
+
+function updateUserFmsCrewFilter(rows) {
+  updateFmsCrewFilter(rows, 'user-fms-crew-filter');
 }
 
 // Cuộn màn hình xuống widget Tạm nhập - Tái xuất
@@ -2678,6 +2694,7 @@ async function loadUserFmsSchedules(isSilent = false) {
 
     const rows = data.data || [];
     cachedUserFmsRows = rows;
+    updateUserFmsCrewFilter(rows);
     renderUserFmsTable();
   } catch (err) {
     console.error('Lỗi tải danh sách FMS nhân viên:', err.message);
@@ -2686,12 +2703,21 @@ async function loadUserFmsSchedules(isSilent = false) {
 
 function renderUserFmsTable() {
   const searchInput = document.getElementById('user-fms-search-input');
+  const crewSelect = document.getElementById('user-fms-crew-filter');
   const query = searchInput ? searchInput.value.trim().toUpperCase() : '';
+  const selectedCrew = crewSelect ? crewSelect.value : '';
   const tbody = document.getElementById('user-fms-table-body');
   
   if (!tbody) return;
 
   const filteredRows = cachedUserFmsRows.filter(r => {
+    // 1. Lọc theo cặp tra nạp
+    if (selectedCrew) {
+      const crew = (r.crew_info || '').trim();
+      if (crew !== selectedCrew) return false;
+    }
+
+    // 2. Lọc tìm kiếm nhanh
     if (query) {
       const flightNo = (r.flight_no || '').toUpperCase();
       const acReg = (r.ac_reg || '').toUpperCase();

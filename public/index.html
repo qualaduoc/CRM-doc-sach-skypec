@@ -1042,7 +1042,10 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
           <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
             <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
           </h4>
-          <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <select id="user-fms-crew-filter" title="Lọc theo cặp tra nạp" style="min-width: 200px; max-width: 280px; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: 600; cursor: pointer; outline: none;">
+              <option value="">-- Tất cả Cặp tra nạp --</option>
+            </select>
             <input type="date" id="user-fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
           </div>
         </div>
