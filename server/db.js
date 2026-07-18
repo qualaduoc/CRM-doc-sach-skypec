@@ -159,10 +159,29 @@ async function getDb() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS fms_airline_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      flight_no TEXT NOT NULL,
+      date TEXT NOT NULL,
+      expected_code TEXT NOT NULL,
+      expected_name TEXT NOT NULL,
+      actual_carrier TEXT DEFAULT '-',
+      actual_name TEXT DEFAULT '-',
+      crew_info TEXT DEFAULT '-',
+      reason TEXT DEFAULT '',
+      is_warned INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(flight_no, date)
+    );
+
     INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_duration', '24h');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_group_id', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_group_name', '');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_notify_airline_mismatch', 'true');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_airline_alert_group_id', '');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_airline_alert_group_name', '');
   `);
 
   // Di chuyển tự động cấu hình cột mới cho database đã tồn tại

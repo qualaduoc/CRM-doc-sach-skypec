@@ -24,7 +24,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=3.2.2">
+  <link rel="stylesheet" href="style.css?v=3.2.3">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
   <style>
@@ -508,6 +508,59 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             </table>
           </div>
         </div>
+
+        <!-- ===== GIÁM SÁT SAI TÊN HÃNG HÀNG KHÔNG ===== -->
+        <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 14px; width: 100%; box-sizing: border-box; margin-top: 16px; border-color: rgba(220, 38, 38, 0.2);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h4 style="margin: 0; font-size: 1.08rem; color: #dc2626; display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-building-circle-exclamation"></i> Giám sát SAI TÊN HÃNG HÀNG KHÔNG
+            </h4>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" id="btn-airline-alert-refresh" class="btn-secondary" style="margin-top: 0; padding: 6px 12px; font-size: 0.82rem;">
+                <i class="fa-solid fa-rotate"></i> Làm mới
+              </button>
+              <button type="button" id="btn-airline-alert-test-toggle" class="btn-glow" style="margin-top: 0; padding: 6px 14px; font-size: 0.82rem; background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); border: none; width: auto !important;">
+                <i class="fa-solid fa-vial"></i> Test cảnh báo hãng
+              </button>
+            </div>
+          </div>
+          <p style="margin: 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.45;">
+            Khi số hiệu chuyến thuộc IO / BSF / SAV / CA / QY, hệ thống so khớp <strong>ký hiệu chuyến</strong> với <strong>CARRIER FMS</strong>.
+            Sai → cảnh báo Zalo (nhóm riêng nếu cấu hình, không thì nhóm tạm nhập / FMS chung).
+          </p>
+          <div id="airline-mappings-list" style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.78rem;"></div>
+
+          <div id="airline-test-panel" style="display: none; flex-direction: column; gap: 8px; background: var(--panel-elevated); padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+            <div style="font-weight: 700; color: var(--primary); font-size: 0.85rem;"><i class="fa-solid fa-vial"></i> Gửi thử tin cảnh báo (5 ký hiệu)</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="1" style="margin:0; padding:6px 10px; font-size:0.78rem;">1. CA6116 (sai → VN)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="2" style="margin:0; padding:6px 10px; font-size:0.78rem;">2. IO1234 (sai → BL)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="3" style="margin:0; padding:6px 10px; font-size:0.78rem;">3. BSF8801 (sai → VN)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="4" style="margin:0; padding:6px 10px; font-size:0.78rem;">4. SAV220 (sai → 0V)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="5" style="margin:0; padding:6px 10px; font-size:0.78rem;">5. QY9901 (sai → CA)</button>
+            </div>
+            <pre id="airline-test-preview" style="margin:0; font-size:0.72rem; white-space:pre-wrap; background:var(--pre-bg); color:var(--pre-text); padding:8px; border-radius:6px; border:1px solid var(--border); max-height:140px; overflow:auto;">Chọn kịch bản để gửi thử...</pre>
+          </div>
+
+          <div class="table-container" style="margin-top: 4px;">
+            <table class="crm-table" style="min-width: 720px;">
+              <thead>
+                <tr>
+                  <th>Chuyến bay</th>
+                  <th>Ký hiệu đúng</th>
+                  <th>Tên hãng đúng</th>
+                  <th>FMS ghi</th>
+                  <th>Cặp nạp</th>
+                  <th>Ngày</th>
+                  <th style="text-align:center;">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="airline-alerts-body">
+                <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:24px;">Chưa có cảnh báo sai tên hãng.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- TAB CONTENT 3: NHẬP LỊCH TRỰC CA -->
@@ -658,6 +711,10 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
                   <input type="checkbox" id="skyeyes-notify-etd-changed" style="cursor: pointer; width: 14px; height: 14px;">
                   <label for="skyeyes-notify-etd-changed" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi thay đổi Giờ bay (ETD)</label>
                 </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="checkbox" id="skyeyes-notify-airline-mismatch" style="cursor: pointer; width: 14px; height: 14px;" checked>
+                  <label for="skyeyes-notify-airline-mismatch" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi SAI TÊN HÃNG HK (IO/BSF/SAV/CA/QY)</label>
+                </div>
               </div>
             </div>
 
@@ -694,6 +751,24 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
                     <input type="text" id="skyeyes-ie-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.85rem; border: none; background: transparent; color: var(--text); outline: none;">
                   </div>
                   <div id="skyeyes-ie-groups-list" style="overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 190px;">
+                    <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Chưa tải danh sách nhóm</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Nhóm Zalo cảnh báo SAI TÊN HÃNG (tùy chọn) -->
+              <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 12px; position: relative;">
+                <label style="font-size: 0.82rem; font-weight: 600; color: var(--text);">Nhóm Zalo cảnh báo SAI TÊN HÃNG (để trống = dùng nhóm tạm nhập / FMS):</label>
+                <div id="skyeyes-airline-groups-display" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 36px; user-select: none;">
+                  <span id="skyeyes-airline-groups-display-text" style="color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">-- Dùng nhóm tạm nhập / FMS --</span>
+                  <i class="fa-solid fa-chevron-down" style="font-size: 0.8rem; color: var(--text-muted);"></i>
+                </div>
+                <div id="skyeyes-airline-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #ffffff; border: 1px solid rgba(0, 114, 151, 0.22); border-radius: 6px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 114, 151, 0.15);">
+                  <div style="padding: 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; background: rgba(0, 114, 151, 0.02);">
+                    <i class="fa-solid fa-magnifying-glass" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 4px;"></i>
+                    <input type="text" id="skyeyes-airline-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.85rem; border: none; background: transparent; color: var(--text); outline: none;">
+                  </div>
+                  <div id="skyeyes-airline-groups-list" style="overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 190px;">
                     <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Chưa tải danh sách nhóm</div>
                   </div>
                 </div>
@@ -1364,6 +1439,6 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     </div>
   </div>
 
-  <script src="app_v3.js?v=3.2.2"></script>
+  <script src="app_v3.js?v=3.2.3"></script>
 </body>
 </html>

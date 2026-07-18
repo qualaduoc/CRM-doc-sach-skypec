@@ -730,6 +730,7 @@ function setupEventListeners() {
         }
         if (tabId === 'tab-temp-import-export') {
           fetchTempImportExportData();
+          fetchAirlineAlerts();
         }
         loadGeminiKeys();
         startSkyEyesPolling();
@@ -764,6 +765,44 @@ function setupEventListeners() {
   if (closePanelBtn && testPanel) {
     closePanelBtn.addEventListener('click', () => {
       testPanel.style.display = 'none';
+    });
+  }
+
+  // Cảnh báo sai tên hãng HK
+  const btnAirlineRefresh = document.getElementById('btn-airline-alert-refresh');
+  if (btnAirlineRefresh) btnAirlineRefresh.addEventListener('click', () => fetchAirlineAlerts());
+  const btnAirlineTestToggle = document.getElementById('btn-airline-alert-test-toggle');
+  const airlineTestPanel = document.getElementById('airline-test-panel');
+  if (btnAirlineTestToggle && airlineTestPanel) {
+    btnAirlineTestToggle.addEventListener('click', () => {
+      airlineTestPanel.style.display = airlineTestPanel.style.display === 'none' ? 'flex' : 'none';
+    });
+  }
+  document.querySelectorAll('.btn-airline-test').forEach(btn => {
+    btn.addEventListener('click', () => runAirlineAlertTest(parseInt(btn.getAttribute('data-scenario'), 10) || 1));
+  });
+
+  // Dropdown nhóm cảnh báo hãng
+  const airlineDisplay = document.getElementById('skyeyes-airline-groups-display');
+  if (airlineDisplay) {
+    airlineDisplay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dd = document.getElementById('skyeyes-airline-groups-dropdown');
+      if (dd) dd.style.display = dd.style.display === 'flex' ? 'none' : 'flex';
+    });
+  }
+  document.addEventListener('click', (e) => {
+    const dd = document.getElementById('skyeyes-airline-groups-dropdown');
+    const disp = document.getElementById('skyeyes-airline-groups-display');
+    if (dd && disp && !dd.contains(e.target) && !disp.contains(e.target)) dd.style.display = 'none';
+  });
+  const airlineSearch = document.getElementById('skyeyes-airline-group-search');
+  if (airlineSearch) {
+    airlineSearch.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      document.querySelectorAll('#skyeyes-airline-groups-list label').forEach(item => {
+        item.style.display = item.textContent.toLowerCase().includes(q) ? 'flex' : 'none';
+      });
     });
   }
 
@@ -982,7 +1021,7 @@ function setupEventListeners() {
     'skyeyes-notify-new-standby', 'skyeyes-notify-new-fuel-order', 
     'skyeyes-notify-standby-changed', 'skyeyes-notify-fuel-order-changed', 
     'skyeyes-notify-ac-reg-changed', 'skyeyes-notify-gate-changed', 
-    'skyeyes-notify-etd-changed'
+    'skyeyes-notify-etd-changed', 'skyeyes-notify-airline-mismatch'
   ].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', handleSaveSkyEyesSettings);
@@ -3648,7 +3687,9 @@ async function loadSkyEyesSettings() {
         targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
         notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
         notifyAcRegChanged, notifyGateChanged, notifyEtdChanged,
-        fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName
+        fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName,
+        notifyAirlineMismatch, fmsAirlineAlertGroupId, fmsAirlineAlertGroupName,
+        airlineMappings
       } = data.settings;
       document.getElementById('skyeyes-notify-enabled').checked = notifyEnabled;
       document.getElementById('skyeyes-template-input').value = messageTemplate || '';
@@ -3660,6 +3701,8 @@ async function loadSkyEyesSettings() {
       document.getElementById('skyeyes-notify-ac-reg-changed').checked = notifyAcRegChanged !== false;
       document.getElementById('skyeyes-notify-gate-changed').checked = notifyGateChanged !== false;
       document.getElementById('skyeyes-notify-etd-changed').checked = notifyEtdChanged !== false;
+      const airlineCb = document.getElementById('skyeyes-notify-airline-mismatch');
+      if (airlineCb) airlineCb.checked = notifyAirlineMismatch !== false;
 
       if (fmsImportExportDuration === 'always') {
         const rad = document.getElementById('fms-duration-always');
@@ -3675,9 +3718,13 @@ async function loadSkyEyesSettings() {
       
       window.savedIeTargetGroupIds = fmsImportExportGroupId ? fmsImportExportGroupId.split(',').map(id => id.trim()) : [];
       window.savedIeTargetGroupName = fmsImportExportGroupName || '';
+      window.savedAirlineTargetGroupIds = fmsAirlineAlertGroupId ? fmsAirlineAlertGroupId.split(',').map(id => id.trim()) : [];
+      window.savedAirlineTargetGroupName = fmsAirlineAlertGroupName || '';
 
       updateSkyEyesGroupsDisplayText(targetGroupName);
       updateSkyEyesIeGroupsDisplayText(fmsImportExportGroupName);
+      updateSkyEyesAirlineGroupsDisplayText(fmsAirlineAlertGroupName);
+      if (airlineMappings) renderAirlineMappingsChips(airlineMappings);
     }
   } catch (err) {
     console.error('[SkyEyes] Lỗi tải cấu hình Zalo:', err.message);
@@ -3712,6 +3759,27 @@ function updateSkyEyesIeGroupsDisplayText(namesStr) {
   }
 }
 
+function updateSkyEyesAirlineGroupsDisplayText(namesStr) {
+  const displayText = document.getElementById('skyeyes-airline-groups-display-text');
+  if (displayText) {
+    if (namesStr && namesStr.trim() !== '') {
+      displayText.textContent = 'Đã chọn: ' + namesStr;
+      displayText.style.color = '#38bdf8';
+    } else {
+      displayText.textContent = '-- Dùng nhóm tạm nhập / FMS --';
+      displayText.style.color = 'var(--text-muted)';
+    }
+  }
+}
+
+function renderAirlineMappingsChips(mappings) {
+  const el = document.getElementById('airline-mappings-list');
+  if (!el || !Array.isArray(mappings)) return;
+  el.innerHTML = mappings.map(m =>
+    `<span style="background:var(--chip-bg); border:1px solid var(--border); color:var(--text); padding:4px 8px; border-radius:6px; font-weight:600;"><code style="color:var(--primary);">${m.code}</code> → ${m.name}</span>`
+  ).join('');
+}
+
 // Lưu cấu hình nhóm nhận tin và checkbox bật/tắt
 async function handleSaveSkyEyesSettings() {
   const notifyEnabled = document.getElementById('skyeyes-notify-enabled').checked;
@@ -3724,6 +3792,8 @@ async function handleSaveSkyEyesSettings() {
   const notifyAcRegChanged = document.getElementById('skyeyes-notify-ac-reg-changed').checked;
   const notifyGateChanged = document.getElementById('skyeyes-notify-gate-changed').checked;
   const notifyEtdChanged = document.getElementById('skyeyes-notify-etd-changed').checked;
+  const airlineMismatchEl = document.getElementById('skyeyes-notify-airline-mismatch');
+  const notifyAirlineMismatch = airlineMismatchEl ? airlineMismatchEl.checked : true;
   
   // Thu thập các ID và tên nhóm được tích chọn
   const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
@@ -3734,6 +3804,10 @@ async function handleSaveSkyEyesSettings() {
   const checkedBoxesIe = document.querySelectorAll('.skyeyes-ie-group-checkbox:checked');
   const fmsImportExportGroupId = Array.from(checkedBoxesIe).map(cb => cb.value).join(',');
   const fmsImportExportGroupName = Array.from(checkedBoxesIe).map(cb => cb.getAttribute('data-name')).join(', ');
+
+  const checkedBoxesAirline = document.querySelectorAll('.skyeyes-airline-group-checkbox:checked');
+  const fmsAirlineAlertGroupId = Array.from(checkedBoxesAirline).map(cb => cb.value).join(',');
+  const fmsAirlineAlertGroupName = Array.from(checkedBoxesAirline).map(cb => cb.getAttribute('data-name')).join(', ');
   
   const fmsImportExportDuration = document.querySelector('input[name="fms-import-export-duration"]:checked')?.value || '24h';
 
@@ -3745,6 +3819,10 @@ async function handleSaveSkyEyesSettings() {
   window.savedIeTargetGroupIds = fmsImportExportGroupId ? fmsImportExportGroupId.split(',') : [];
   window.savedIeTargetGroupName = fmsImportExportGroupName;
   updateSkyEyesIeGroupsDisplayText(fmsImportExportGroupName);
+
+  window.savedAirlineTargetGroupIds = fmsAirlineAlertGroupId ? fmsAirlineAlertGroupId.split(',') : [];
+  window.savedAirlineTargetGroupName = fmsAirlineAlertGroupName;
+  updateSkyEyesAirlineGroupsDisplayText(fmsAirlineAlertGroupName);
 
   if (!targetGroupId && notifyEnabled) {
     showToast('Vui lòng chọn ít nhất một nhóm Zalo trước khi bật thông báo!', 'warning', 'Lưu ý');
@@ -3763,7 +3841,8 @@ async function handleSaveSkyEyesSettings() {
         targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
         notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
         notifyAcRegChanged, notifyGateChanged, notifyEtdChanged,
-        fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName
+        fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName,
+        notifyAirlineMismatch, fmsAirlineAlertGroupId, fmsAirlineAlertGroupName
       })
     });
     const data = await res.json();
@@ -3868,9 +3947,11 @@ async function runZaloTestScenario(scenario) {
 async function loadSkyEyesGroups() {
   const groupsListDiv = document.getElementById('skyeyes-groups-list');
   const ieGroupsListDiv = document.getElementById('skyeyes-ie-groups-list');
+  const airlineGroupsListDiv = document.getElementById('skyeyes-airline-groups-list');
   
   if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải...</div>';
   if (ieGroupsListDiv) ieGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải...</div>';
+  if (airlineGroupsListDiv) airlineGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải...</div>';
 
   try {
     const res = await fetch('/api/fms/zalo/groups', {
@@ -3883,6 +3964,7 @@ async function loadSkyEyesGroups() {
       if (groups.length === 0) {
         if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Không tìm thấy nhóm nào</div>';
         if (ieGroupsListDiv) ieGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Không tìm thấy nhóm nào</div>';
+        if (airlineGroupsListDiv) airlineGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Không tìm thấy nhóm nào</div>';
         return;
       }
 
@@ -3900,57 +3982,135 @@ async function loadSkyEyesGroups() {
       const savedIeGroupIdsArray = savedIeGroupId ? savedIeGroupId.split(',').map(id => id.trim()) : [];
       const savedIeGroupName = dbData.success ? dbData.settings.fmsImportExportGroupName : '';
 
+      const savedAirlineGroupId = dbData.success ? dbData.settings.fmsAirlineAlertGroupId : '';
+      const savedAirlineGroupIdsArray = savedAirlineGroupId ? savedAirlineGroupId.split(',').map(id => id.trim()) : [];
+      const savedAirlineGroupName = dbData.success ? dbData.settings.fmsAirlineAlertGroupName : '';
+
       window.savedTargetGroupIds = savedGroupIdsArray;
       window.savedTargetGroupName = savedGroupName;
       window.savedIeTargetGroupIds = savedIeGroupIdsArray;
       window.savedIeTargetGroupName = savedIeGroupName;
+      window.savedAirlineTargetGroupIds = savedAirlineGroupIdsArray;
+      window.savedAirlineTargetGroupName = savedAirlineGroupName;
 
-      if (groupsListDiv) {
-        groupsListDiv.innerHTML = groups.map(g => {
-          const isChecked = savedGroupIdsArray.includes(String(g.groupId).trim());
+      const renderGroupChecks = (listEl, className, savedIds) => {
+        if (!listEl) return;
+        listEl.innerHTML = groups.map(g => {
+          const isChecked = savedIds.includes(String(g.groupId).trim());
           return `
             <label style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; user-select: none; transition: background 0.2s; justify-content: flex-start; text-align: left; width: 100%;" class="group-item-hover">
-              <input type="checkbox" class="skyeyes-group-checkbox" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
-              <span style="font-size: 0.78rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${g.groupName}</span>
+              <input type="checkbox" class="${className}" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
+              <span style="font-size: 0.78rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${g.groupName}</span>
             </label>
           `;
         }).join('');
-
-        // Đăng ký sự kiện change cho các checkbox
-        document.querySelectorAll('.skyeyes-group-checkbox').forEach(cb => {
+        document.querySelectorAll('.' + className).forEach(cb => {
           cb.addEventListener('change', handleSaveSkyEyesSettings);
         });
-      }
+      };
 
-      if (ieGroupsListDiv) {
-        ieGroupsListDiv.innerHTML = groups.map(g => {
-          const isChecked = savedIeGroupIdsArray.includes(String(g.groupId).trim());
-          return `
-            <label style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; user-select: none; transition: background 0.2s; justify-content: flex-start; text-align: left; width: 100%;" class="group-item-hover">
-              <input type="checkbox" class="skyeyes-ie-group-checkbox" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
-              <span style="font-size: 0.78rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${g.groupName}</span>
-            </label>
-          `;
-        }).join('');
-
-        // Đăng ký sự kiện change cho các checkbox nhóm riêng
-        document.querySelectorAll('.skyeyes-ie-group-checkbox').forEach(cb => {
-          cb.addEventListener('change', handleSaveSkyEyesSettings);
-        });
-      }
+      renderGroupChecks(groupsListDiv, 'skyeyes-group-checkbox', savedGroupIdsArray);
+      renderGroupChecks(ieGroupsListDiv, 'skyeyes-ie-group-checkbox', savedIeGroupIdsArray);
+      renderGroupChecks(airlineGroupsListDiv, 'skyeyes-airline-group-checkbox', savedAirlineGroupIdsArray);
 
       updateSkyEyesGroupsDisplayText(savedGroupName);
       updateSkyEyesIeGroupsDisplayText(savedIeGroupName);
+      updateSkyEyesAirlineGroupsDisplayText(savedAirlineGroupName);
     } else {
       if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Quét nhóm thất bại</div>';
       if (ieGroupsListDiv) ieGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Quét nhóm thất bại</div>';
+      if (airlineGroupsListDiv) airlineGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Quét nhóm thất bại</div>';
     }
   } catch (err) {
     console.error('[SkyEyes] Lỗi tải danh sách nhóm:', err.message);
     if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Lỗi tải danh sách nhóm</div>';
     if (ieGroupsListDiv) ieGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Lỗi tải danh sách nhóm</div>';
+    if (airlineGroupsListDiv) airlineGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Lỗi tải danh sách nhóm</div>';
   }
 }
+
+// --- CẢNH BÁO SAI TÊN HÃNG HK ---
+async function fetchAirlineAlerts() {
+  try {
+    const filterInput = document.getElementById('fms-filter-date');
+    const date = filterInput && filterInput.value ? filterInput.value : '';
+    const res = await fetch('/api/fms/airline-alerts' + (date ? `?date=${date}` : ''), {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    if (data.mappings) renderAirlineMappingsChips(data.mappings);
+    const tbody = document.getElementById('airline-alerts-body');
+    if (!tbody) return;
+    const rows = data.data || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:24px;">Chưa có cảnh báo sai tên hãng.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const status = r.is_warned >= 2
+        ? '<span style="color:var(--success);font-weight:600;">Đã xử lý</span>'
+        : '<span style="color:#dc2626;font-weight:600;">Cảnh báo</span>';
+      return `<tr class="${r.is_warned >= 2 ? 'row-resolved' : ''}">
+        <td><code style="color:var(--primary);font-weight:700;">${r.flight_no}</code></td>
+        <td><strong>${r.expected_code}</strong></td>
+        <td style="font-size:0.78rem;max-width:220px;">${r.expected_name}</td>
+        <td><span style="color:#dc2626;font-weight:700;">${r.actual_carrier || '-'}</span></td>
+        <td style="font-size:0.8rem;">${r.crew_info || '-'}</td>
+        <td>${r.date || '-'}</td>
+        <td style="text-align:center;">
+          ${status}
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:4px;">
+            <button class="btn-secondary" style="margin:0;padding:3px 8px;font-size:0.7rem;" onclick="confirmAirlineAlert(${r.id},'confirm')">OK</button>
+            <button class="btn-secondary" style="margin:0;padding:3px 8px;font-size:0.7rem;color:var(--danger);" onclick="confirmAirlineAlert(${r.id},'delete')">Xóa</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.error('[Airline Alerts]', err.message);
+  }
+}
+
+async function confirmAirlineAlert(id, action) {
+  try {
+    const res = await fetch('/api/fms/airline-alerts/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+      body: JSON.stringify({ id, action })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    showToast(data.message, 'success', 'OK');
+    fetchAirlineAlerts();
+  } catch (err) {
+    showToast(err.message, 'error', 'Lỗi');
+  }
+}
+
+async function runAirlineAlertTest(scenario) {
+  const preview = document.getElementById('airline-test-preview');
+  if (preview) preview.textContent = 'Đang gửi kịch bản test...';
+  try {
+    const res = await fetch('/api/fms/airline-alerts/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+      body: JSON.stringify({ scenario })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    if (preview && data.preview) preview.textContent = data.preview;
+    showToast(data.message, 'success', 'Test hãng HK');
+    fetchAirlineAlerts();
+  } catch (err) {
+    if (preview) preview.textContent = 'Lỗi: ' + err.message;
+    showToast(err.message, 'error', 'Test thất bại');
+  }
+}
+
+window.fetchAirlineAlerts = fetchAirlineAlerts;
+window.confirmAirlineAlert = confirmAirlineAlert;
+window.runAirlineAlertTest = runAirlineAlertTest;
 
 // --- LOGIC QUẢN LÝ ZALO MAPPINGS VÀ THÀNH VIÊN NHÓM ---
 async function openZaloMappingsModal() {

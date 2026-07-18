@@ -3,6 +3,12 @@ const https = require('https');
 const querystring = require('querystring');
 const { getDb } = require('./db');
 const { sendSkyEyesMessage, sendSkyEyesPrivateMessage } = require('./zaloService');
+const {
+  evaluateAirlineMismatch,
+  parseAirlineCodeFromFlightNo,
+  getExpectedAirlineName,
+  listAirlineMappings
+} = require('./airlineCodes');
 
 const HOST = 'fms.vietnamairlines.com';
 
@@ -381,6 +387,113 @@ function isDepartingIntlRoute(routeStr) {
   return VN_DOMESTIC_AIRPORTS.includes(origin) && !VN_DOMESTIC_AIRPORTS.includes(dest);
 }
 
+/**
+ * Cảnh báo SAI TÊN HÃNG HÀNG KHÔNG:
+ * - Lấy ký hiệu từ số chuyến (CA6116 → CA)
+ * - So với CARRIER trên FMS VNA (và tên chọn nếu có)
+ * - Gửi Zalo nhóm riêng (fallback nhóm FMS chung)
+ */
+async function checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, scheduleByFlight) {
+  try {
+    const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_airline_mismatch'");
+    const notifyEnabled = notifySetting ? (notifySetting.value === 'true') : true;
+    if (!notifyEnabled) return;
+
+    const zaloMaster = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+    const isZaloOn = zaloMaster ? (zaloMaster.value === 'true') : false;
+
+    let groupIds = [];
+    const airlineGroup = await db.get("SELECT value FROM settings WHERE key = 'fms_airline_alert_group_id'");
+    if (airlineGroup && airlineGroup.value) {
+      groupIds = String(airlineGroup.value).split(',').map(s => s.trim()).filter(Boolean);
+    }
+    if (groupIds.length === 0) {
+      const ieGroup = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_id'");
+      if (ieGroup && ieGroup.value) {
+        groupIds = String(ieGroup.value).split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    if (groupIds.length === 0) {
+      const mainGroup = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+      if (mainGroup && mainGroup.value) {
+        groupIds = String(mainGroup.value).split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+
+    for (const flt of matchedFlights) {
+      if (!flt.FLIGHTNO) continue;
+      const cleanFltNo = String(flt.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
+      const carrier = flt.CARRIER != null ? String(flt.CARRIER).trim() : '';
+      // Tên hãng chọn (nếu sau này FMS/Skypec có field) — hiện ưu tiên CARRIER
+      const selectedName = flt.AIRLINE_NAME || flt.CUSTOMER_NAME || flt.CUSTOMER || '';
+
+      const mismatch = evaluateAirlineMismatch({
+        flightNo: cleanFltNo,
+        carrierCode: carrier,
+        selectedAirlineName: selectedName
+      });
+      if (!mismatch) continue;
+
+      // Chống spam: 1 cảnh báo / chuyến / ngày (is_warned >= 1)
+      const exists = await db.get(
+        "SELECT id, is_warned FROM fms_airline_alerts WHERE UPPER(flight_no) = UPPER(?) AND date = ?",
+        cleanFltNo, targetDate
+      );
+      if (exists && exists.is_warned >= 1) continue;
+
+      const sched = scheduleByFlight ? scheduleByFlight[cleanFltNo] : null;
+      const crewInfo = sched
+        ? (sched.crew_info || [sched.driver_name, sched.operator_name].filter(Boolean).join(' - ') || '-')
+        : '-';
+      const truckNo = sched ? (sched.truck_no || '-') : '-';
+      const gate = sched ? (sched.gate || '-') : (flt.GATE || '-');
+      const acReg = flt.ACREG ? String(flt.ACREG).trim() : '-';
+
+      const msg = `⚠️ [CẢNH BÁO SAI TÊN HÃNG HÀNG KHÔNG]
+✈️ Chuyến bay: ${cleanFltNo}
+📋 Ký hiệu đúng: ${mismatch.expectedCode}
+🏢 Tên hãng đúng: ${mismatch.expectedName}
+❌ Hãng đang ghi trên FMS: ${mismatch.actualCarrier}${mismatch.selectedAirlineName && mismatch.selectedAirlineName !== '-' ? ` / ${mismatch.selectedAirlineName}` : ''}
+📝 Chi tiết: ${mismatch.reason}
+👥 Cặp tra nạp: ${crewInfo}
+🚛 Xe: ${truckNo} | 📍 Gate: ${gate} | 🛩️ Tàu: ${acReg}
+📅 Ngày FMS: ${targetDate}
+📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
+
+      if (exists) {
+        await db.run(
+          `UPDATE fms_airline_alerts SET
+            expected_code = ?, expected_name = ?, actual_carrier = ?, actual_name = ?,
+            crew_info = ?, reason = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          mismatch.expectedCode, mismatch.expectedName, mismatch.actualCarrier,
+          mismatch.selectedAirlineName, crewInfo, mismatch.reason, exists.id
+        );
+      } else {
+        await db.run(
+          `INSERT INTO fms_airline_alerts
+            (flight_no, date, expected_code, expected_name, actual_carrier, actual_name, crew_info, reason, is_warned)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+          cleanFltNo, targetDate, mismatch.expectedCode, mismatch.expectedName,
+          mismatch.actualCarrier, mismatch.selectedAirlineName, crewInfo, mismatch.reason
+        );
+      }
+
+      log(`[Airline Alert] ${cleanFltNo}: ${mismatch.reason}`);
+
+      if (isZaloOn && groupIds.length > 0) {
+        for (const gid of groupIds) {
+          await sendSkyEyesMessage(gid, msg, []).catch(e =>
+            console.error(`[Airline Alert Zalo] Group ${gid}:`, e.message)
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Airline Alert] Lỗi kiểm tra sai tên hãng:', err.message);
+  }
+}
+
 // Kiểm tra cảnh báo Tạm nhập - Tái xuất tàu bay
 async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
   try {
@@ -713,6 +826,20 @@ async function syncFMSData(forceDate = null, forceShift = null) {
 
       log(`[Ngày ${targetDate}] Tìm thấy ${matchedFlights.length} chuyến bay khớp trên FMS.`);
       if (matchedFlights.length === 0) continue;
+
+      // Map lịch trực theo flight_no để gắn cặp nạp vào cảnh báo hãng
+      const scheduleByFlight = {};
+      const fullSchedRows = await db.all(
+        'SELECT flight_no, crew_info, truck_no, gate, driver_name, operator_name FROM fms_schedules WHERE COALESCE(fms_date, date) = ?',
+        targetDate
+      );
+      fullSchedRows.forEach(s => {
+        const key = String(s.flight_no || '').toUpperCase().replace(/\s+/g, '');
+        if (key) scheduleByFlight[key] = s;
+      });
+
+      // Cảnh báo sai tên hãng (ký hiệu chuyến vs CARRIER FMS)
+      await checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, scheduleByFlight);
 
       // Quét chi tiết tải dầu SONG SONG (Promise.all) cho các chuyến bay trùng khớp của ngày này
       log(`[Ngày ${targetDate}] Bắt đầu quét song song chi tiết tải dầu cho các chuyến bay...`);
@@ -1694,5 +1821,7 @@ module.exports = {
   getVietnamDbDateStr,
   getVietnamDateTimeStr,
   isDomesticRoute,
-  isDepartingIntlRoute
+  isDepartingIntlRoute,
+  checkAirlineNameMismatchAlerts,
+  listAirlineMappings
 };

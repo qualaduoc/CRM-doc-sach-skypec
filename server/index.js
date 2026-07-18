@@ -10,6 +10,7 @@ const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
 const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute } = require('./fmsService');
+const { evaluateAirlineMismatch, listAirlineMappings } = require('./airlineCodes');
 const { performImageOCR, testSingleGeminiKey } = require('./ocrService');
 const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyEyesMessage, sendSkyEyesPrivateMessage, getBotState } = require('./zaloService');
 
@@ -2071,6 +2072,9 @@ app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     const durationVal = durationSetting ? durationSetting.value : '24h';
     const ieGroupVal = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_id'");
     const ieGroupNameVal = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_name'");
+    const nAirline = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_airline_mismatch'");
+    const airlineGroupVal = await db.get("SELECT value FROM settings WHERE key = 'fms_airline_alert_group_id'");
+    const airlineGroupNameVal = await db.get("SELECT value FROM settings WHERE key = 'fms_airline_alert_group_name'");
 
     res.json({
       success: true,
@@ -2088,7 +2092,11 @@ app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
         notifyEtdChanged: nEtd ? (nEtd.value === 'true') : true,
         fmsImportExportDuration: durationVal,
         fmsImportExportGroupId: ieGroupVal ? ieGroupVal.value : '',
-        fmsImportExportGroupName: ieGroupNameVal ? ieGroupNameVal.value : ''
+        fmsImportExportGroupName: ieGroupNameVal ? ieGroupNameVal.value : '',
+        notifyAirlineMismatch: nAirline ? (nAirline.value === 'true') : true,
+        fmsAirlineAlertGroupId: airlineGroupVal ? airlineGroupVal.value : '',
+        fmsAirlineAlertGroupName: airlineGroupNameVal ? airlineGroupNameVal.value : '',
+        airlineMappings: listAirlineMappings()
       }
     });
   } catch (err) {
@@ -2105,7 +2113,8 @@ app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
     notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
     notifyAcRegChanged, notifyGateChanged, notifyEtdChanged,
-    fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName
+    fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName,
+    notifyAirlineMismatch, fmsAirlineAlertGroupId, fmsAirlineAlertGroupName
   } = req.body;
   try {
     const db = await getDb();
@@ -2124,6 +2133,15 @@ app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_import_export_duration', ?)", fmsImportExportDuration ? String(fmsImportExportDuration).trim() : '24h');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_import_export_group_id', ?)", fmsImportExportGroupId ? String(fmsImportExportGroupId).trim() : '');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_import_export_group_name', ?)", fmsImportExportGroupName ? String(fmsImportExportGroupName).trim() : '');
+    if (notifyAirlineMismatch !== undefined) {
+      await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_airline_mismatch', ?)", notifyAirlineMismatch ? 'true' : 'false');
+    }
+    if (fmsAirlineAlertGroupId !== undefined) {
+      await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_airline_alert_group_id', ?)", fmsAirlineAlertGroupId ? String(fmsAirlineAlertGroupId).trim() : '');
+    }
+    if (fmsAirlineAlertGroupName !== undefined) {
+      await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_airline_alert_group_name', ?)", fmsAirlineAlertGroupName ? String(fmsAirlineAlertGroupName).trim() : '');
+    }
 
     res.json({ success: true, message: 'Đã lưu cấu hình trợ lý SkyEyes thành công!' });
   } catch (err) {
@@ -2973,6 +2991,123 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     }
 
     res.json({ success: true, message: `Đã tạo giả lập test kịch bản ${scNum} thành công và gửi tin Zalo cảnh báo!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// --- CẢNH BÁO SAI TÊN HÃNG HÀNG KHÔNG ---
+app.get('/api/fms/airline-alerts', authenticateToken, async (req, res) => {
+  try {
+    const db = await getDb();
+    const targetDate = req.query.date || getVietnamDbDateStr();
+    const rows = await db.all(
+      "SELECT * FROM fms_airline_alerts WHERE date = ? OR is_warned < 2 ORDER BY id DESC LIMIT 100",
+      targetDate
+    );
+    res.json({ success: true, data: rows, mappings: listAirlineMappings() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/fms/airline-alerts/confirm', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+  const { id, action } = req.body;
+  if (!id) return res.status(400).json({ success: false, error: 'Thiếu ID' });
+  try {
+    const db = await getDb();
+    if (action === 'confirm') {
+      await db.run("UPDATE fms_airline_alerts SET is_warned = 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id);
+    } else if (action === 'reopen') {
+      await db.run("UPDATE fms_airline_alerts SET is_warned = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id);
+    } else {
+      await db.run("DELETE FROM fms_airline_alerts WHERE id = ?", id);
+    }
+    res.json({ success: true, message: 'Đã cập nhật cảnh báo hãng HK' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/fms/airline-alerts/test', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+
+  // scenario: 1=CA sai carrier, 2=IO sai, 3=BSF, 4=SAV, 5=QY
+  const scNum = parseInt(req.body.scenario, 10) || 1;
+  const todayDb = getVietnamDbDateStr();
+  const cases = {
+    1: { flight: 'CA6116', wrongCarrier: 'VN', code: 'CA' },
+    2: { flight: 'IO1234', wrongCarrier: 'BL', code: 'IO' },
+    3: { flight: 'BSF8801', wrongCarrier: 'VN', code: 'BSF' },
+    4: { flight: 'SAV220', wrongCarrier: '0V', code: 'SAV' },
+    5: { flight: 'QY9901', wrongCarrier: 'CA', code: 'QY' }
+  };
+  const c = cases[scNum] || cases[1];
+  const mismatch = evaluateAirlineMismatch({
+    flightNo: c.flight,
+    carrierCode: c.wrongCarrier,
+    selectedAirlineName: ''
+  });
+
+  const expectedName = mismatch ? mismatch.expectedName : '-';
+  const msg = `⚠️ [CẢNH BÁO SAI TÊN HÃNG HÀNG KHÔNG] (TEST)
+✈️ Chuyến bay: ${c.flight}
+📋 Ký hiệu đúng: ${c.code}
+🏢 Tên hãng đúng: ${expectedName}
+❌ Hãng đang ghi trên FMS: ${c.wrongCarrier}
+📝 Chi tiết: CARRIER FMS="${c.wrongCarrier}" khác ký hiệu chuyến "${c.code}"
+👥 Cặp tra nạp: TEST - DEMO
+🚛 Xe: 99 | 📍 Gate: 12A | 🛩️ Tàu: VNA-TEST
+📅 Ngày FMS: ${todayDb}
+📢 Giờ cảnh báo giả lập: ${getVietnamDateTimeStr()}`;
+
+  try {
+    const db = await getDb();
+    await db.run("DELETE FROM fms_airline_alerts WHERE flight_no = ? AND date = ?", c.flight, todayDb);
+    await db.run(
+      `INSERT INTO fms_airline_alerts
+        (flight_no, date, expected_code, expected_name, actual_carrier, actual_name, crew_info, reason, is_warned)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      c.flight, todayDb, c.code, expectedName, c.wrongCarrier, '-', 'TEST - DEMO',
+      `CARRIER FMS="${c.wrongCarrier}" khác ký hiệu chuyến "${c.code}"`
+    );
+
+    const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+    const isOn = notifySetting ? (notifySetting.value === 'true') : false;
+
+    let targetGroupId = '';
+    const airlineGroup = await db.get("SELECT value FROM settings WHERE key = 'fms_airline_alert_group_id'");
+    if (airlineGroup && airlineGroup.value) targetGroupId = airlineGroup.value;
+    if (!targetGroupId) {
+      const ie = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_id'");
+      if (ie && ie.value) targetGroupId = ie.value;
+    }
+    if (!targetGroupId) {
+      const g = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+      if (g && g.value) targetGroupId = g.value;
+    }
+
+    let sent = 0;
+    if (isOn && targetGroupId) {
+      const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+      for (const id of ids) {
+        await sendSkyEyesMessage(id, msg, []).catch(e => console.error('[Airline Test Zalo]', e.message));
+        sent++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: sent > 0
+        ? `Đã tạo cảnh báo test ${c.flight} và gửi Zalo (${sent} nhóm)!`
+        : `Đã tạo cảnh báo test ${c.flight} trên bảng (Zalo tắt hoặc chưa chọn nhóm).`,
+      preview: msg
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
