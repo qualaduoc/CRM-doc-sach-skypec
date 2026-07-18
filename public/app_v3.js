@@ -105,8 +105,63 @@ async function loadZaloMembersAndMappings() {
 
 let dashboardInterval = null;
 
+// --- THEME SÁNG / TỐI (luxury aviation) ---
+const THEME_STORAGE_KEY = 'skyeyes_theme';
+
+function getPreferredTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch (e) {}
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return 'dark';
+  }
+  return 'light';
+}
+
+function applyTheme(theme, persist) {
+  const next = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  const meta = document.getElementById('meta-theme-color');
+  if (meta) meta.setAttribute('content', next === 'dark' ? '#080d16' : '#007297');
+  document.querySelectorAll('.theme-toggle').forEach((btn) => {
+    btn.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
+    btn.title = next === 'dark' ? 'Đang dùng giao diện Tối — bấm để chuyển Sáng' : 'Đang dùng giao diện Sáng — bấm để chuyển Tối';
+  });
+  if (persist !== false) {
+    try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch (e) {}
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || getPreferredTheme();
+  applyTheme(current === 'dark' ? 'light' : 'dark', true);
+}
+
+function bindThemeToggles() {
+  ['btn-theme-toggle-login', 'btn-theme-toggle-admin', 'btn-theme-toggle-user'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && !el.dataset.themeBound) {
+      el.dataset.themeBound = '1';
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleTheme();
+      });
+    }
+  });
+}
+
+// Áp dụng theme ngay khi parse file (phòng script head chưa chạy / localStorage đổi)
+applyTheme(getPreferredTheme(), false);
+
 // --- KHỞI CHẠY KHI ĐÃ TẢI XONG TRANG ---
 document.addEventListener('DOMContentLoaded', () => {
+  try {
+    applyTheme(getPreferredTheme(), false);
+    bindThemeToggles();
+  } catch (err) {
+    console.error('[Theme]', err);
+  }
   try {
     setupEventListeners();
   } catch (err) {
@@ -961,9 +1016,9 @@ function setupEventListeners() {
       input.value = currentVal;
       input.style.width = '60px';
       input.style.textAlign = 'center';
-      input.style.background = '#1e293b';
+      input.style.background = 'var(--input-bg)';
       input.style.border = '1px solid var(--success)';
-      input.style.color = '#fff';
+      input.style.color = 'var(--text)';
       input.style.fontWeight = 'bold';
       input.style.borderRadius = '4px';
       input.style.padding = '2px';
@@ -1211,11 +1266,11 @@ async function loadAdminDashboard(isPolling = false) {
                           (acc.perm_gemini === 1) ? 'nv_c1' : 'nv_c2';
 
       const permissionsHtml = `
-        <select class="role-select" data-username="${acc.username}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-weight: 600; cursor: pointer; outline: none; font-size: 0.82rem; width: 100%; box-sizing: border-box;">
-          <option value="admin" ${currentRole === 'admin' ? 'selected' : ''} style="color: var(--text); background: #ffffff;">👑 Admin</option>
-          <option value="dieu_hanh" ${currentRole === 'dieu_hanh' ? 'selected' : ''} style="color: var(--text); background: #ffffff;">✈️ Điều hành</option>
-          <option value="nv_c1" ${currentRole === 'nv_c1' ? 'selected' : ''} style="color: var(--text); background: #ffffff;">👤 Nhân viên C1</option>
-          <option value="nv_c2" ${currentRole === 'nv_c2' ? 'selected' : ''} style="color: var(--text); background: #ffffff;">👤 Nhân viên C2</option>
+        <select class="role-select" data-username="${acc.username}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-weight: 600; cursor: pointer; outline: none; font-size: 0.82rem; width: 100%; box-sizing: border-box;">
+          <option value="admin" ${currentRole === 'admin' ? 'selected' : ''} style="color: var(--text); background: var(--panel-bg);">👑 Admin</option>
+          <option value="dieu_hanh" ${currentRole === 'dieu_hanh' ? 'selected' : ''} style="color: var(--text); background: var(--panel-bg);">✈️ Điều hành</option>
+          <option value="nv_c1" ${currentRole === 'nv_c1' ? 'selected' : ''} style="color: var(--text); background: var(--panel-bg);">👤 Nhân viên C1</option>
+          <option value="nv_c2" ${currentRole === 'nv_c2' ? 'selected' : ''} style="color: var(--text); background: var(--panel-bg);">👤 Nhân viên C2</option>
         </select>
       `;
 
@@ -2334,7 +2389,7 @@ function renderFmsTable() {
           ${crews.map(c => `
             <div class="crew-notify-badge" style="background: rgba(0, 114, 151, 0.08); border: 1px solid rgba(0, 114, 151, 0.18); padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.82rem;">
               <span style="font-weight: bold; color: var(--primary);">👥 ${c.crewName} ${c.truckNo !== '-' ? `(Xe: ${c.truckNo})` : ''}</span>
-              <select class="fms-crew-notify-select" data-crew="${c.crewName}" data-date="${c.date || ''}" data-original-val="${c.notifyType}" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); cursor: pointer; outline: none;">
+              <select class="fms-crew-notify-select" data-crew="${c.crewName}" data-date="${c.date || ''}" data-original-val="${c.notifyType}" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); cursor: pointer; outline: none;">
                 <option value="1" ${c.notifyType == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
                 <option value="2" ${c.notifyType == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
                 <option value="3" ${c.notifyType == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
@@ -2454,7 +2509,7 @@ function renderFmsTable() {
       `;
     } else {
       planeInfo = `
-        ${r.ac_reg ? `<span style="background: #f1f5f9; border: 1px solid rgba(0, 114, 151, 0.15); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
+        ${r.ac_reg ? `<span style="background: var(--chip-bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
         ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
         ${r.route ? `<span style="color: var(--primary); font-size: 0.8rem; display: block; margin-top: 3px; font-weight: bold;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
       `;

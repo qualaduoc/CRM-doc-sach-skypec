@@ -1,21 +1,92 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
-:root {
+/* =========================================================
+   THEME TOKENS — Light (default) / Dark luxury aviation
+   ========================================================= */
+:root,
+html[data-theme="light"] {
+  color-scheme: light;
   --background: #ebf0f5;
+  --background-accent-a: rgba(0, 114, 151, 0.05);
+  --background-accent-b: rgba(227, 168, 19, 0.03);
   --panel-bg: #ffffff;
-  --border: rgba(0, 114, 151, 0.12);
+  --panel-bg-soft: rgba(255, 255, 255, 0.92);
+  --panel-elevated: #f8fafc;
+  --input-bg: #ffffff;
+  --input-bg-focus: #ffffff;
+  --table-header-bg: #f1f5f9;
+  --table-row-hover: rgba(0, 114, 151, 0.04);
+  --table-stripe: rgba(0, 114, 151, 0.02);
+  --border: rgba(0, 114, 151, 0.14);
+  --border-strong: rgba(0, 114, 151, 0.28);
   --primary: #007297;
-  --primary-glow: rgba(0, 114, 151, 0.35);
+  --primary-soft: #0a8bb3;
+  --primary-glow: rgba(0, 114, 151, 0.28);
   --primary-hover: #005f7e;
   --text: #1e293b;
   --text-muted: #55657d;
+  --text-on-primary: #ffffff;
   --success: #15803d;
   --success-bg: #dcfce7;
   --danger: #b91c1c;
   --danger-bg: #fee2e2;
   --warning: #b45309;
   --warning-bg: #fef3c7;
-  --card-shadow: 0 4px 16px rgba(0, 114, 151, 0.04), 0 2px 4px rgba(0, 0, 0, 0.01);
+  --info: #0369a1;
+  --info-bg: #e0f2fe;
+  --code-bg: #f1f5f9;
+  --pre-bg: #f1f5f9;
+  --pre-text: #334155;
+  --pre-border: #cbd5e1;
+  --chip-bg: #f1f5f9;
+  --modal-overlay: rgba(15, 23, 42, 0.55);
+  --card-shadow: 0 4px 16px rgba(0, 114, 151, 0.06), 0 2px 4px rgba(0, 0, 0, 0.03);
+  --gold: #c9a227;
+  --login-bg: #0b1220;
+  --scrollbar-thumb: rgba(0, 114, 151, 0.28);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  /* Luxury night cockpit: deep navy + teal accent + soft gold edge */
+  --background: #080d16;
+  --background-accent-a: rgba(56, 189, 248, 0.07);
+  --background-accent-b: rgba(201, 162, 39, 0.05);
+  --panel-bg: #121a27;
+  --panel-bg-soft: rgba(18, 26, 39, 0.94);
+  --panel-elevated: #182233;
+  --input-bg: #0e1522;
+  --input-bg-focus: #111b2c;
+  --table-header-bg: #172032;
+  --table-row-hover: rgba(56, 189, 248, 0.07);
+  --table-stripe: rgba(255, 255, 255, 0.02);
+  --border: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(56, 189, 248, 0.28);
+  --primary: #38bdf8;
+  --primary-soft: #7dd3fc;
+  --primary-glow: rgba(56, 189, 248, 0.28);
+  --primary-hover: #0ea5e9;
+  --text: #e8eef6;
+  --text-muted: #94a3b8;
+  --text-on-primary: #041018;
+  --success: #4ade80;
+  --success-bg: rgba(34, 197, 94, 0.14);
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.14);
+  --info: #38bdf8;
+  --info-bg: rgba(56, 189, 248, 0.12);
+  --code-bg: #0e1522;
+  --pre-bg: #0e1522;
+  --pre-text: #cbd5e1;
+  --pre-border: rgba(148, 163, 184, 0.22);
+  --chip-bg: #182233;
+  --modal-overlay: rgba(2, 6, 12, 0.72);
+  --card-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(56, 189, 248, 0.04);
+  --gold: #e0c36a;
+  --login-bg: #060a12;
+  --scrollbar-thumb: rgba(56, 189, 248, 0.35);
 }
 
 * {
@@ -28,14 +99,15 @@ body {
   font-family: 'Outfit', sans-serif;
   background-color: var(--background);
   background-image: 
-    radial-gradient(at 0% 0%, rgba(0, 114, 151, 0.05) 0, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(227, 168, 19, 0.03) 0, transparent 50%);
+    radial-gradient(at 0% 0%, var(--background-accent-a) 0, transparent 50%),
+    radial-gradient(at 100% 100%, var(--background-accent-b) 0, transparent 50%);
   background-attachment: fixed;
   color: var(--text);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   line-height: 1.5;
+  transition: background-color 0.35s ease, color 0.25s ease;
 }
 
 /* --- HIỆU ỨNG GLASSMORPHISM (SOLID AVIATION) --- */
@@ -44,6 +116,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--card-shadow);
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .container {
@@ -63,7 +136,7 @@ body {
   display: none;
   align-items: center;
   justify-content: center;
-  background: #f0f4f8;
+  background: var(--login-bg);
 }
 #login-screen.active {
   display: flex;
@@ -96,9 +169,10 @@ h2 {
   font-weight: 700;
   font-size: 1.8rem;
   margin-bottom: 10px;
-  background: linear-gradient(135deg, var(--primary) 0%, #1e293b 100%);
+  background: linear-gradient(135deg, var(--primary-soft) 0%, var(--text) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .subtitle {
@@ -125,7 +199,7 @@ h2 {
 .input-group input {
   width: 100%;
   padding: 14px 16px 14px 48px;
-  background: #ffffff;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
   color: var(--text);
@@ -137,8 +211,13 @@ h2 {
 .input-group input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 15px var(--primary-glow);
-  background: #ffffff;
+  box-shadow: 0 0 0 3px var(--primary-glow);
+  background: var(--input-bg-focus);
+}
+
+.input-group input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.85;
 }
 
 .btn-glow {
@@ -147,7 +226,7 @@ h2 {
   background: var(--primary);
   border: none;
   border-radius: 12px;
-  color: #fff;
+  color: var(--text-on-primary);
   font-size: 1rem;
   font-weight: 600;
   font-family: inherit;
@@ -229,7 +308,7 @@ h2 {
 
 .btn-secondary {
   padding: 10px 16px;
-  background: #ffffff;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text);
@@ -242,8 +321,9 @@ h2 {
 }
 
 .btn-secondary:hover {
-  background: #f8fafc;
+  background: var(--panel-elevated);
   border-color: var(--primary);
+  color: var(--primary);
 }
 
 .btn-danger {
@@ -1224,34 +1304,349 @@ input:checked + .slider:before {
   }
 }
 
-/* --- DROPDOWN SELECT (LIGHT MODE SKYPEC) --- */
+/* --- DROPDOWN SELECT (theme-aware) --- */
 select {
   color: var(--text);
-  background-color: #ffffff;
+  background-color: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   max-width: 100%;
 }
 select option {
-  background-color: #ffffff !important;
+  background-color: var(--panel-bg) !important;
   color: var(--text) !important;
   padding: 8px;
 }
 #fms-crew-filter {
-  border: 1px solid rgba(0, 114, 151, 0.22);
+  border: 1px solid var(--border);
   color: var(--text);
-  background-color: #ffffff;
+  background-color: var(--input-bg);
 }
 #fms-crew-filter option {
-  background-color: #ffffff !important;
+  background-color: var(--panel-bg) !important;
   color: var(--text) !important;
 }
 
 /* Role select trong bảng accounts */
 .role-select {
   color: var(--text) !important;
-  background: #ffffff !important;
+  background: var(--input-bg) !important;
+  border-color: var(--border) !important;
   min-height: 40px;
+}
+
+/* Sticky table header uses theme token */
+.crm-table thead th {
+  background: var(--table-header-bg) !important;
+  color: var(--text);
+}
+
+.crm-table tbody tr:hover {
+  background: var(--table-row-hover);
+}
+
+/* --- THEME TOGGLE (luxury pill) --- */
+.theme-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 46px;
+  height: 46px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: linear-gradient(145deg, var(--panel-elevated) 0%, var(--panel-bg) 100%);
+  color: var(--primary);
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: transform 0.2s ease, border-color 0.25s ease, box-shadow 0.25s ease, color 0.25s ease;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  transform: translateY(-1px);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-glow), var(--card-shadow);
+  color: var(--primary-soft);
+}
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.theme-toggle .theme-icon-sun,
+.theme-toggle .theme-icon-moon {
+  position: absolute;
+  font-size: 1.05rem;
+  transition: opacity 0.25s ease, transform 0.3s ease;
+}
+html[data-theme="light"] .theme-toggle .theme-icon-sun,
+html:not([data-theme]) .theme-toggle .theme-icon-sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+html[data-theme="light"] .theme-toggle .theme-icon-moon,
+html:not([data-theme]) .theme-toggle .theme-icon-moon {
+  opacity: 0;
+  transform: rotate(-40deg) scale(0.5);
+}
+html[data-theme="dark"] .theme-toggle .theme-icon-sun {
+  opacity: 0;
+  transform: rotate(40deg) scale(0.5);
+}
+html[data-theme="dark"] .theme-toggle .theme-icon-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+  color: var(--gold);
+}
+
+/* Góc màn login */
+.theme-toggle-floating {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top, 16px));
+  right: max(16px, env(safe-area-inset-right, 16px));
+  z-index: 50;
+}
+
+/* =========================================================
+   DARK MODE CONTRAST HARDENING
+   — override inline light backgrounds / muted text
+   ========================================================= */
+html[data-theme="dark"] .glass-panel {
+  background: var(--panel-bg) !important;
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] .admin-sidebar,
+html[data-theme="dark"] .app-header {
+  background: var(--panel-bg-soft) !important;
+  border-color: var(--border-strong) !important;
+}
+
+/* Inputs / selects hard-coded white in HTML */
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea {
+  background-color: var(--input-bg) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  caret-color: var(--primary);
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 0.9;
+}
+
+html[data-theme="dark"] select option {
+  background: var(--panel-bg) !important;
+  color: var(--text) !important;
+}
+
+/* Light gray panels / chips in markup */
+html[data-theme="dark"] [style*="background: #ffffff"],
+html[data-theme="dark"] [style*="background:#ffffff"],
+html[data-theme="dark"] [style*="background: #fff"],
+html[data-theme="dark"] [style*="background:#fff"],
+html[data-theme="dark"] [style*="background: #f8fafc"],
+html[data-theme="dark"] [style*="background:#f8fafc"],
+html[data-theme="dark"] [style*="background: #f1f5f9"],
+html[data-theme="dark"] [style*="background:#f1f5f9"],
+html[data-theme="dark"] [style*="background:#f0f4f8"],
+html[data-theme="dark"] [style*="background: #f0f4f8"] {
+  background: var(--panel-elevated) !important;
+  color: var(--text);
+}
+
+html[data-theme="dark"] [style*="background: rgba(255, 255, 255, 0.85)"],
+html[data-theme="dark"] [style*="background: rgba(255,255,255,0.85)"],
+html[data-theme="dark"] [style*="background:rgba(255, 255, 255, 0.85)"] {
+  background: var(--panel-bg-soft) !important;
+}
+
+html[data-theme="dark"] [style*="background: rgba(255,255,255,0.01)"],
+html[data-theme="dark"] [style*="background: rgba(255, 255, 255, 0.01)"],
+html[data-theme="dark"] [style*="background: rgba(255,255,255,0.03)"],
+html[data-theme="dark"] [style*="background: rgba(255, 255, 255, 0.03)"] {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Pre / code message samples */
+html[data-theme="dark"] pre,
+html[data-theme="dark"] [style*="background:#f1f5f9"],
+html[data-theme="dark"] [style*="background: #f1f5f9"] {
+  background: var(--pre-bg) !important;
+  color: var(--pre-text) !important;
+  border-color: var(--pre-border) !important;
+}
+
+html[data-theme="dark"] [style*="color:#334155"],
+html[data-theme="dark"] [style*="color: #334155"],
+html[data-theme="dark"] [style*="color:#475569"],
+html[data-theme="dark"] [style*="color: #475569"],
+html[data-theme="dark"] [style*="color:#1e293b"],
+html[data-theme="dark"] [style*="color: #1e293b"] {
+  color: var(--text) !important;
+}
+
+/* Muted slate that sinks on dark */
+html[data-theme="dark"] [style*="color:#64748b"],
+html[data-theme="dark"] [style*="color: #64748b"] {
+  color: var(--text-muted) !important;
+}
+
+/* Table cells that force white text assuming dark row */
+html[data-theme="dark"] .crm-table {
+  color: var(--text);
+}
+html[data-theme="dark"] .crm-table th {
+  color: var(--primary-soft) !important;
+  border-bottom-color: var(--border) !important;
+}
+html[data-theme="dark"] .crm-table td {
+  border-bottom-color: var(--border) !important;
+  color: var(--text);
+}
+html[data-theme="dark"] .crm-table td [style*="color: #fff"],
+html[data-theme="dark"] .crm-table td [style*="color:#fff"] {
+  color: var(--text) !important;
+}
+
+/* AC reg chips / badges */
+html[data-theme="dark"] [style*="background: #f1f5f9"] {
+  background: var(--chip-bg) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+
+/* Login card already dark — polish for both themes */
+#login-screen .login-card {
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.92) 0%, rgba(8, 13, 22, 0.96) 100%) !important;
+  border: 1px solid rgba(56, 189, 248, 0.22) !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(201, 162, 39, 0.08);
+  color: #e8eef6;
+}
+#login-screen .login-card .subtitle,
+#login-screen .login-card .remember-me-label {
+  color: #94a3b8 !important;
+}
+#login-screen .login-card h2 {
+  background: linear-gradient(135deg, #ffffff 0%, #38bdf8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+#login-screen .login-card .input-group input {
+  background: rgba(8, 13, 22, 0.85) !important;
+  border-color: rgba(148, 163, 184, 0.25) !important;
+  color: #e8eef6 !important;
+}
+#login-screen .login-card .btn-glow {
+  color: #041018 !important;
+  background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+}
+
+/* Modal overlay */
+html[data-theme="dark"] .modal {
+  background: var(--modal-overlay);
+}
+
+/* Category explore cards */
+html[data-theme="dark"] .explore-card {
+  background: var(--panel-elevated);
+  border-color: var(--border);
+}
+html[data-theme="dark"] .explore-card:hover {
+  background: #1e2a3d;
+  border-color: var(--border-strong);
+}
+html[data-theme="dark"] .category-item:hover {
+  background: rgba(56, 189, 248, 0.08);
+}
+
+/* Status badges already using CSS vars — boost if needed */
+html[data-theme="dark"] .status-badge.active {
+  color: var(--success);
+}
+html[data-theme="dark"] .status-badge.error {
+  color: var(--danger);
+}
+
+/* Scrollbar luxury dark */
+html[data-theme="dark"] ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+html[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Toast / filter bars */
+html[data-theme="dark"] .fms-filter-bar,
+html[data-theme="dark"] [style*="background: rgba(0, 114, 151, 0.03)"] {
+  background: rgba(56, 189, 248, 0.06) !important;
+  border-color: var(--border) !important;
+}
+
+/* Gate inline edit in JS used dark slate — keep readable in light via default; dark already ok */
+html[data-theme="dark"] .editable-gate input {
+  background: var(--input-bg) !important;
+  color: var(--text) !important;
+  border-color: var(--success) !important;
+}
+
+/* Section titles */
+html[data-theme="dark"] .section-title h3,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] h4 {
+  color: var(--text);
+}
+
+/* Remember-me / labels */
+.remember-me-label {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* Admin tab active already uses primary — ensure readable */
+html[data-theme="dark"] .admin-tab-btn {
+  color: var(--text-muted) !important;
+}
+html[data-theme="dark"] .admin-tab-btn:hover {
+  color: var(--primary-soft) !important;
+  background: rgba(56, 189, 248, 0.08);
+}
+html[data-theme="dark"] .admin-tab-btn.active {
+  color: var(--primary) !important;
+  background: rgba(56, 189, 248, 0.12) !important;
+  border-color: var(--border-strong) !important;
+}
+
+/* KPI labels */
+html[data-theme="dark"] .kpi-label {
+  color: var(--text-muted) !important;
+}
+html[data-theme="dark"] .kpi-num {
+  /* keep semantic colors from inline; ensure not washed */
+  filter: none;
+}
+
+/* Mobile table hint */
+html[data-theme="dark"] .table-container::after {
+  color: var(--text-muted);
+}
+
+/* Gold accent line for dark luxury panels */
+html[data-theme="dark"] .admin-sidebar {
+  box-shadow: var(--card-shadow), inset 0 1px 0 rgba(224, 195, 106, 0.06);
 }
 
 /* --- TỐI ƯU RESPONSIVE CHO MODAL CHI TIẾT CHUYẾN BAY USER --- */
@@ -1443,7 +1838,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #f8fafc;
+  background: var(--table-header-bg);
   box-shadow: 0 1px 0 var(--border);
 }
 

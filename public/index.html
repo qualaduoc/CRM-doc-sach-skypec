@@ -3,11 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#007297">
+  <meta name="theme-color" content="#007297" id="meta-theme-color">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>FMS SkyEyes - Hệ Thống Giám Sát Lịch Bay & Tải Dầu Tra Nạp</title>
-  <link rel="stylesheet" href="style.css?v=3.1.7">
+  <!-- Áp dụng theme trước paint — tránh nháy sáng/tối (FOUC) -->
+  <script>
+    (function () {
+      try {
+        var key = 'skyeyes_theme';
+        var t = localStorage.getItem(key);
+        if (t !== 'light' && t !== 'dark') {
+          t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+        var meta = document.getElementById('meta-theme-color');
+        if (meta) meta.setAttribute('content', t === 'dark' ? '#080d16' : '#007297');
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="style.css?v=3.2.0">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
   <style>
@@ -57,6 +74,11 @@
 
   <!-- ================= MÀN HÌNH ĐĂNG NHẬP ================= -->
   <div id="login-screen" class="screen active">
+    <!-- Nút chuyển Sáng / Tối (góc màn hình) -->
+    <button type="button" class="theme-toggle theme-toggle-floating" id="btn-theme-toggle-login" aria-label="Chuyển giao diện Sáng hoặc Tối" title="Giao diện Sáng / Tối">
+      <i class="fa-solid fa-sun theme-icon-sun" aria-hidden="true"></i>
+      <i class="fa-solid fa-moon theme-icon-moon" aria-hidden="true"></i>
+    </button>
     <!-- Nền vũ trụ động -->
     <canvas id="space-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;"></canvas>
     
@@ -147,7 +169,11 @@
                 <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">Vai trò: Quản trị viên chi nhánh</p>
               </div>
             </div>
-            <div class="header-actions" style="display: flex; gap: 10px;">
+            <div class="header-actions" style="display: flex; gap: 10px; align-items: center;">
+              <button type="button" class="theme-toggle" id="btn-theme-toggle-admin" aria-label="Chuyển giao diện Sáng hoặc Tối" title="Giao diện Sáng / Tối">
+                <i class="fa-solid fa-sun theme-icon-sun" aria-hidden="true"></i>
+                <i class="fa-solid fa-moon theme-icon-moon" aria-hidden="true"></i>
+              </button>
               <button id="btn-admin-change-pass" class="btn-secondary" style="padding: 8px 14px; font-size: 0.85rem;">
                 <i class="fa-solid fa-key"></i> Đổi mật khẩu
               </button>
@@ -848,7 +874,11 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
           </div>
         </div>
         
-        <div class="header-actions">
+        <div class="header-actions" style="display: flex; gap: 10px; align-items: center;">
+          <button type="button" class="theme-toggle" id="btn-theme-toggle-user" aria-label="Chuyển giao diện Sáng hoặc Tối" title="Giao diện Sáng / Tối">
+            <i class="fa-solid fa-sun theme-icon-sun" aria-hidden="true"></i>
+            <i class="fa-solid fa-moon theme-icon-moon" aria-hidden="true"></i>
+          </button>
           <button id="btn-back-to-admin" class="btn-secondary hidden" onclick="showAdminDashboard()">
             <i class="fa-solid fa-arrow-left"></i> Quay lại Admin
           </button>
@@ -1336,6 +1366,6 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     </div>
   </div>
 
-  <script src="app_v3.js?v=3.1.7"></script>
+  <script src="app_v3.js?v=3.2.0"></script>
 </body>
 </html>
