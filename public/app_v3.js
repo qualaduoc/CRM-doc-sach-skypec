@@ -1019,11 +1019,11 @@ async function loadAdminDashboard(isPolling = false) {
                           (acc.perm_gemini === 1) ? 'nv_c1' : 'nv_c2';
 
       const permissionsHtml = `
-        <select class="role-select" data-username="${acc.username}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #0f172a; color: white; font-weight: 600; cursor: pointer; outline: none; font-size: 0.82rem; width: 100%; box-sizing: border-box;">
-          <option value="admin" ${currentRole === 'admin' ? 'selected' : ''}>👑 Admin</option>
-          <option value="dieu_hanh" ${currentRole === 'dieu_hanh' ? 'selected' : ''}>✈️ Điều hành</option>
-          <option value="nv_c1" ${currentRole === 'nv_c1' ? 'selected' : ''}>👤 Nhân viên C1</option>
-          <option value="nv_c2" ${currentRole === 'nv_c2' ? 'selected' : ''}>👤 Nhân viên C2</option>
+        <select class="role-select" data-username="${acc.username}" style="padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-weight: 600; cursor: pointer; outline: none; font-size: 0.82rem; width: 100%; box-sizing: border-box;">
+          <option value="admin" ${currentRole === 'admin' ? 'selected' : ''} style="color: var(--text); background: #ffffff;">👑 Admin</option>
+          <option value="dieu_hanh" ${currentRole === 'dieu_hanh' ? 'selected' : ''} style="color: var(--text); background: #ffffff;">✈️ Điều hành</option>
+          <option value="nv_c1" ${currentRole === 'nv_c1' ? 'selected' : ''} style="color: var(--text); background: #ffffff;">👤 Nhân viên C1</option>
+          <option value="nv_c2" ${currentRole === 'nv_c2' ? 'selected' : ''} style="color: var(--text); background: #ffffff;">👤 Nhân viên C2</option>
         </select>
       `;
 
