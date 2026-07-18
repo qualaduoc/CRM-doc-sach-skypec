@@ -2221,18 +2221,18 @@ function renderFmsTable() {
     let planeInfo = '';
     if (blinkAcReg && r.old_ac_reg) {
       planeInfo = `
-        <div style="font-size: 0.78rem; text-align: left; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25);">
-          <div style="color: #a3e635; font-weight: 500;">Cũ: <span style="text-decoration: line-through;">${r.old_ac_reg}</span></div>
-          <div style="color: #ef4444; font-weight: bold; margin-top: 1px;" class="${acRegClass}">Mới: ${r.ac_reg || '-'}</div>
+        <div style="font-size: 0.78rem; text-align: left; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(185, 28, 28, 0.08); border: 1px solid rgba(185, 28, 28, 0.22);">
+          <div style="color: #475569; font-weight: 500;">Cũ: <span style="text-decoration: line-through;">${r.old_ac_reg}</span></div>
+          <div style="color: #b91c1c; font-weight: bold; margin-top: 1px;" class="${acRegClass}">Mới: ${r.ac_reg || '-'}</div>
           ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.72rem; display: block; margin-top: 2px;">Loại: ${r.ac_type}</span>` : ''}
-          ${r.route ? `<span style="color: #60a5fa; font-size: 0.72rem; display: block; margin-top: 2px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
+          ${r.route ? `<span style="color: var(--primary); font-size: 0.72rem; display: block; margin-top: 2px; font-weight: bold;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
         </div>
       `;
     } else {
       planeInfo = `
-        ${r.ac_reg ? `<span style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
+        ${r.ac_reg ? `<span style="background: #f1f5f9; border: 1px solid rgba(0, 114, 151, 0.15); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
         ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
-        ${r.route ? `<span style="color: #60a5fa; font-size: 0.8rem; display: block; margin-top: 3px;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
+        ${r.route ? `<span style="color: var(--primary); font-size: 0.8rem; display: block; margin-top: 3px; font-weight: bold;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
       `;
     }
 
@@ -2240,9 +2240,9 @@ function renderFmsTable() {
     let standbyHtml = '';
     if (blinkStandby && r.old_standby_fuel) {
       standbyHtml = `
-        <div style="font-size: 0.78rem; text-align: center; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.25);">
-          <div style="color: #a3e635; font-size: 0.72rem;">Cũ: ${parseInt(r.old_standby_fuel) > 0 ? parseInt(r.old_standby_fuel).toLocaleString() + ' kg' : '-'}</div>
-          <div style="color: #fb923c; font-weight: bold; margin-top: 1px;" class="${standbyClass}">Mới: ${parseInt(r.standby_fuel) > 0 ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</div>
+        <div style="font-size: 0.78rem; text-align: center; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(194, 65, 12, 0.08); border: 1px solid rgba(194, 65, 12, 0.22);">
+          <div style="color: #475569; font-size: 0.72rem;">Cũ: ${parseInt(r.old_standby_fuel) > 0 ? parseInt(r.old_standby_fuel).toLocaleString() + ' kg' : '-'}</div>
+          <div style="color: #c2410c; font-weight: bold; margin-top: 1px;" class="${standbyClass}">Mới: ${parseInt(r.standby_fuel) > 0 ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</div>
         </div>
       `;
     } else {
@@ -2253,9 +2253,9 @@ function renderFmsTable() {
     let orderHtml = '';
     if (blinkFuelOrder && r.old_fuel_order) {
       orderHtml = `
-        <div style="font-size: 0.78rem; text-align: center; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(249, 115, 22, 0.12); border: 1px solid rgba(249, 115, 22, 0.25);">
-          <div style="color: #a3e635; font-size: 0.72rem;">Cũ: ${parseInt(r.old_fuel_order) > 0 ? parseInt(r.old_fuel_order).toLocaleString() + ' kg' : '-'}</div>
-          <div style="color: #f97316; font-weight: bold; margin-top: 1px;" class="${fuelOrderClass}">Mới: ${parseInt(r.fuel_order) > 0 ? parseInt(r.fuel_order).toLocaleString() + ' kg' : '-'}</div>
+        <div style="font-size: 0.78rem; text-align: center; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(194, 65, 12, 0.08); border: 1px solid rgba(194, 65, 12, 0.22);">
+          <div style="color: #475569; font-size: 0.72rem;">Cũ: ${parseInt(r.old_fuel_order) > 0 ? parseInt(r.old_fuel_order).toLocaleString() + ' kg' : '-'}</div>
+          <div style="color: #c2410c; font-weight: bold; margin-top: 1px;" class="${fuelOrderClass}">Mới: ${parseInt(r.fuel_order) > 0 ? parseInt(r.fuel_order).toLocaleString() + ' kg' : '-'}</div>
         </div>
       `;
     } else {
@@ -2266,9 +2266,9 @@ function renderFmsTable() {
     let depTimeHtml = '';
     if (blinkEtd && r.old_etd) {
       depTimeHtml = `
-        <div style="font-size: 0.76rem; padding: 2px 4px; border-radius: 4px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25); display: inline-block; line-height: 1.3;">
-          <div style="color: #a3e635; text-decoration: line-through;">Cũ: ${r.old_etd}</div>
-          <div style="color: #ef4444; font-weight: bold; margin-top: 1px;" class="${etdClass}">Mới: ${r.etd || '-'}</div>
+        <div style="font-size: 0.76rem; padding: 2px 4px; border-radius: 4px; background: rgba(185, 28, 28, 0.08); border: 1px solid rgba(185, 28, 28, 0.22); display: inline-block; line-height: 1.3;">
+          <div style="color: #475569; text-decoration: line-through;">Cũ: ${r.old_etd}</div>
+          <div style="color: #b91c1c; font-weight: bold; margin-top: 1px;" class="${etdClass}">Mới: ${r.etd || '-'}</div>
         </div>
       `;
     } else {
@@ -2280,25 +2280,25 @@ function renderFmsTable() {
       <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
         ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
         <div>Cất: ${depTimeHtml}</div>
-        ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed var(--border); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+        ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed var(--border); padding-top: 2px;">Nạp: <strong style="color: #c2410c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
       </div>
     `;
     
     const canEditGate = state.role === 'admin' || state.permissions?.perm_admin === 1 || state.permissions?.perm_gate === 1;
     const gateHtml = canEditGate
-      ? `<span class="editable-gate" data-flight="${r.flight_no}" data-date="${r.date || ''}" title="Click để sửa vị trí đỗ" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px dashed rgba(245, 158, 11, 0.4); border-radius: 4px; min-width: 35px; transition: all 0.2s;">${r.gate || '-'}</span>`
+      ? `<span class="editable-gate" data-flight="${r.flight_no}" data-date="${r.date || ''}" title="Click để sửa vị trí đỗ" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px dashed rgba(0, 114, 151, 0.4); background: rgba(0, 114, 151, 0.03); border-radius: 4px; min-width: 35px; transition: all 0.2s;">${r.gate || '-'}</span>`
       : `${r.gate || '-'}`;
 
     return `
       <tr>
-        <td style="font-weight: 700; color: #38bdf8; font-size: 1rem;">${r.flight_no}</td>
+        <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
         <td>${crewText}${truckText}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
-        <td style="text-align: center; font-weight: 700; color: #f59e0b; font-size: 1rem;">${gateHtml}</td>
+        <td style="text-align: center; font-weight: 700; color: #b45309; font-size: 1rem;">${gateHtml}</td>
         <td class="${etdTdClass}">${timesHtml}</td>
-        <td style="text-align: center; font-weight: 600; color: #a3e635; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyHtml}</td>
-        <td style="text-align: center; font-weight: 700; color: #f97316; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderHtml}</td>
-        <td style="text-align: center; font-weight: 600; color: #60a5fa;" class="hide-on-mobile">${tripVal}</td>
+        <td style="text-align: center; font-weight: 700; color: #15803d; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyHtml}</td>
+        <td style="text-align: center; font-weight: 800; color: #c2410c; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderHtml}</td>
+        <td style="text-align: center; font-weight: 700; color: #1d4ed8;" class="hide-on-mobile">${tripVal}</td>
         <td style="text-align: center;">
           <span class="status-tag ${statusClass}">
             ${statusText}
@@ -2377,25 +2377,25 @@ function renderUserFmsTable() {
 
     return `
       <tr>
-        <td style="font-weight: 700; color: #38bdf8; font-size: 1rem;">${r.flight_no}</td>
-        <td><span style="font-weight: 600; color: #fb923c;">${r.crew_info || '-'}</span> ${r.truck_no && r.truck_no !== '-' ? `<span style="font-size: 0.85em; color: var(--primary);"> (Xe ${r.truck_no})</span>` : ''}</td>
+        <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
+        <td><span style="font-weight: 600; color: #c2410c;">${r.crew_info || '-'}</span> ${r.truck_no && r.truck_no !== '-' ? `<span style="font-size: 0.85em; color: var(--primary);"> (Xe ${r.truck_no})</span>` : ''}</td>
         <td style="text-align: center;">
           <span style="font-weight: bold; color: var(--text);">${r.ac_reg || '-'}</span>
           <span style="color: var(--text-muted); font-size: 0.8em;"> (${r.ac_type || '-'})</span>
           <br>
           <span style="color: #007297; font-size: 0.85em; font-weight: bold;">${r.route || '-'}</span>
         </td>
-        <td style="text-align: center; font-weight: bold; color: #f59e0b; font-size: 1rem;">${r.gate || '-'}</td>
+        <td style="text-align: center; font-weight: 700; color: #b45309; font-size: 1rem;">${r.gate || '-'}</td>
         <td>
           <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
             ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
             ${r.time_dep ? `<div>Cất: <span>${r.time_dep}</span></div>` : ''}
-            ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed var(--border); padding-top: 2px;">Nạp: <strong style="color: #fb923c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+            ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed var(--border); padding-top: 2px;">Nạp: <strong style="color: #c2410c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
           </div>
         </td>
-        <td style="text-align: center; font-weight: 600; color: #a3e635;">${r.standby_fuel ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</td>
-        <td style="text-align: center; font-weight: 700; color: #f97316; font-size: 1.05rem;">${r.fuel_order ? parseInt(r.fuel_order).toLocaleString() + ' kg' : '-'}</td>
-        <td style="text-align: center; color: var(--text-muted);" class="hide-on-mobile">${r.trip_fuel ? parseInt(r.trip_fuel).toLocaleString() + ' kg' : '-'}</td>
+        <td style="text-align: center; font-weight: 700; color: #15803d;">${r.standby_fuel ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</td>
+        <td style="text-align: center; font-weight: 800; color: #c2410c; font-size: 1.05rem;">${r.fuel_order ? parseInt(r.fuel_order).toLocaleString() + ' kg' : '-'}</td>
+        <td style="text-align: center; color: #1d4ed8; font-weight: 700;" class="hide-on-mobile">${r.trip_fuel ? parseInt(r.trip_fuel).toLocaleString() + ' kg' : '-'}</td>
         <td style="text-align: center;">
           <span class="status-tag ${statusClass}">${statusText}</span>
         </td>

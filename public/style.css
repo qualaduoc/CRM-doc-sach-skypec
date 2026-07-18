@@ -1,20 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --background: #f0f4f8;
+  --background: #ebf0f5;
   --panel-bg: #ffffff;
   --border: rgba(0, 114, 151, 0.12);
   --primary: #007297;
   --primary-glow: rgba(0, 114, 151, 0.35);
   --primary-hover: #005f7e;
   --text: #1e293b;
-  --text-muted: #64748b;
-  --success: #10b981;
-  --success-bg: rgba(16, 185, 129, 0.12);
-  --danger: #ef4444;
-  --danger-bg: rgba(239, 68, 68, 0.1);
-  --warning: #e3a813;
-  --warning-bg: rgba(227, 168, 19, 0.12);
+  --text-muted: #55657d;
+  --success: #15803d;
+  --success-bg: #dcfce7;
+  --danger: #b91c1c;
+  --danger-bg: #fee2e2;
+  --warning: #b45309;
+  --warning-bg: #fef3c7;
   --card-shadow: 0 4px 16px rgba(0, 114, 151, 0.04), 0 2px 4px rgba(0, 0, 0, 0.01);
 }
 
@@ -1100,13 +1100,15 @@ input:checked + .slider:before {
 }
 
 .status-tag.review-pending {
-  background: rgba(249, 115, 22, 0.15) !important;
-  color: #fb923c !important;
+  background: #ffedd5 !important;
+  color: #c2410c !important;
+  border: 1px solid rgba(194, 65, 12, 0.15);
 }
 
 .status-tag.review-finished {
   background: var(--success-bg) !important;
   color: var(--success) !important;
+  border: 1px solid rgba(21, 128, 61, 0.15);
 }
 
 /* --- ADMIN TAB STYLING --- */
