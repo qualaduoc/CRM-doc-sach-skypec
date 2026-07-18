@@ -478,11 +478,14 @@ function setupEventListeners() {
       document.querySelectorAll('.admin-tab-content').forEach(content => {
         content.style.display = 'none';
       });
-      document.getElementById(tabId).style.display = tabId === 'tab-fms' ? 'grid' : 'block';
+      document.getElementById(tabId).style.display = tabId === 'tab-fms-schedule-admin' ? 'grid' : 'block';
 
-      if (tabId === 'tab-fms' || tabId === 'tab-settings') {
-        if (tabId === 'tab-fms') {
+      if (['tab-fms', 'tab-temp-import-export', 'tab-fms-schedule-admin', 'tab-settings'].includes(tabId)) {
+        if (tabId === 'tab-fms' || tabId === 'tab-fms-schedule-admin') {
           loadFmsSchedules();
+        }
+        if (tabId === 'tab-temp-import-export') {
+          fetchTempImportExportData();
         }
         loadGeminiKeys();
         startSkyEyesPolling();
@@ -1882,14 +1885,9 @@ function updateFmsCrewFilter(rows) {
 
 // Cuộn màn hình xuống widget Tạm nhập - Tái xuất
 function scrollToImportExportWidget() {
-  const widget = document.getElementById('fms-import-export-widget');
-  if (widget) {
-    widget.scrollIntoView({ behavior: 'smooth' });
-    // Thêm hiệu ứng nhấp nháy cho viền của widget để dễ nhận diện
-    widget.style.borderColor = '#fb923c';
-    setTimeout(() => {
-      widget.style.borderColor = 'rgba(56, 189, 248, 0.25)';
-    }, 2000);
+  const tabBtn = document.getElementById('tab-btn-temp-import-export');
+  if (tabBtn) {
+    tabBtn.click();
   }
 }
 window.scrollToImportExportWidget = scrollToImportExportWidget;

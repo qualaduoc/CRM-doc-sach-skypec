@@ -156,17 +156,23 @@
       </div>
 
       <!-- Tab điều hướng Admin -->
-      <div class="admin-tabs" style="display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
-        <button class="admin-tab-btn active" data-tab="tab-accounts" style="background: none; border: none; color: var(--primary); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid var(--primary); transition: all 0.3s;">
+      <div class="admin-tabs" style="display: flex; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap;">
+        <button class="admin-tab-btn active" data-tab="tab-accounts" style="background: none; border: none; color: var(--primary); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid var(--primary); transition: all 0.3s; outline: none;">
           <i class="fa-solid fa-users"></i> Quản lý Học viên
         </button>
-        <button id="tab-btn-fms" class="admin-tab-btn" data-tab="tab-fms" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
-          <i class="fa-solid fa-gas-pump"></i> Theo dõi Tải dầu FMS
+        <button id="tab-btn-fms" class="admin-tab-btn" data-tab="tab-fms" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
+          <i class="fa-solid fa-gas-pump"></i> Kế hoạch bay FMS
         </button>
-        <button id="tab-btn-settings" class="admin-tab-btn" data-tab="tab-settings" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
+        <button id="tab-btn-temp-import-export" class="admin-tab-btn" data-tab="tab-temp-import-export" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
+          <i class="fa-solid fa-plane-circle-exclamation"></i> Giám sát Tạm nhập - Tái xuất
+        </button>
+        <button id="tab-btn-fms-schedule-admin" class="admin-tab-btn" data-tab="tab-fms-schedule-admin" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
+          <i class="fa-solid fa-calendar-check"></i> Nhập lịch trực ca
+        </button>
+        <button id="tab-btn-settings" class="admin-tab-btn" data-tab="tab-settings" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
           <i class="fa-solid fa-screwdriver-wrench"></i> Cấu hình & Kết nối
         </button>
-        <button id="tab-btn-fms-stats" class="admin-tab-btn" data-tab="tab-fms-stats" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s;">
+        <button id="tab-btn-fms-stats" class="admin-tab-btn" data-tab="tab-fms-stats" style="background: none; border: none; color: var(--text-muted); font-size: 1.1rem; font-weight: bold; cursor: pointer; padding: 5px 15px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">
           <i class="fa-solid fa-square-poll-vertical"></i> Thống kê KPI Chuyến
         </button>
       </div>
@@ -209,327 +215,325 @@
         </div>
       </div>
 
-      <!-- TAB CONTENT 2: THEO DÕI TẢI DẦU FMS -->
+      <!-- TAB CONTENT 2: THEO DÕI KẾ HOẠCH BAY FMS -->
       <div id="tab-fms" class="admin-tab-content" style="display: none;">
+        <!-- Bảng theo dõi tải dầu -->
+        <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; width: 100%; box-sizing: border-box;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
+            </h4>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <input type="date" id="fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.85rem; font-weight: bold; cursor: pointer;">
+              <button id="btn-fms-sync-now" class="btn-secondary" style="border-color: rgba(52, 211, 153, 0.3); color: #34d399; padding: 6px 12px; font-size: 0.85rem; margin-top: 0;">
+                <i class="fa-solid fa-rotate"></i> Quét FMS Ngay
+              </button>
+              <button id="btn-fms-export-excel" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: #10b981; padding: 6px 12px; font-size: 0.85rem; margin-top: 0; margin-left: 8px;">
+                <i class="fa-solid fa-file-excel"></i> Xuất Excel Lịch Trực
+              </button>
+            </div>
+          </div>
+
+          <!-- Bộ lọc và tìm kiếm nhanh FMS -->
+          <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px; margin-bottom: 10px;">
+            <div style="flex: 1; min-width: 250px; position: relative;">
+              <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
+              <input type="text" id="fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
+            </div>
+            <div style="width: 220px; min-width: 180px;">
+              <select id="fms-crew-filter" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; cursor: pointer; outline: none; box-sizing: border-box;">
+                <option value="">-- Tất cả Cặp tra nạp --</option>
+              </select>
+            </div>
+          </div>
+          
+          <!-- Khu vực cài đặt thông báo Zalo theo Cặp trực ban -->
+          <div id="fms-crew-notify-settings-container" style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; margin-bottom: 10px; padding: 10px; background: rgba(255,255,255,0.01); border: 1px dashed rgba(255,255,255,0.08); border-radius: 8px; display: none;">
+            <!-- Vẽ động từ JS -->
+          </div>
+          
+          <div class="table-container" style="margin-top: 5px;">
+            <table class="crm-table">
+              <thead>
+                <tr>
+                  <th>Chuyến bay</th>
+                  <th>Nhân viên / Xe trực</th>
+                  <th style="text-align: center;">Tàu / Loại / Đường bay</th>
+                  <th style="text-align: center;">Vị trí đỗ</th>
+                  <th style="text-align: center;">Hạ / Cất / Tra nạp</th>
+                  <th style="text-align: center;">Standby Fuel</th>
+                  <th style="text-align: center;">Fuel Order</th>
+                  <th style="text-align: center;" class="hide-on-mobile">Trip Fuel</th>
+                  <th style="text-align: center;">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="fms-table-body">
+                <!-- Render động từ JS -->
+                <tr>
+                  <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                    Chưa có lịch bay được phân công cho ngày hôm nay.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB CONTENT: GIÁM SÁT TẠM NHẬP - TÁI XUẤT -->
+      <div id="tab-temp-import-export" class="admin-tab-content" style="display: none;">
         
         <!-- Banner cảnh báo Tạm nhập - Tái xuất tàu bay khẩn cấp -->
         <div id="fms-import-export-alert-banner" class="blink-orange-bg" style="display: none; padding: 12px 20px; border-radius: 8px; border: 1px solid rgba(251, 146, 60, 0.4); margin-bottom: 20px; align-items: center; justify-content: space-between; gap: 15px; font-weight: bold;">
           <div style="display: flex; align-items: center; gap: 10px; color: #fb923c; font-size: 0.95rem;">
             <i class="fa-solid fa-triangle-exclamation fa-fade" style="font-size: 1.2rem;"></i>
-            <span id="fms-import-export-alert-text">Cảnh báo Tạm nhập - Tái xuất: Phát hiện tàu bay đang bay quốc tế nhưng chưa xử lý hóa đơn!</span>
+            <span id="fms-import-export-alert-text">Cảnh báo: Phát hiện tàu bay đang bay quốc tế nhưng chưa xử lý hóa đơn!</span>
           </div>
-          <button onclick="scrollToImportExportWidget()" style="padding: 6px 12px; border-radius: 4px; border: none; background: #fb923c; color: #000; font-weight: bold; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; box-shadow: 0 0 8px rgba(251, 146, 96, 0.4);">
-            Xem chi tiết
-          </button>
         </div>
 
-        <div class="fms-layout" style="display: grid; grid-template-columns: 350px 1fr; gap: 20px;">
-          
-          <!-- Bên trái: Nhập lịch bay -->
-          <div style="display: flex; flex-direction: column; gap: 15px;">
-            <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; height: fit-content;">
-              <h4 style="margin: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 10px;">
-                <i class="fa-solid fa-file-import"></i> Nhập Lịch Bay Trực Ca
-              </h4>
-              <div style="display: flex; flex-direction: column; gap: 12px; padding: 10px; background: rgba(0,0,0,0.15); border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px;">
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <label for="fms-schedule-date" style="font-size: 0.8rem; font-weight: bold; color: var(--primary);">📅 Chọn ngày trực:</label>
-                  <input type="date" id="fms-schedule-date" style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; outline: none; font-size: 0.9rem;">
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <label for="fms-filter-shift" style="font-size: 0.8rem; font-weight: bold; color: var(--warning);">⏰ Chọn ca trực:</label>
-                  <select id="fms-filter-shift" style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: #131d35; color: #fff; outline: none; font-size: 0.9rem; cursor: pointer;">
-                    <option value="all" selected>Tất cả cả ngày</option>
-                    <option value="day">Ca ngày (07:30 - 19:30)</option>
-                    <option value="evening">Ca tối (19:30 - 23:59)</option>
-                    <option value="night">Ca đêm (23:59 - 07:30 ngày mai)</option>
-                  </select>
-                </div>
-              </div>
-              <div style="display: flex; flex-direction: column; gap: 8px;">
-                <button id="btn-fms-upload-image" class="btn-glow" style="margin-top: 0; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); border: none; width: 100%; font-size: 0.9rem;">
-                  <i class="fa-solid fa-camera"></i> Nhận Diện Từ Ảnh Lịch Trực
-                </button>
-                <input type="file" id="fms-image-input" accept="image/*" style="display: none;">
-                
-                <button id="btn-fms-upload-excel" class="btn-glow" style="margin-top: 0; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; width: 100%; font-size: 0.9rem;">
-                  <i class="fa-solid fa-file-excel"></i> Tải Lên File Excel Lịch Trực
-                </button>
-                <a href="lichtruc.xlsx" download="lichtruc.xlsx" style="display: block; text-align: center; color: #10b981; font-size: 0.85rem; font-weight: 600; text-decoration: none; margin-top: 2px;">
-                  <i class="fa-solid fa-file-excel"></i> Tải File Excel Mẫu Để Thử
-                </a>
-                <input type="file" id="fms-file-input" accept=".xlsx, .xls, .csv" style="display: none;">
-              </div>
-              <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; font-weight: bold; margin: 2px 0; border-top: 1px dashed var(--border); padding-top: 8px;">
-                HOẶC DÁN TEXT THỦ CÔNG
-              </div>
-              <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
-                Copy-paste lịch trực hôm nay.<br>
-                <strong>Định dạng:</strong> <code>VN343: Đạt - Hưng</code>
-              </p>
-              <textarea id="fms-schedule-input" placeholder="VN343: Đạt - Hưng&#10;VN1603: Thùy - Được" style="width: 100%; height: 120px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; font-family: monospace; font-size: 0.9rem; line-height: 1.5; resize: none;"></textarea>
-              <button id="btn-fms-save-schedule" class="btn-glow" style="margin-top: 0; width: 100%;">
-                <i class="fa-solid fa-floppy-disk"></i> Lưu Lịch Dán Thủ Công
-              </button>
+        <div id="fms-import-export-widget" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; border-color: rgba(56, 189, 248, 0.25); width: 100%; box-sizing: border-box;">
+          <style>
+            @keyframes pulse-green {
+              0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+              70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+              100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+            }
+            .pulse-dot-green {
+              width: 8px;
+              height: 8px;
+              background-color: #10b981;
+              border-radius: 50%;
+              display: inline-block;
+              animation: pulse-green 1.8s infinite;
+              vertical-align: middle;
+              margin-right: 6px;
+            }
+            .status-pill-btn {
+              padding: 3px 8px;
+              font-size: 0.7rem;
+              font-weight: 600;
+              border-radius: 20px;
+              border: 1px solid transparent;
+              cursor: pointer;
+              transition: all 0.2s ease;
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              user-select: none;
+            }
+            .status-pill-pending {
+              background: rgba(245, 158, 11, 0.12);
+              border-color: rgba(245, 158, 11, 0.3);
+              color: #fb923c;
+            }
+            .status-pill-pending.active {
+              background: #f59e0b;
+              color: #000;
+              border-color: #f59e0b;
+              box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+            }
+            .status-pill-success {
+              background: rgba(16, 185, 129, 0.12);
+              border-color: rgba(16, 185, 129, 0.25);
+              color: #34d399;
+            }
+            .status-pill-success.active {
+              background: #10b981;
+              color: #fff;
+              border-color: #10b981;
+              box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
+            }
+            .status-pill-inactive {
+              background: rgba(255, 255, 255, 0.03);
+              border-color: rgba(255, 255, 255, 0.08);
+              color: var(--text-muted);
+            }
+            .row-resolved {
+              opacity: 0.65;
+              background: rgba(0, 0, 0, 0.15) !important;
+            }
+            .scenario-item {
+              background: rgba(0, 0, 0, 0.25);
+              border: 1px solid rgba(255, 255, 255, 0.05);
+              border-radius: 6px;
+              padding: 8px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              transition: all 0.2s;
+            }
+            .scenario-item:hover {
+              border-color: rgba(245, 158, 11, 0.3);
+              background: rgba(0, 0, 0, 0.35);
+            }
+          </style>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h4 style="margin: 0; font-size: 1.1rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-plane-circle-exclamation"></i> Giám Sát Tạm Nhập - Tái Xuất Tàu Bay (Livetimes)
+            </h4>
+            <button id="btn-fms-test-import-export" class="btn-glow" style="margin-top: 0; padding: 6px 12px; font-size: 0.8rem; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border: none;">
+              <i class="fa-solid fa-vial"></i> Công cụ Test Giả Lập Zalo
+            </button>
+          </div>
+
+          <!-- Panel Danh sách tin nhắn mẫu để test -->
+          <div id="fms-test-scenarios-panel" style="display: none; flex-direction: column; gap: 10px; background: rgba(245, 158, 11, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25); margin-bottom: 5px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed rgba(245, 158, 11, 0.25); padding-bottom: 6px; margin-bottom: 2px;">
+              <span style="font-size: 0.8rem; font-weight: bold; color: #f59e0b;"><i class="fa-solid fa-vial"></i> Xem trước & Gửi thử các tin nhắn mẫu:</span>
+              <i class="fa-solid fa-xmark" id="btn-close-test-panel" style="cursor: pointer; font-size: 0.95rem; color: var(--text-muted); padding: 2px 6px;"></i>
             </div>
-
-            <!-- Khung danh sách nhân sự chưa map Zalo -->
-            <div id="unmapped-crews-card" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; border-color: rgba(239, 68, 68, 0.25); background: rgba(239, 68, 68, 0.03); margin-top: 15px;">
-              <h4 style="margin: 0; font-size: 1.02rem; color: #f87171; display: flex; align-items: center; gap: 10px;">
-                <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i> Chưa Liên Kết Zalo (Trực Hôm Nay)
-              </h4>
-              <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
-                Các nhân sự dưới đây trực hôm nay chưa cấu hình mapping Zalo (sẽ hiển thị tên thường, không được tag). Bấm vào tên để liên kết nhanh:
-              </p>
-              <div id="unmapped-crews-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
-                <span style="font-size: 0.82rem; color: var(--text-muted); font-style: italic;">Đang tải dữ liệu...</span>
-              </div>
-            </div>
-
-            <!-- Widget theo dõi Tạm nhập - Tái xuất tàu bay trong ngày -->
-            <div id="fms-import-export-widget" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; margin-top: 15px; border-color: rgba(56, 189, 248, 0.25);">
-              <style>
-                @keyframes pulse-green {
-                  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-                  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-                  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-                }
-                .pulse-dot-green {
-                  width: 8px;
-                  height: 8px;
-                  background-color: #10b981;
-                  border-radius: 50%;
-                  display: inline-block;
-                  animation: pulse-green 1.8s infinite;
-                  vertical-align: middle;
-                  margin-right: 6px;
-                }
-                .status-pill-btn {
-                  padding: 3px 8px;
-                  font-size: 0.7rem;
-                  font-weight: 600;
-                  border-radius: 20px;
-                  border: 1px solid transparent;
-                  cursor: pointer;
-                  transition: all 0.2s ease;
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 4px;
-                  user-select: none;
-                }
-                .status-pill-pending {
-                  background: rgba(245, 158, 11, 0.12);
-                  border-color: rgba(245, 158, 11, 0.3);
-                  color: #fb923c;
-                }
-                .status-pill-pending.active {
-                  background: #f59e0b;
-                  color: #000;
-                  border-color: #f59e0b;
-                  box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
-                }
-                .status-pill-success {
-                  background: rgba(16, 185, 129, 0.12);
-                  border-color: rgba(16, 185, 129, 0.25);
-                  color: #34d399;
-                }
-                .status-pill-success.active {
-                  background: #10b981;
-                  color: #fff;
-                  border-color: #10b981;
-                  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
-                }
-                .status-pill-inactive {
-                  background: rgba(255, 255, 255, 0.03);
-                  border-color: rgba(255, 255, 255, 0.08);
-                  color: var(--text-muted);
-                }
-                .row-resolved {
-                  opacity: 0.65;
-                  background: rgba(0, 0, 0, 0.15) !important;
-                }
-                .scenario-item {
-                  background: rgba(0, 0, 0, 0.25);
-                  border: 1px solid rgba(255, 255, 255, 0.05);
-                  border-radius: 6px;
-                  padding: 8px;
-                  display: flex;
-                  flex-direction: column;
-                  gap: 6px;
-                  transition: all 0.2s;
-                }
-                .scenario-item:hover {
-                  border-color: rgba(245, 158, 11, 0.3);
-                  background: rgba(0, 0, 0, 0.35);
-                }
-              </style>
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h4 style="margin: 0; font-size: 1.02rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
-                  <i class="fa-solid fa-plane-circle-exclamation"></i> Giám Sát Tạm Nhập - Tái Xuất
-                </h4>
-                <button id="btn-fms-test-import-export" class="btn-glow" style="margin-top: 0; padding: 4px 10px; font-size: 0.75rem; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border: none;">
-                  <i class="fa-solid fa-vial"></i> Test Giả Lập
-                </button>
-              </div>
-
-              <!-- Panel Danh sách tin nhắn mẫu để test -->
-              <div id="fms-test-scenarios-panel" style="display: none; flex-direction: column; gap: 10px; background: rgba(245, 158, 11, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25); margin-bottom: 5px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed rgba(245, 158, 11, 0.25); padding-bottom: 6px; margin-bottom: 2px;">
-                  <span style="font-size: 0.8rem; font-weight: bold; color: #f59e0b;"><i class="fa-solid fa-vial"></i> Xem trước & Gửi thử các tin nhắn mẫu:</span>
-                  <i class="fa-solid fa-xmark" id="btn-close-test-panel" style="cursor: pointer; font-size: 0.95rem; color: var(--text-muted); padding: 2px 6px;"></i>
+            <div style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px;">
+              
+              <!-- Kịch bản 1 -->
+              <div class="scenario-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.75rem; font-weight:bold; color:#38bdf8;">1. Nội địa ➔ Quốc tế (Tạm nhập - Tái xuất)</span>
+                  <button onclick="runZaloIeTest(1)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px;">
-                  
-                  <!-- Kịch bản 1 -->
-                  <div class="scenario-item">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                      <span style="font-size:0.75rem; font-weight:bold; color:#38bdf8;">1. Nội địa ➔ Quốc tế (Tạm nhập - Tái xuất)</span>
-                      <button onclick="runZaloIeTest(1)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
-                    </div>
-                    <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO]
+                <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO]
 Tàu bay VNA612 đã nạp 4,576 kg dầu cho chuyến bay nội địa VN7559 (HAN-CXR lúc 19:55) nhưng đổi tàu.
 Hiện tại, tàu VNA612 đang được phân công bay chuyến bay Quốc tế VN661 (HAN-SIN).
 Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
-                  </div>
+              </div>
 
-                  <!-- Kịch bản 2 -->
-                  <div class="scenario-item">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                      <span style="font-size:0.75rem; font-weight:bold; color:#fb923c;">2. Quốc tế ➔ Nội địa (Truy thu thuế GTGT)</span>
-                      <button onclick="runZaloIeTest(2)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
-                    </div>
-                    <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
+              <!-- Kịch bản 2 -->
+              <div class="scenario-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.75rem; font-weight:bold; color:#fb923c;">2. Quốc tế ➔ Nội địa (Truy thu thuế GTGT)</span>
+                  <button onclick="runZaloIeTest(2)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                </div>
+                <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
 Điều hành chú ý: Sử dụng tàu đã nạp Quốc tế cho chuyến bay Nội địa.
 ✈️ Tàu bay: VNA321
 ⛽ Đã nạp chặng Quốc tế: 12,500 kg (Chuyến cũ: VN513 lúc 08:35 chặng HAN-NRT)
 🔄 Hiện được phân công xếp bay chuyến Nội địa: VN217 (HAN-SGN)
 📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
-                  </div>
+              </div>
 
-                  <!-- Kịch bản 3 -->
-                  <div class="scenario-item">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                      <span style="font-size:0.75rem; font-weight:bold; color:#c084fc;">3. HAN-HAN ➔ Nội địa (Dầu kỹ thuật nội địa)</span>
-                      <button onclick="runZaloIeTest(3)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
-                    </div>
-                    <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
+              <!-- Kịch bản 3 -->
+              <div class="scenario-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.75rem; font-weight:bold; color:#c084fc;">3. HAN-HAN ➔ Nội địa (Dầu kỹ thuật nội địa)</span>
+                  <button onclick="runZaloIeTest(3)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                </div>
+                <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
 Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật cho chuyến bay nội địa.
 ✈️ Tàu bay: VNA990
 ⛽ Đã nạp kỹ thuật chặng HAN-HAN: 5,000 kg (Chuyến cũ: VN990 lúc 14:20)
 🔄 Hiện được phân công bay chuyến Nội địa: VN172 (HAN-DAD)
 📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
-                  </div>
+              </div>
 
-                  <!-- Kịch bản 4 -->
-                  <div class="scenario-item">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                      <span style="font-size:0.75rem; font-weight:bold; color:#a7f3d0;">4. HAN-HAN ➔ Quốc tế (Dầu kỹ thuật quốc tế)</span>
-                      <button onclick="runZaloIeTest(4)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
-                    </div>
-                    <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
+              <!-- Kịch bản 4 -->
+              <div class="scenario-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.75rem; font-weight:bold; color:#a7f3d0;">4. HAN-HAN ➔ Quốc tế (Dầu kỹ thuật quốc tế)</span>
+                  <button onclick="runZaloIeTest(4)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                </div>
+                <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
 Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật Han-Han cho chuyến bay Quốc Tế.
 ✈️ Tàu bay: VNA990
 ⛽ Đã nạp kỹ thuật chặng HAN-HAN: 5,000 kg (Chuyến cũ: VN990 lúc 14:20)
 🔄 Hiện được phân công bay chuyến Quốc tế: VN416 (HAN-ICN)
 📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
-                  </div>
-
-                </div>
               </div>
 
-              <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
-                Danh sách tàu bay đang giám sát chênh lệch tải dầu (Tạm nhập - Tái xuất, bay kỹ thuật đột xuất):
-              </p>
-              <div id="fms-import-export-container" style="overflow-x: auto; max-height: 250px;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
-                  <thead>
-                    <tr style="border-bottom: 1px solid var(--border); color: var(--primary);">
-                      <th style="padding: 6px 4px;">Tàu</th>
-                      <th style="padding: 6px 4px;">Kiểu</th>
-                      <th style="padding: 6px 4px;">Nạp cũ (Dầu)</th>
-                      <th style="padding: 6px 4px;">Chặng tiếp</th>
-                      <th style="padding: 6px 4px; text-align: center;">T.thái</th>
-                    </tr>
-                  </thead>
-                  <tbody id="fms-import-export-body">
-                    <tr>
-                      <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 15px 0;">
-                        Không có tàu bay nào cần theo dõi.
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </div>
-
           </div>
 
-          <!-- Bên phải: Bảng theo dõi tải dầu -->
-          <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-              <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
-                <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
-              </h4>
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <input type="date" id="fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.85rem; font-weight: bold; cursor: pointer;">
-                <button id="btn-fms-sync-now" class="btn-secondary" style="border-color: rgba(52, 211, 153, 0.3); color: #34d399; padding: 6px 12px; font-size: 0.85rem; margin-top: 0;">
-                  <i class="fa-solid fa-rotate"></i> Quét FMS Ngay
-                </button>
-                <button id="btn-fms-export-excel" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: #10b981; padding: 6px 12px; font-size: 0.85rem; margin-top: 0; margin-left: 8px;">
-                  <i class="fa-solid fa-file-excel"></i> Xuất Excel Lịch Trực
-                </button>
-              </div>
-            </div>
-
-            <!-- Bộ lọc và tìm kiếm nhanh FMS -->
-            <div style="display: flex; gap: 15px; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px; margin-bottom: 10px;">
-              <div style="flex: 1; min-width: 250px; position: relative;">
-                <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.9rem;"></i>
-                <input type="text" id="fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
-              </div>
-              <div style="width: 220px; min-width: 180px;">
-                <select id="fms-crew-filter" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: #fff; font-size: 0.88rem; cursor: pointer; outline: none; box-sizing: border-box;">
-                  <option value="">-- Tất cả Cặp tra nạp --</option>
-                </select>
-              </div>
-            </div>
-            
-            <!-- Khu vực cài đặt thông báo Zalo theo Cặp trực ban -->
-            <div id="fms-crew-notify-settings-container" style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 5px; margin-bottom: 10px; padding: 10px; background: rgba(255,255,255,0.01); border: 1px dashed rgba(255,255,255,0.08); border-radius: 8px; display: none;">
-              <!-- Vẽ động từ JS -->
-            </div>
-            
-            <div class="table-container" style="margin-top: 5px;">
-              <table class="crm-table">
-                <thead>
-                  <tr>
-                    <th>Chuyến bay</th>
-                    <th>Nhân viên / Xe trực</th>
-                    <th style="text-align: center;">Tàu / Loại / Đường bay</th>
-                    <th style="text-align: center;">Vị trí đỗ</th>
-                    <th style="text-align: center;">Hạ / Cất / Tra nạp</th>
-                    <th style="text-align: center;">Standby Fuel</th>
-                    <th style="text-align: center;">Fuel Order</th>
-                    <th style="text-align: center;" class="hide-on-mobile">Trip Fuel</th>
-                    <th style="text-align: center;">Trạng thái</th>
-                  </tr>
-                </thead>
-                <tbody id="fms-table-body">
-                  <!-- Render động từ JS -->
-                  <tr>
-                    <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
-                      Chưa có lịch bay được phân công cho ngày hôm nay.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+          <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+            Danh sách tàu bay đang giám sát chênh lệch tải dầu trong ngày (bám sát tự động đổi chặng quốc tế/kỹ thuật):
+          </p>
+          <div id="fms-import-export-container" style="overflow-x: auto; max-height: 500px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--border); color: var(--primary);">
+                  <th style="padding: 10px 6px; width: 120px;">Tàu bay</th>
+                  <th style="padding: 10px 6px; width: 140px;">Loại Giám Sát</th>
+                  <th style="padding: 10px 6px;">Chặng Nạp Trước (Nội địa)</th>
+                  <th style="padding: 10px 6px;">Chặng Bay Mới</th>
+                  <th style="padding: 10px 6px; text-align: center; width: 220px;">Trạng Thái & Thao Tác</th>
+                </tr>
+              </thead>
+              <tbody id="fms-import-export-body">
+                <tr>
+                  <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                    Không có tàu bay nào cần theo dõi.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
-    </div>
-  </div>
+
+      <!-- TAB CONTENT 3: NHẬP LỊCH TRỰC CA -->
+      <div id="tab-fms-schedule-admin" class="admin-tab-content" style="display: none;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          
+          <!-- Cột nhập lịch bay trực ca -->
+          <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
+            <h4 style="margin: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-file-import"></i> Nhập Lịch Bay Trực Ca
+            </h4>
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px; background: rgba(0,0,0,0.15); border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px;">
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label for="fms-schedule-date" style="font-size: 0.8rem; font-weight: bold; color: var(--primary);">📅 Chọn ngày trực:</label>
+                <input type="date" id="fms-schedule-date" style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; outline: none; font-size: 0.9rem;">
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label for="fms-filter-shift" style="font-size: 0.8rem; font-weight: bold; color: var(--warning);">⏰ Chọn ca trực:</label>
+                <select id="fms-filter-shift" style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: #131d35; color: #fff; outline: none; font-size: 0.9rem; cursor: pointer;">
+                  <option value="all" selected>Tất cả cả ngày</option>
+                  <option value="day">Ca ngày (07:30 - 19:30)</option>
+                  <option value="evening">Ca tối (19:30 - 23:59)</option>
+                  <option value="night">Ca đêm (23:59 - 07:30 ngày mai)</option>
+                </select>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button id="btn-fms-upload-image" class="btn-glow" style="margin-top: 0; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); border: none; width: 100%; font-size: 0.9rem;">
+                <i class="fa-solid fa-camera"></i> Nhận Diện Từ Ảnh Lịch Trực (OCR)
+              </button>
+              <input type="file" id="fms-image-input" accept="image/*" style="display: none;">
+              
+              <button id="btn-fms-upload-excel" class="btn-glow" style="margin-top: 0; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; width: 100%; font-size: 0.9rem;">
+                <i class="fa-solid fa-file-excel"></i> Tải Lên File Excel Lịch Trực
+              </button>
+              <a href="lichtruc.xlsx" download="lichtruc.xlsx" style="display: block; text-align: center; color: #10b981; font-size: 0.85rem; font-weight: 600; text-decoration: none; margin-top: 2px;">
+                <i class="fa-solid fa-file-excel"></i> Tải File Excel Mẫu Để Thử
+              </a>
+              <input type="file" id="fms-file-input" accept=".xlsx, .xls, .csv" style="display: none;">
+            </div>
+            <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; font-weight: bold; margin: 2px 0; border-top: 1px dashed var(--border); padding-top: 8px;">
+              HOẶC DÁN TEXT THỦ CÔNG
+            </div>
+            <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+              Copy-paste lịch trực hôm nay.<br>
+              <strong>Định dạng:</strong> <code>VN343: Đạt - Hưng</code>
+            </p>
+            <textarea id="fms-schedule-input" placeholder="VN343: Đạt - Hưng&#10;VN1603: Thùy - Được" style="width: 100%; height: 120px; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; font-family: monospace; font-size: 0.9rem; line-height: 1.5; resize: none;"></textarea>
+            <button id="btn-fms-save-schedule" class="btn-glow" style="margin-top: 0; width: 100%;">
+              <i class="fa-solid fa-floppy-disk"></i> Lưu Lịch Dán Thủ Công
+            </button>
+          </div>
+
+          <!-- Cột hiển thị nhân sự chưa map Zalo -->
+          <div id="unmapped-crews-card" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; border-color: rgba(239, 68, 68, 0.25); background: rgba(239, 68, 68, 0.03);">
+            <h4 style="margin: 0; font-size: 1.02rem; color: #f87171; display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i> Chưa Liên Kết Zalo (Trực Hôm Nay)
+            </h4>
+            <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+              Các nhân sự dưới đây trực hôm nay chưa cấu hình mapping Zalo (sẽ hiển thị tên thường, không được tag). Bấm vào tên để liên kết nhanh:
+            </p>
+            <div id="unmapped-crews-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
+              <span style="font-size: 0.82rem; color: var(--text-muted); font-style: italic;">Đang tải dữ liệu...</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
 
   <!-- ================= MÀN HÌNH CHI TIẾT NHÂN VIÊN / USER PANEL ================= -->
   <div id="user-screen" class="screen">
