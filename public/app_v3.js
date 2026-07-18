@@ -507,13 +507,30 @@ function setupEventListeners() {
   const testBtn = document.getElementById('btn-fms-test-import-export');
   if (testBtn) {
     testBtn.addEventListener('click', async () => {
+      const scenario = prompt(
+        "Chọn kịch bản test giả lập chênh lệch tải dầu:\n" +
+        "1: Nội địa ➔ Quốc tế (Tạm nhập - Tái xuất thương mại)\n" +
+        "2: Quốc tế ➔ Nội địa (Truy thu thuế GTGT)\n" +
+        "3: Kỹ thuật HAN-HAN ➔ Nội địa (Cảnh báo dầu nạp kỹ thuật)\n" +
+        "4: Kỹ thuật HAN-HAN ➔ Quốc tế (Cảnh báo dầu kỹ thuật đi Quốc tế)\n" +
+        "Nhập số tương ứng (1, 2, 3 hoặc 4):", 
+        "1"
+      );
+      if (scenario === null) return;
+      const scNum = parseInt(scenario);
+      if (![1, 2, 3, 4].includes(scNum)) {
+        showToast('Kịch bản lựa chọn không hợp lệ!', 'warning', 'Lưu ý');
+        return;
+      }
+
       try {
         const res = await fetch('/api/fms/temp-import-exports/test', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${state.token}`
-          }
+          },
+          body: JSON.stringify({ scenario: scNum })
         });
         const data = await res.json();
         if (data.success) {
@@ -1881,10 +1898,24 @@ async function fetchTempImportExportData() {
     
     if (!tbody) return;
     
-    // 1. Kiểm tra xem có bản ghi nào bị cảnh báo Quốc tế mà chưa xác nhận (is_warned = 1)
+    // 1. Kiểm tra xem có bản ghi nào bị cảnh báo mà chưa xác nhận (is_warned = 1)
     const activeAlert = rows.find(r => r.is_warned === 1);
     if (activeAlert && banner && alertText) {
-      alertText.textContent = `Cảnh báo Tạm nhập - Tái xuất: Tàu ${activeAlert.ac_reg} (đã nạp ${activeAlert.fuel_order.toLocaleString()} kg dầu chuyến ${activeAlert.old_flight_no}) chuyển sang bay Quốc tế ${activeAlert.new_flight_no}!`;
+      let alertMsg = '';
+      if (activeAlert.monitor_type === 'TECHNICAL_HAN') {
+        const isNextIntl = activeAlert.new_route && !isDomesticRoute(activeAlert.new_route);
+        if (isNextIntl) {
+          alertMsg = `Điều hành chú ý: Sử dụng tàu ${activeAlert.ac_reg} đã nạp kỹ thuật Han-Han cho chuyến bay Quốc Tế ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
+        } else {
+          alertMsg = `Điều hành chú ý: Sử dụng tàu ${activeAlert.ac_reg} đã nạp kỹ thuật cho chuyến bay nội địa ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
+        }
+      } else if (activeAlert.monitor_type === 'INTL_TO_DOMESTIC') {
+        alertMsg = `Điều hành chú ý: Sử dụng tàu ${activeAlert.ac_reg} đã nạp Quốc tế cho chuyến bay Nội địa ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
+      } else {
+        // DOMESTIC_TO_INTL
+        alertMsg = `Cảnh báo Tạm nhập - Tái xuất: Tàu ${activeAlert.ac_reg} (đã nạp ${activeAlert.fuel_order.toLocaleString()} kg chặng ${activeAlert.old_route}) chuyển sang bay Quốc tế ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
+      }
+      alertText.textContent = alertMsg;
       banner.style.display = 'flex';
     } else if (banner) {
       banner.style.display = 'none';
@@ -1894,8 +1925,8 @@ async function fetchTempImportExportData() {
     if (rows.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 15px 0;">
-            Không có tàu bay nào cần theo dõi trong ngày.
+          <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 15px 0;">
+            Không có tàu bay nào cần theo dõi.
           </td>
         </tr>
       `;
@@ -1905,6 +1936,15 @@ async function fetchTempImportExportData() {
     tbody.innerHTML = rows.map(r => {
       let statusBadge = '';
       let actionBtn = '';
+      let typeBadge = '';
+      
+      if (r.monitor_type === 'TECHNICAL_HAN') {
+        typeBadge = `<span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); color: #c084fc; font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; font-weight: 600; white-space: nowrap;">Kỹ thuật HAN</span>`;
+      } else if (r.monitor_type === 'INTL_TO_DOMESTIC') {
+        typeBadge = `<span style="background: rgba(251, 146, 60, 0.15); border: 1px solid rgba(251, 146, 60, 0.3); color: #fb923c; font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; font-weight: 600; white-space: nowrap;">Q.tế ➔ N.địa</span>`;
+      } else {
+        typeBadge = `<span style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; font-weight: 600; white-space: nowrap;">N.địa ➔ Q.tế</span>`;
+      }
       
       if (r.is_warned === 0) {
         statusBadge = `<span style="color: #38bdf8; font-weight: bold;"><i class="fa-solid fa-hourglass-half"></i> Đang theo dõi</span>`;
@@ -1922,16 +1962,17 @@ async function fetchTempImportExportData() {
         actionBtn = `<button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
       }
       
-      const intlCol = r.new_flight_no ? `<span style="color: #fb923c; font-weight: bold;">✈️ ${r.new_flight_no}</span><br><span style="color: var(--text-muted); font-size: 0.75rem;">(${r.new_route})</span>` : `<span style="color: var(--text-muted); font-style: italic;">Chưa phát hiện</span>`;
+      const nextCol = r.new_flight_no ? `<span style="color: #fb923c; font-weight: bold;">✈️ ${r.new_flight_no}</span><br><span style="color: var(--text-muted); font-size: 0.75rem;">(${r.new_route})</span>` : `<span style="color: var(--text-muted); font-style: italic;">Chưa phát hiện</span>`;
       
       return `
         <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
           <td style="padding: 8px 4px; font-weight: bold; color: #fff;">${r.ac_reg}</td>
+          <td style="padding: 8px 4px; vertical-align: middle;">${typeBadge}</td>
           <td style="padding: 8px 4px;">
             <span style="font-weight: 600; color: #38bdf8;">${r.old_flight_no}</span><br>
-            <span style="color: var(--text-muted); font-size: 0.75rem;">${r.old_route} (${parseInt(r.fuel_order).toLocaleString()} kg)</span>
+            <span style="color: var(--text-muted); font-size: 0.72rem;">${r.old_route} (${parseInt(r.fuel_order).toLocaleString()} kg)</span>
           </td>
-          <td style="padding: 8px 4px;">${intlCol}</td>
+          <td style="padding: 8px 4px;">${nextCol}</td>
           <td style="padding: 8px 4px; text-align: center; vertical-align: middle;">
             ${statusBadge}
             <div style="margin-top: 4px;">${actionBtn}</div>
@@ -3238,7 +3279,8 @@ async function loadSkyEyesSettings() {
       const { 
         targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
         notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
-        notifyAcRegChanged, notifyGateChanged, notifyEtdChanged
+        notifyAcRegChanged, notifyGateChanged, notifyEtdChanged,
+        fmsImportExportDuration
       } = data.settings;
       document.getElementById('skyeyes-notify-enabled').checked = notifyEnabled;
       document.getElementById('skyeyes-template-input').value = messageTemplate || '';
@@ -3250,6 +3292,14 @@ async function loadSkyEyesSettings() {
       document.getElementById('skyeyes-notify-ac-reg-changed').checked = notifyAcRegChanged !== false;
       document.getElementById('skyeyes-notify-gate-changed').checked = notifyGateChanged !== false;
       document.getElementById('skyeyes-notify-etd-changed').checked = notifyEtdChanged !== false;
+
+      if (fmsImportExportDuration === 'always') {
+        const rad = document.getElementById('fms-duration-always');
+        if (rad) rad.checked = true;
+      } else {
+        const rad = document.getElementById('fms-duration-24h');
+        if (rad) rad.checked = true;
+      }
       
       // Lưu lại các giá trị nhóm đã chọn để khi load group list sẽ check
       window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',').map(id => id.trim()) : [];
@@ -3293,6 +3343,7 @@ async function handleSaveSkyEyesSettings() {
   const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
   const targetGroupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
   const targetGroupName = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-name')).join(', ');
+  const fmsImportExportDuration = document.querySelector('input[name="fms-import-export-duration"]:checked')?.value || '24h';
 
   // Lưu tạm vào biến global
   window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',') : [];
@@ -3315,7 +3366,8 @@ async function handleSaveSkyEyesSettings() {
       body: JSON.stringify({ 
         targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
         notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
-        notifyAcRegChanged, notifyGateChanged, notifyEtdChanged
+        notifyAcRegChanged, notifyGateChanged, notifyEtdChanged,
+        fmsImportExportDuration
       })
     });
     const data = await res.json();

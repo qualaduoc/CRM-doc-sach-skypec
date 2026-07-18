@@ -297,22 +297,23 @@
                 </button>
               </div>
               <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
-                Danh sách tàu bay nội địa bị đổi tàu (đã nạp dầu) và chuyến bay quốc tế phát hiện trong ngày hôm nay:
+                Danh sách tàu bay đang giám sát chênh lệch tải dầu (Tạm nhập - Tái xuất, bay kỹ thuật đột xuất):
               </p>
               <div id="fms-import-export-container" style="overflow-x: auto; max-height: 250px;">
                 <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
                   <thead>
                     <tr style="border-bottom: 1px solid var(--border); color: var(--primary);">
-                      <th style="padding: 6px 4px;">Tàu bay</th>
-                      <th style="padding: 6px 4px;">Nội địa (Dầu)</th>
-                      <th style="padding: 6px 4px;">Quốc tế</th>
+                      <th style="padding: 6px 4px;">Tàu</th>
+                      <th style="padding: 6px 4px;">Kiểu</th>
+                      <th style="padding: 6px 4px;">Nạp cũ (Dầu)</th>
+                      <th style="padding: 6px 4px;">Chặng tiếp</th>
                       <th style="padding: 6px 4px; text-align: center;">T.thái</th>
                     </tr>
                   </thead>
                   <tbody id="fms-import-export-body">
                     <tr>
-                      <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 15px 0;">
-                        Không có tàu bay nào cần theo dõi trong ngày.
+                      <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 15px 0;">
+                        Không có tàu bay nào cần theo dõi.
                       </td>
                     </tr>
                   </tbody>
@@ -636,6 +637,27 @@
                   <label for="skyeyes-notify-etd-changed" style="cursor: pointer; user-select: none;">Báo khi thay đổi Giờ bay (ETD)</label>
                 </div>
               </div>
+            </div>
+
+            <!-- Cấu hình thời gian giám sát Tạm nhập - Tái xuất -->
+            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; background: rgba(56, 189, 248, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.2);">
+              <label style="font-size: 0.85rem; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <i class="fa-solid fa-clock"></i> Thời gian giám sát Tạm nhập - Tái xuất:
+              </label>
+              <div style="display: flex; gap: 15px; font-size: 0.85rem; color: #fff; margin-top: 2px;">
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;">
+                  <input type="radio" name="fms-import-export-duration" id="fms-duration-24h" value="24h" checked style="cursor: pointer; width: 15px; height: 15px;">
+                  Giám sát trong 24 giờ
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;">
+                  <input type="radio" name="fms-import-export-duration" id="fms-duration-always" value="always" style="cursor: pointer; width: 15px; height: 15px;">
+                  Giám sát luôn luôn
+                </label>
+              </div>
+              <p style="margin: 0; font-size: 0.72rem; color: var(--text-muted); line-height: 1.3; margin-top: 2px;">
+                * 24 giờ: Xóa các bản ghi thương mại cũ sau ngày bay (Riêng chặng HAN-HAN luôn được giữ lại).<br>
+                * Luôn luôn: Giữ lại tất cả các bản ghi vô thời hạn cho đến khi cất cánh chuyến tiếp theo.
+              </p>
             </div>
             
             <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px; border-top: 1px dashed var(--border); padding-top: 12px;">

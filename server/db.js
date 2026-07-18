@@ -153,11 +153,14 @@ async function getDb() {
       new_flight_no TEXT DEFAULT NULL,
       new_route TEXT DEFAULT NULL,
       is_warned INTEGER DEFAULT 0,
+      monitor_type TEXT DEFAULT 'DOMESTIC_TO_INTL',
+      old_time TEXT DEFAULT '-',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_duration', '24h');
   `);
 
   // Di chuyển tự động cấu hình cột mới cho database đã tồn tại
@@ -196,6 +199,10 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN old_etd TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_etd INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN truck_no TEXT;`); } catch(e) {}
+
+  // Thêm các cột cho fms_temp_import_exports của database cũ
+  try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN monitor_type TEXT DEFAULT 'DOMESTIC_TO_INTL';`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN old_time TEXT DEFAULT '-';`); } catch(e) {}
 
   // Thêm cột phân quyền cho accounts của database cũ
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_admin INTEGER DEFAULT 0;`); } catch(e) {}
