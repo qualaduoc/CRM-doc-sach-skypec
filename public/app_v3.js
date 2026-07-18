@@ -1204,27 +1204,40 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
     const userData = await userRes.json();
     if (userData.success) {
       const u = userData.user;
-      document.getElementById('user-title-name').textContent = u.display_name;
-      document.getElementById('user-title-dept').textContent = `${u.position_name || 'Học viên'} | ${u.department || 'Đơn vị'}`;
+      const titleNameEl = document.getElementById('user-title-name');
+      if (titleNameEl) titleNameEl.textContent = u.display_name;
+      
+      const titleDeptEl = document.getElementById('user-title-dept');
+      if (titleDeptEl) titleDeptEl.textContent = `${u.position_name || 'Học viên'} | ${u.department || 'Đơn vị'}`;
       
       // Cập nhật các thẻ KPI từ Skypec
-      document.getElementById('kpi-user-total-classes').textContent = u.class_total || 0;
-      document.getElementById('kpi-user-kpi').textContent = `${u.kpi_percent || 0}%`;
-      document.getElementById('kpi-user-kpi-detail').textContent = `KPI: ${u.kpi_current || 0}/${u.kpi_total || 0} giờ`;
-      document.getElementById('kpi-user-certificates').textContent = u.total_certificate || 0;
+      const kpiTotalEl = document.getElementById('kpi-user-total-classes');
+      if (kpiTotalEl) kpiTotalEl.textContent = u.class_total || 0;
+      
+      const kpiUserEl = document.getElementById('kpi-user-kpi');
+      if (kpiUserEl) kpiUserEl.textContent = `${u.kpi_percent || 0}%`;
+      
+      const kpiDetailEl = document.getElementById('kpi-user-kpi-detail');
+      if (kpiDetailEl) kpiDetailEl.textContent = `KPI: ${u.kpi_current || 0}/${u.kpi_total || 0} giờ`;
+      
+      const kpiCertEl = document.getElementById('kpi-user-certificates');
+      if (kpiCertEl) kpiCertEl.textContent = u.total_certificate || 0;
     }
   } catch (e) {
     console.error('Lỗi khi tải thông tin KPI tài khoản:', e.message);
   }
 
+  const btnBack = document.getElementById('btn-back-to-admin');
+  const backBar = document.getElementById('back-bar');
+
   if (!targetUsername && !state.selectedUser) {
-    document.getElementById('btn-back-to-admin').classList.add('hidden');
-    document.getElementById('back-bar').classList.add('hidden');
+    if (btnBack) btnBack.classList.add('hidden');
+    if (backBar) backBar.classList.add('hidden');
   }
 
   if (state.selectedUser) {
-    document.getElementById('btn-back-to-admin').classList.remove('hidden');
-    document.getElementById('back-bar').classList.remove('hidden');
+    if (btnBack) btnBack.classList.remove('hidden');
+    if (backBar) backBar.classList.remove('hidden');
   }
 
   if (!isSilent) {
