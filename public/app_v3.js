@@ -1,15 +1,60 @@
 window.onerror = function (message, source, lineno, colno, error) {
   const errMsg = `[Window Error] Message: ${message}\nURL: ${source}\nLine: ${lineno}:${colno}\nStack: ${error ? error.stack : 'N/A'}`;
   console.error(errMsg);
-  alert(errMsg);
+  showGlobalErrorBanner(errMsg);
   return false;
 };
 
 window.onunhandledrejection = function (event) {
   const errMsg = `[Unhandled Promise Rejection] Reason: ${event.reason ? (event.reason.stack || event.reason) : 'N/A'}`;
   console.error(errMsg);
-  alert(errMsg);
+  showGlobalErrorBanner(errMsg);
 };
+
+function showGlobalErrorBanner(msg) {
+  let errDiv = document.getElementById('global-error-reporter');
+  if (!errDiv) {
+    errDiv = document.createElement('div');
+    errDiv.id = 'global-error-reporter';
+    errDiv.style.position = 'fixed';
+    errDiv.style.top = '10px';
+    errDiv.style.left = '10px';
+    errDiv.style.right = '10px';
+    errDiv.style.zIndex = '999999';
+    errDiv.style.background = '#f87171';
+    errDiv.style.color = '#7f1d1d';
+    errDiv.style.padding = '15px';
+    errDiv.style.borderRadius = '8px';
+    errDiv.style.border = '2px solid #b91c1c';
+    errDiv.style.fontFamily = 'monospace';
+    errDiv.style.fontSize = '12px';
+    errDiv.style.whiteSpace = 'pre-wrap';
+    errDiv.style.boxShadow = '0 10px 25px rgba(0,0,0,0.3)';
+    
+    // Nút đóng banner
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Đóng [X]';
+    closeBtn.style.float = 'right';
+    closeBtn.style.background = '#7f1d1d';
+    closeBtn.style.color = '#f87171';
+    closeBtn.style.border = 'none';
+    closeBtn.style.padding = '3px 8px';
+    closeBtn.style.borderRadius = '4px';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.style.fontWeight = 'bold';
+    closeBtn.onclick = function() {
+      errDiv.remove();
+    };
+    errDiv.appendChild(closeBtn);
+    
+    const textSpan = document.createElement('span');
+    textSpan.id = 'global-error-text';
+    errDiv.appendChild(textSpan);
+    
+    document.body.appendChild(errDiv);
+  }
+  document.getElementById('global-error-text').textContent = msg;
+}
 
 const state = {
   token: localStorage.getItem('crm_token'),
@@ -1266,7 +1311,7 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
     if (backBar) backBar.classList.remove('hidden');
   }
 
-  if (!isSilent) {
+  if (!isSilent && tbody) {
     tbody.innerHTML = `
       <tr>
         <td colspan="4" style="text-align: center; padding: 30px;">
@@ -1286,7 +1331,7 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
     if (!data.success) throw new Error(data.error);
 
     // Nếu là admin đang xem, lọc các lớp học của tài khoản đang chọn
-    let classes = data.classes;
+    let classes = data.classes || [];
     if (targetUsername) {
       classes = classes.filter(c => c.account_username === targetUsername);
     }
@@ -1296,20 +1341,25 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
 
     // Cập nhật số lớp đang treo máy
     const runningCount = classes.reduce((acc, curr) => acc + (curr.isRunning ? 1 : 0), 0);
-    document.getElementById('kpi-user-running-classes').textContent = runningCount;
+    const runningClassesEl = document.getElementById('kpi-user-running-classes');
+    if (runningClassesEl) runningClassesEl.textContent = runningCount;
 
     if (classes.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="4" style="text-align: center; padding: 30px; color: var(--text-muted);">
-            Hiện tại không có lớp học nào đang diễn ra.
-          </td>
-        </tr>
-      `;
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; padding: 30px; color: var(--text-muted);">
+              Hiện tại không có lớp học nào đang diễn ra.
+            </td>
+          </tr>
+        `;
+      }
+      // Vẫn cần load stats FMS chứ không return ngắt luồng hoàn toàn
+      loadUserFmsStats().catch(err => console.error('[FMS Stats] Lỗi tải số liệu:', err.message));
       return;
     }
 
-    tbody.innerHTML = classes.map(c => {
+    const htmlContent = classes.map(c => {
       const hasRequiredTime = c.min_time_required && c.min_time_required > 0;
       const percent = hasRequiredTime ? Math.min(100, Math.max(0, (c.learn_time / c.min_time_required) * 100)) : (c.is_finish === 1 ? 100 : 0);
       const isCompleted = c.is_finish === 1 || (hasRequiredTime && percent >= 100);
@@ -1359,14 +1409,20 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
       `;
     }).join('');
 
+    if (tbody) {
+      tbody.innerHTML = htmlContent;
+    }
+
   } catch (err) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="4" style="text-align: center; padding: 30px; color: var(--danger-color);">
-          Không thể tải dữ liệu: ${err.message}
-        </td>
-      </tr>
-    `;
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" style="text-align: center; padding: 30px; color: var(--danger-color);">
+            Không thể tải dữ liệu: ${err.message}
+          </td>
+        </tr>
+      `;
+    }
   }
 
   // Tải các chỉ số thống kê số chuyến bay FMS của nhân viên
