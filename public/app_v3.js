@@ -2399,6 +2399,24 @@ async function runZaloIeTest(scNum) {
 }
 window.runZaloIeTest = runZaloIeTest;
 
+/** Chuyến đã tra nạp trên Skypec Flights (hoặc có kg VNA) */
+function isFlightRefueled(r) {
+  if (!r) return false;
+  if (Number(r.is_refueled) === 1) return true;
+  if (parseInt(r.skypec_fuel_order, 10) > 0) return true;
+  if (r.skypec_status === 'Đã có số liệu') return true;
+  if (parseInt(r.fuel_order, 10) > 0) return true;
+  return false;
+}
+
+function buildRefueledTag(r) {
+  if (!isFlightRefueled(r)) return '';
+  const kg = parseInt(r.skypec_fuel_order, 10) || parseInt(r.fuel_order, 10) || 0;
+  const kgTip = kg > 0 ? ` · ${kg.toLocaleString()} kg` : '';
+  const title = `Đã có số liệu tra nạp trên Skypec Flights${kgTip}`;
+  return `<span class="tag-refueled" title="${title}"><i class="fa-solid fa-gas-pump"></i> Đã tra nạp</span>`;
+}
+
 // Thực hiện lọc và vẽ lại bảng FMS
 function renderFmsTable() {
   const tbody = document.getElementById('fms-table-body');
@@ -2491,15 +2509,20 @@ function renderFmsTable() {
 
   // Vẽ bảng
   tbody.innerHTML = filteredRows.map(r => {
-    const hasData = r.status === 'Đã có số liệu';
-    const statusClass = hasData ? 'review-finished' : 'review-pending';
-    const statusText = r.status;
+    const refueled = isFlightRefueled(r);
+    const hasData = refueled || r.status === 'Đã có số liệu';
+    let statusClass = hasData ? 'review-finished' : 'review-pending';
+    let statusText = r.status || 'Chờ cập nhật';
+    if (refueled) {
+      statusClass = 'status-refueled';
+      statusText = 'Đã tra nạp';
+    }
     
     const tripVal = parseInt(r.trip_fuel) > 0 ? `${parseInt(r.trip_fuel).toLocaleString()} kg` : '-';
     
     const crewText = r.crew_info || '-';
     const truckText = r.truck_no ? `<br><span style="color: var(--primary); font-size: 0.8rem; font-weight: bold;"><i class="fa-solid fa-truck-field"></i> Xe: ${r.truck_no}</span>` : '';
-    
+    const refuelTag = buildRefueledTag(r);
 
     
     // 1. Tính toán hiệu ứng nhấp nháy cảnh báo (hết hạn nhấp nháy sau giờ tra nạp 15 phút)
@@ -2612,8 +2635,11 @@ function renderFmsTable() {
       : `${r.gate || '-'}`;
 
     return `
-      <tr>
-        <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
+      <tr class="${refueled ? 'row-refueled' : ''}">
+        <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">
+          <div>${r.flight_no}</div>
+          ${refuelTag}
+        </td>
         <td>${crewText}${truckText}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
         <td style="text-align: center; font-weight: 700; color: #b45309; font-size: 1rem;">${gateHtml}</td>
@@ -2623,7 +2649,7 @@ function renderFmsTable() {
         <td style="text-align: center; font-weight: 700; color: #1d4ed8;" class="hide-on-mobile">${tripVal}</td>
         <td style="text-align: center;">
           <span class="status-tag ${statusClass}">
-            ${statusText}
+            ${refueled ? '<i class="fa-solid fa-circle-check" style="margin-right:3px;"></i>' : ''}${statusText}
           </span>
         </td>
       </tr>
@@ -2690,16 +2716,24 @@ function renderUserFmsTable() {
   }
 
   tbody.innerHTML = filteredRows.map(r => {
+    const refueled = isFlightRefueled(r);
     let statusClass = 'review-pending';
     let statusText = 'Chờ cập nhật';
-    if (r.fuel_order > 0) {
+    if (refueled) {
+      statusClass = 'status-refueled';
+      statusText = 'Đã tra nạp';
+    } else if (parseInt(r.fuel_order, 10) > 0 || r.status === 'Đã có số liệu') {
       statusClass = 'review-finished';
       statusText = 'Đã có số liệu';
     }
+    const refuelTag = buildRefueledTag(r);
 
     return `
-      <tr>
-        <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
+      <tr class="${refueled ? 'row-refueled' : ''}">
+        <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">
+          <div>${r.flight_no}</div>
+          ${refuelTag}
+        </td>
         <td><span style="font-weight: 600; color: #c2410c;">${r.crew_info || '-'}</span> ${r.truck_no && r.truck_no !== '-' ? `<span style="font-size: 0.85em; color: var(--primary);"> (Xe ${r.truck_no})</span>` : ''}</td>
         <td style="text-align: center;">
           <span style="font-weight: bold; color: var(--text);">${r.ac_reg || '-'}</span>
@@ -2719,7 +2753,7 @@ function renderUserFmsTable() {
         <td style="text-align: center; font-weight: 800; color: #c2410c; font-size: 1.05rem;">${r.fuel_order ? parseInt(r.fuel_order).toLocaleString() + ' kg' : '-'}</td>
         <td style="text-align: center; color: #1d4ed8; font-weight: 700;" class="hide-on-mobile">${r.trip_fuel ? parseInt(r.trip_fuel).toLocaleString() + ' kg' : '-'}</td>
         <td style="text-align: center;">
-          <span class="status-tag ${statusClass}">${statusText}</span>
+          <span class="status-tag ${statusClass}">${refueled ? '<i class="fa-solid fa-circle-check" style="margin-right:3px;"></i>' : ''}${statusText}</span>
         </td>
       </tr>
     `;

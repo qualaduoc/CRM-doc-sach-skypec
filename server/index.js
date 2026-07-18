@@ -1583,6 +1583,7 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 });
 
 // Lấy danh sách lịch bay và dữ liệu tải dầu tương ứng (Cho phép tất cả người dùng đăng nhập xem)
+// Ghép thêm fms_flights_live (Skypec Flights) để đánh dấu "Đã tra nạp"
 app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
   try {
     const db = await getDb();
@@ -1592,9 +1593,9 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
       SELECT 
         s.id,
         s.flight_no,
-        COALESCE(NULLIF(fo.ac_type, ''), s.ac_type) as ac_type,
-        COALESCE(NULLIF(fo.ac_reg, ''), s.ac_reg) as ac_reg,
-        s.route,
+        COALESCE(NULLIF(fo.ac_type, ''), NULLIF(fl.ac_type, ''), s.ac_type) as ac_type,
+        COALESCE(NULLIF(fo.ac_reg, ''), NULLIF(fl.ac_reg, ''), s.ac_reg) as ac_reg,
+        COALESCE(NULLIF(s.route, ''), fl.route) as route,
         s.time_arr,
         s.time_dep,
         s.time_fuel,
@@ -1606,6 +1607,7 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         s.crew_zalo_uids,
         s.notify_type,
         s.date,
+        s.fms_date,
         fo.dep_arr,
         fo.standby_fuel,
         fo.fuel_order,
@@ -1624,9 +1626,31 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         fo.etd,
         fo.old_etd,
         fo.warn_etd,
-        fo.updated_at
+        fo.updated_at,
+        fl.fuel_order as skypec_fuel_order,
+        fl.status as skypec_status,
+        fl.driver_name as skypec_driver_name,
+        fl.operator_name as skypec_operator_name,
+        fl.truck_no as skypec_truck_no,
+        fl.date as skypec_date,
+        CASE
+          WHEN CAST(COALESCE(NULLIF(TRIM(fl.fuel_order), ''), '0') AS INTEGER) > 0 THEN 1
+          WHEN fl.status = 'Đã có số liệu' THEN 1
+          WHEN CAST(COALESCE(NULLIF(TRIM(fo.fuel_order), ''), '0') AS INTEGER) > 0 THEN 1
+          ELSE 0
+        END as is_refueled
       FROM fms_schedules s
       LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no || '_' || COALESCE(s.fms_date, s.date)) = UPPER(fo.flight_no)
+      LEFT JOIN fms_flights_live fl ON fl.id = (
+        SELECT fl2.id FROM fms_flights_live fl2
+        WHERE REPLACE(REPLACE(UPPER(fl2.flight_no), ' ', ''), '-', '')
+            = REPLACE(REPLACE(UPPER(s.flight_no), ' ', ''), '-', '')
+          AND fl2.date IN (s.date, COALESCE(NULLIF(s.fms_date, ''), s.date))
+        ORDER BY
+          CASE WHEN CAST(COALESCE(NULLIF(TRIM(fl2.fuel_order), ''), '0') AS INTEGER) > 0 THEN 0 ELSE 1 END,
+          fl2.created_at DESC
+        LIMIT 1
+      )
       WHERE s.date = ?
       ORDER BY s.id ASC
     `, targetDate);

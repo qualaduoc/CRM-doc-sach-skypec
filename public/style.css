@@ -1192,6 +1192,51 @@ input:checked + .slider:before {
   border: 1px solid rgba(21, 128, 61, 0.15);
 }
 
+/* Tag Đã tra nạp (dữ liệu từ Skypec Flights) */
+.tag-refueled {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #047857;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.12) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.06);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.tag-refueled i {
+  font-size: 0.7rem;
+}
+
+.status-tag.status-refueled {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.14) 100%) !important;
+  color: #047857 !important;
+  border: 1px solid rgba(16, 185, 129, 0.5) !important;
+  font-weight: 700 !important;
+}
+
+tr.row-refueled > td {
+  background: rgba(16, 185, 129, 0.045);
+}
+
+html[data-theme="dark"] .tag-refueled,
+html[data-theme="dark"] .status-tag.status-refueled {
+  color: #6ee7b7 !important;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(6, 95, 70, 0.28) 100%) !important;
+  border-color: rgba(52, 211, 153, 0.45) !important;
+}
+
+html[data-theme="dark"] tr.row-refueled > td {
+  background: rgba(16, 185, 129, 0.07);
+}
+
 /* --- ADMIN TAB STYLING --- */
 .admin-tab-btn {
   background: none;
