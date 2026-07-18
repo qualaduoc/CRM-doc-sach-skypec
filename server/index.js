@@ -2040,6 +2040,8 @@ app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     const nEtd = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_etd_changed'");
     const durationSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_duration'");
     const durationVal = durationSetting ? durationSetting.value : '24h';
+    const ieGroupVal = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_id'");
+    const ieGroupNameVal = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_name'");
 
     res.json({
       success: true,
@@ -2055,7 +2057,9 @@ app.get('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
         notifyAcRegChanged: nAc ? (nAc.value === 'true') : true,
         notifyGateChanged: nGate ? (nGate.value === 'true') : true,
         notifyEtdChanged: nEtd ? (nEtd.value === 'true') : true,
-        fmsImportExportDuration: durationVal
+        fmsImportExportDuration: durationVal,
+        fmsImportExportGroupId: ieGroupVal ? ieGroupVal.value : '',
+        fmsImportExportGroupName: ieGroupNameVal ? ieGroupNameVal.value : ''
       }
     });
   } catch (err) {
@@ -2072,7 +2076,7 @@ app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
     notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
     notifyAcRegChanged, notifyGateChanged, notifyEtdChanged,
-    fmsImportExportDuration
+    fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName
   } = req.body;
   try {
     const db = await getDb();
@@ -2089,6 +2093,8 @@ app.post('/api/fms/zalo/settings', authenticateToken, async (req, res) => {
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_gate_changed', ?)", notifyGateChanged ? 'true' : 'false');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_notify_etd_changed', ?)", notifyEtdChanged ? 'true' : 'false');
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_import_export_duration', ?)", fmsImportExportDuration ? String(fmsImportExportDuration).trim() : '24h');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_import_export_group_id', ?)", fmsImportExportGroupId ? String(fmsImportExportGroupId).trim() : '');
+    await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('fms_import_export_group_name', ?)", fmsImportExportGroupName ? String(fmsImportExportGroupName).trim() : '');
 
     res.json({ success: true, message: 'Đã lưu cấu hình trợ lý SkyEyes thành công!' });
   } catch (err) {
@@ -2911,9 +2917,17 @@ Yêu cầu Điều hành & Kế toán kiểm tra hóa đơn ngay lập tức!
 
     // 2. Gửi tin nhắn Zalo cảnh báo
     const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
-    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
     const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
-    const targetGroupId = groupSetting ? groupSetting.value : null;
+
+    // Đọc nhóm riêng nhận cảnh báo chênh lệch tải dầu
+    const ieGroupSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_id'");
+    let targetGroupId = ieGroupSetting ? ieGroupSetting.value : '';
+
+    if (!targetGroupId) {
+      // Fallback về nhóm Zalo FMS chung
+      const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+      targetGroupId = groupSetting ? groupSetting.value : '';
+    }
 
     if (isSkyOneEnabled && targetGroupId) {
       const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);

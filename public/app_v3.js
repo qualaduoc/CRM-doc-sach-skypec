@@ -708,6 +708,46 @@ function setupEventListeners() {
     });
   }
 
+  // Toggle Custom Dropdown chọn nhiều nhóm (nhóm Tạm nhập riêng)
+  const displayBoxIe = document.getElementById('skyeyes-ie-groups-display');
+  if (displayBoxIe) {
+    displayBoxIe.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dropdown = document.getElementById('skyeyes-ie-groups-dropdown');
+      dropdown.style.display = dropdown.style.display === 'flex' ? 'none' : 'flex';
+    });
+  }
+
+  // Đóng dropdown khi click ra ngoài
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('skyeyes-ie-groups-dropdown');
+    const display = document.getElementById('skyeyes-ie-groups-display');
+    if (dropdown && display && !dropdown.contains(e.target) && !display.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  // Tìm kiếm lọc tên nhóm (nhóm Tạm nhập riêng)
+  const searchInputIe = document.getElementById('skyeyes-ie-group-search');
+  if (searchInputIe) {
+    searchInputIe.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const items = document.querySelectorAll('#skyeyes-ie-groups-list label');
+      items.forEach(item => {
+        const name = item.textContent.toLowerCase();
+        if (name.includes(q)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    });
+  }
+
+  document.querySelectorAll('input[name="fms-import-export-duration"]').forEach(rad => {
+    rad.addEventListener('change', handleSaveSkyEyesSettings);
+  });
+
   document.getElementById('skyeyes-notify-enabled').addEventListener('change', handleSaveSkyEyesSettings);
   document.getElementById('skyeyes-template-presets').addEventListener('change', handleSkyEyesPresetChange);
   document.getElementById('skyeyes-template-input').addEventListener('blur', handleSaveSkyEyesSettings);
@@ -3280,7 +3320,7 @@ async function loadSkyEyesSettings() {
         targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
         notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
         notifyAcRegChanged, notifyGateChanged, notifyEtdChanged,
-        fmsImportExportDuration
+        fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName
       } = data.settings;
       document.getElementById('skyeyes-notify-enabled').checked = notifyEnabled;
       document.getElementById('skyeyes-template-input').value = messageTemplate || '';
@@ -3305,14 +3345,18 @@ async function loadSkyEyesSettings() {
       window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',').map(id => id.trim()) : [];
       window.savedTargetGroupName = targetGroupName || '';
       
+      window.savedIeTargetGroupIds = fmsImportExportGroupId ? fmsImportExportGroupId.split(',').map(id => id.trim()) : [];
+      window.savedIeTargetGroupName = fmsImportExportGroupName || '';
+
       updateSkyEyesGroupsDisplayText(targetGroupName);
+      updateSkyEyesIeGroupsDisplayText(fmsImportExportGroupName);
     }
   } catch (err) {
     console.error('[SkyEyes] Lỗi tải cấu hình Zalo:', err.message);
   }
 }
 
-// Cập nhật text hiển thị trên nút chọn nhóm
+// Cập nhật text hiển thị trên nút chọn nhóm FMS
 function updateSkyEyesGroupsDisplayText(namesStr) {
   const displayText = document.getElementById('skyeyes-groups-display-text');
   if (displayText) {
@@ -3321,6 +3365,20 @@ function updateSkyEyesGroupsDisplayText(namesStr) {
       displayText.style.color = '#38bdf8';
     } else {
       displayText.textContent = '-- Bấm để chọn các nhóm --';
+      displayText.style.color = 'var(--text-muted)';
+    }
+  }
+}
+
+// Cập nhật text hiển thị trên nút chọn nhóm Tạm nhập - Tái xuất riêng biệt
+function updateSkyEyesIeGroupsDisplayText(namesStr) {
+  const displayText = document.getElementById('skyeyes-ie-groups-display-text');
+  if (displayText) {
+    if (namesStr && namesStr.trim() !== '') {
+      displayText.textContent = 'Đã chọn: ' + namesStr;
+      displayText.style.color = '#38bdf8';
+    } else {
+      displayText.textContent = '-- Dùng chung nhóm thông báo FMS --';
       displayText.style.color = 'var(--text-muted)';
     }
   }
@@ -3343,12 +3401,22 @@ async function handleSaveSkyEyesSettings() {
   const checkedBoxes = document.querySelectorAll('.skyeyes-group-checkbox:checked');
   const targetGroupId = Array.from(checkedBoxes).map(cb => cb.value).join(',');
   const targetGroupName = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-name')).join(', ');
+  
+  // Thu thập các ID và tên nhóm riêng được tích chọn
+  const checkedBoxesIe = document.querySelectorAll('.skyeyes-ie-group-checkbox:checked');
+  const fmsImportExportGroupId = Array.from(checkedBoxesIe).map(cb => cb.value).join(',');
+  const fmsImportExportGroupName = Array.from(checkedBoxesIe).map(cb => cb.getAttribute('data-name')).join(', ');
+  
   const fmsImportExportDuration = document.querySelector('input[name="fms-import-export-duration"]:checked')?.value || '24h';
 
   // Lưu tạm vào biến global
   window.savedTargetGroupIds = targetGroupId ? targetGroupId.split(',') : [];
   window.savedTargetGroupName = targetGroupName;
   updateSkyEyesGroupsDisplayText(targetGroupName);
+
+  window.savedIeTargetGroupIds = fmsImportExportGroupId ? fmsImportExportGroupId.split(',') : [];
+  window.savedIeTargetGroupName = fmsImportExportGroupName;
+  updateSkyEyesIeGroupsDisplayText(fmsImportExportGroupName);
 
   if (!targetGroupId && notifyEnabled) {
     showToast('Vui lòng chọn ít nhất một nhóm Zalo trước khi bật thông báo!', 'warning', 'Lưu ý');
@@ -3367,7 +3435,7 @@ async function handleSaveSkyEyesSettings() {
         targetGroupId, targetGroupName, notifyEnabled, messageTemplate,
         notifyNewStandby, notifyNewFuelOrder, notifyStandbyChanged, notifyFuelOrderChanged,
         notifyAcRegChanged, notifyGateChanged, notifyEtdChanged,
-        fmsImportExportDuration
+        fmsImportExportDuration, fmsImportExportGroupId, fmsImportExportGroupName
       })
     });
     const data = await res.json();
@@ -3468,9 +3536,13 @@ async function runZaloTestScenario(scenario) {
 }
 
 // Tải danh sách các nhóm Zalo từ tài khoản đăng nhập
+// Tải danh sách các nhóm Zalo từ tài khoản đăng nhập
 async function loadSkyEyesGroups() {
   const groupsListDiv = document.getElementById('skyeyes-groups-list');
+  const ieGroupsListDiv = document.getElementById('skyeyes-ie-groups-list');
+  
   if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải...</div>';
+  if (ieGroupsListDiv) ieGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;"><i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải...</div>';
 
   try {
     const res = await fetch('/api/fms/zalo/groups', {
@@ -3482,6 +3554,7 @@ async function loadSkyEyesGroups() {
       const groups = data.groups;
       if (groups.length === 0) {
         if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Không tìm thấy nhóm nào</div>';
+        if (ieGroupsListDiv) ieGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.78rem;">Không tìm thấy nhóm nào</div>';
         return;
       }
 
@@ -3490,12 +3563,19 @@ async function loadSkyEyesGroups() {
         headers: { 'Authorization': `Bearer ${state.token}` }
       });
       const dbData = await dbRes.json();
+      
       const savedGroupId = dbData.success ? dbData.settings.targetGroupId : '';
       const savedGroupIdsArray = savedGroupId ? savedGroupId.split(',').map(id => id.trim()) : [];
       const savedGroupName = dbData.success ? dbData.settings.targetGroupName : '';
 
+      const savedIeGroupId = dbData.success ? dbData.settings.fmsImportExportGroupId : '';
+      const savedIeGroupIdsArray = savedIeGroupId ? savedIeGroupId.split(',').map(id => id.trim()) : [];
+      const savedIeGroupName = dbData.success ? dbData.settings.fmsImportExportGroupName : '';
+
       window.savedTargetGroupIds = savedGroupIdsArray;
       window.savedTargetGroupName = savedGroupName;
+      window.savedIeTargetGroupIds = savedIeGroupIdsArray;
+      window.savedIeTargetGroupName = savedIeGroupName;
 
       if (groupsListDiv) {
         groupsListDiv.innerHTML = groups.map(g => {
@@ -3514,13 +3594,33 @@ async function loadSkyEyesGroups() {
         });
       }
 
+      if (ieGroupsListDiv) {
+        ieGroupsListDiv.innerHTML = groups.map(g => {
+          const isChecked = savedIeGroupIdsArray.includes(String(g.groupId).trim());
+          return `
+            <label style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; user-select: none; transition: background 0.2s; justify-content: flex-start; text-align: left; width: 100%;" class="group-item-hover">
+              <input type="checkbox" class="skyeyes-ie-group-checkbox" value="${g.groupId}" data-name="${g.groupName}" ${isChecked ? 'checked' : ''} style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
+              <span style="font-size: 0.78rem; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">${g.groupName}</span>
+            </label>
+          `;
+        }).join('');
+
+        // Đăng ký sự kiện change cho các checkbox nhóm riêng
+        document.querySelectorAll('.skyeyes-ie-group-checkbox').forEach(cb => {
+          cb.addEventListener('change', handleSaveSkyEyesSettings);
+        });
+      }
+
       updateSkyEyesGroupsDisplayText(savedGroupName);
+      updateSkyEyesIeGroupsDisplayText(savedIeGroupName);
     } else {
       if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Quét nhóm thất bại</div>';
+      if (ieGroupsListDiv) ieGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Quét nhóm thất bại</div>';
     }
   } catch (err) {
     console.error('[SkyEyes] Lỗi tải danh sách nhóm:', err.message);
     if (groupsListDiv) groupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Lỗi tải danh sách nhóm</div>';
+    if (ieGroupsListDiv) ieGroupsListDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: #ef4444; font-size: 0.78rem;">Lỗi tải danh sách nhóm</div>';
   }
 }
 

@@ -383,9 +383,17 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
     
     // Đọc cấu hình Zalo để gửi tin nhắn
     const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
-    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
     const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
-    const targetGroupId = groupSetting ? groupSetting.value : null;
+
+    // Đọc nhóm riêng nhận cảnh báo chênh lệch tải dầu
+    const ieGroupSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_id'");
+    let targetGroupId = ieGroupSetting ? ieGroupSetting.value : '';
+
+    if (!targetGroupId) {
+      // Fallback về nhóm Zalo FMS chung
+      const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+      targetGroupId = groupSetting ? groupSetting.value : '';
+    }
 
     for (const track of trackingRows) {
       const trackAcReg = String(track.ac_reg).trim().toUpperCase();

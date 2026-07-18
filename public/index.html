@@ -658,6 +658,24 @@
                 * 24 giờ: Xóa các bản ghi thương mại cũ sau ngày bay (Riêng chặng HAN-HAN luôn được giữ lại).<br>
                 * Luôn luôn: Giữ lại tất cả các bản ghi vô thời hạn cho đến khi cất cánh chuyến tiếp theo.
               </p>
+
+              <!-- Cấu hình nhóm Zalo nhận cảnh báo Tạm nhập - Tái xuất riêng biệt -->
+              <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px; position: relative;">
+                <label style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted);">Nhóm Zalo nhận cảnh báo riêng biệt:</label>
+                <div id="skyeyes-ie-groups-display" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 0.85rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 36px; user-select: none; transition: border-color 0.2s;">
+                  <span id="skyeyes-ie-groups-display-text" style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">-- Dùng chung nhóm thông báo FMS --</span>
+                  <i class="fa-solid fa-chevron-down" style="font-size: 0.8rem; color: var(--text-muted);"></i>
+                </div>
+                <div id="skyeyes-ie-groups-dropdown" style="display: none; position: absolute; top: 100%; left: 0; width: 100%; max-height: 250px; background: #131d35; border: 1px solid var(--border); border-radius: 6px; z-index: 999; margin-top: 5px; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);">
+                  <div style="padding: 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.02);">
+                    <i class="fa-solid fa-magnifying-glass" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 4px;"></i>
+                    <input type="text" id="skyeyes-ie-group-search" placeholder="Tìm tên nhóm..." style="width: 100%; padding: 4px 6px; font-size: 0.85rem; border: none; background: transparent; color: #fff; outline: none;">
+                  </div>
+                  <div id="skyeyes-ie-groups-list" style="overflow-y: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 190px;">
+                    <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Chưa tải danh sách nhóm</div>
+                  </div>
+                </div>
+              </div>
             </div>
             
             <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 5px; border-top: 1px dashed var(--border); padding-top: 12px;">

@@ -161,6 +161,8 @@ async function getDb() {
 
     INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_duration', '24h');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_group_id', '');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_group_name', '');
   `);
 
   // Di chuyển tự động cấu hình cột mới cho database đã tồn tại
