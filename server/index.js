@@ -3049,7 +3049,7 @@ app.post('/api/fms/airline-alerts/test', authenticateToken, async (req, res) => 
     },
     2: {
       flight: 'CA123',
-      wrongAirlineName: 'World Fuel Services European Holding Company B.V',
+      wrongAirlineName: 'World Fuel Services (Singapore) Pte. Ltd.-Air China Cargo',
       code: 'CA'
     },
     3: {
@@ -3074,7 +3074,7 @@ app.post('/api/fms/airline-alerts/test', authenticateToken, async (req, res) => 
     },
     7: {
       flight: 'CA8421',
-      wrongAirlineName: 'World Fuel Services European Holding Company B.V',
+      wrongAirlineName: 'World Fuel Services (Singapore) Pte. Ltd.-Air China Cargo',
       code: 'CA',
       expectOk: true
     }

@@ -1,6 +1,8 @@
 /**
  * Bảng ký hiệu chuyến bay → tên hãng HK (billing / fuel customer).
- * CA đặc biệt: 3 số = Air China Limited, 4 số = World Fuel Services European Holding Company B.V
+ * CA đặc biệt:
+ *   3 số = Air China Limited
+ *   4 số = World Fuel Services (Singapore) Pte. Ltd.-Air China Cargo
  * Nguồn thực tế để so khớp: field "Hãng bay" trên FMS Skypec Flights.
  */
 
@@ -14,7 +16,7 @@ const AIRLINE_CODE_MAP = {
 /** CA: 3 chữ số sau ký hiệu */
 const CA_NAME_3_DIGITS = 'Air China Limited';
 /** CA: 4 chữ số sau ký hiệu */
-const CA_NAME_4_DIGITS = 'World Fuel Services European Holding Company B.V';
+const CA_NAME_4_DIGITS = 'World Fuel Services (Singapore) Pte. Ltd.-Air China Cargo';
 
 /** Các ký hiệu đang giám sát (CA không nằm trong AIRLINE_CODE_MAP vì tên phụ thuộc số chữ số) */
 const MONITOR_CODES = [...Object.keys(AIRLINE_CODE_MAP), 'CA'].sort((a, b) => b.length - a.length);
