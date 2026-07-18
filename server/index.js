@@ -2821,7 +2821,14 @@ app.post('/api/fms/temp-import-exports/confirm', authenticateToken, async (req, 
         "UPDATE fms_temp_import_exports SET is_warned = 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         id
       );
-      res.json({ success: true, message: 'Đã xác nhận hoàn thành xử lý hóa đơn Tạm nhập - Tái xuất!' });
+      res.json({ success: true, message: 'Đã chuyển trạng thái sang Đã xử lý!' });
+    } else if (action === 'pending') {
+      // Đặt lại về trạng thái đang theo dõi/chờ xử lý (is_warned = 0)
+      await db.run(
+        "UPDATE fms_temp_import_exports SET is_warned = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        id
+      );
+      res.json({ success: true, message: 'Đã khôi phục trạng thái sang Chờ xử lý!' });
     } else {
       // Xóa hẳn bản ghi khỏi database
       await db.run("DELETE FROM fms_temp_import_exports WHERE id = ?", id);

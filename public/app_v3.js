@@ -505,43 +505,18 @@ function setupEventListeners() {
 
   // Sự kiện chạy test giả lập Tạm nhập - Tái xuất
   const testBtn = document.getElementById('btn-fms-test-import-export');
-  if (testBtn) {
-    testBtn.addEventListener('click', async () => {
-      const scenario = prompt(
-        "Chọn kịch bản test giả lập chênh lệch tải dầu:\n" +
-        "1: Nội địa ➔ Quốc tế (Tạm nhập - Tái xuất thương mại)\n" +
-        "2: Quốc tế ➔ Nội địa (Truy thu thuế GTGT)\n" +
-        "3: Kỹ thuật HAN-HAN ➔ Nội địa (Cảnh báo dầu nạp kỹ thuật)\n" +
-        "4: Kỹ thuật HAN-HAN ➔ Quốc tế (Cảnh báo dầu kỹ thuật đi Quốc tế)\n" +
-        "Nhập số tương ứng (1, 2, 3 hoặc 4):", 
-        "1"
-      );
-      if (scenario === null) return;
-      const scNum = parseInt(scenario);
-      if (![1, 2, 3, 4].includes(scNum)) {
-        showToast('Kịch bản lựa chọn không hợp lệ!', 'warning', 'Lưu ý');
-        return;
-      }
+  const testPanel = document.getElementById('fms-test-scenarios-panel');
+  const closePanelBtn = document.getElementById('btn-close-test-panel');
 
-      try {
-        const res = await fetch('/api/fms/temp-import-exports/test', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${state.token}`
-          },
-          body: JSON.stringify({ scenario: scNum })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast(data.message, 'success', 'Thành công');
-          fetchTempImportExportData();
-        } else {
-          showToast(data.error, 'error', 'Thất bại');
-        }
-      } catch (err) {
-        showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi kết nối');
-      }
+  if (testBtn && testPanel) {
+    testBtn.addEventListener('click', () => {
+      const isHidden = testPanel.style.display === 'none';
+      testPanel.style.display = isHidden ? 'flex' : 'none';
+    });
+  }
+  if (closePanelBtn && testPanel) {
+    closePanelBtn.addEventListener('click', () => {
+      testPanel.style.display = 'none';
     });
   }
 
@@ -1943,7 +1918,7 @@ async function fetchTempImportExportData() {
     if (activeAlert && banner && alertText) {
       let alertMsg = '';
       if (activeAlert.monitor_type === 'TECHNICAL_HAN') {
-        const isNextIntl = activeAlert.new_route && !isDomesticRoute(activeAlert.new_route);
+        const isNextIntl = activeAlert.new_route && isDepartingIntlRoute(activeAlert.new_route);
         if (isNextIntl) {
           alertMsg = `Điều hành chú ý: Sử dụng tàu ${activeAlert.ac_reg} đã nạp kỹ thuật Han-Han cho chuyến bay Quốc Tế ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
         } else {
@@ -1953,7 +1928,7 @@ async function fetchTempImportExportData() {
         alertMsg = `Điều hành chú ý: Sử dụng tàu ${activeAlert.ac_reg} đã nạp Quốc tế cho chuyến bay Nội địa ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
       } else {
         // DOMESTIC_TO_INTL
-        alertMsg = `Cảnh báo Tạm nhập - Tái xuất: Tàu ${activeAlert.ac_reg} (đã nạp ${activeAlert.fuel_order.toLocaleString()} kg chặng ${activeAlert.old_route}) chuyển sang bay Quốc tế ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
+        alertMsg = `Cảnh báo: Tàu ${activeAlert.ac_reg} (đã nạp ${activeAlert.fuel_order.toLocaleString()} kg chặng ${activeAlert.old_route}) chuyển sang bay Quốc tế ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
       }
       alertText.textContent = alertMsg;
       banner.style.display = 'flex';
@@ -1974,10 +1949,7 @@ async function fetchTempImportExportData() {
     }
     
     tbody.innerHTML = rows.map(r => {
-      let statusBadge = '';
-      let actionBtn = '';
       let typeBadge = '';
-      
       if (r.monitor_type === 'TECHNICAL_HAN') {
         typeBadge = `<span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); color: #c084fc; font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; font-weight: 600; white-space: nowrap;">Kỹ thuật HAN</span>`;
       } else if (r.monitor_type === 'INTL_TO_DOMESTIC') {
@@ -1985,37 +1957,59 @@ async function fetchTempImportExportData() {
       } else {
         typeBadge = `<span style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; font-weight: 600; white-space: nowrap;">N.địa ➔ Q.tế</span>`;
       }
+
+      const isResolved = r.is_warned === 2;
+      const rowClass = isResolved ? 'row-resolved' : '';
       
-      if (r.is_warned === 0) {
-        statusBadge = `<span style="color: #38bdf8; font-weight: bold;"><i class="fa-solid fa-hourglass-half"></i> Đang theo dõi</span>`;
-        actionBtn = `<button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
-      } else if (r.is_warned === 1) {
-        statusBadge = `<span class="blink-red-text" style="font-weight: bold;"><i class="fa-solid fa-triangle-exclamation"></i> CẢNH BÁO</span>`;
-        actionBtn = `
-          <div style="display: flex; gap: 4px; justify-content: center;">
-            <button onclick="confirmTempImportExport(${r.id}, 'confirm')" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xác nhận</button>
-            <button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>
-          </div>
-        `;
-      } else {
-        statusBadge = `<span style="color: #34d399; font-weight: bold;"><i class="fa-solid fa-circle-check"></i> Đã xử lý</span>`;
-        actionBtn = `<button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
-      }
+      // Chấm LED xanh lá cây nhấp nháy báo trạng thái đang theo dõi
+      const ledDot = isResolved 
+        ? `<span style="display:inline-block; width:8px; height:8px; margin-right:6px; vertical-align:middle;"></span>`
+        : `<span class="pulse-dot-green" title="Đang theo dõi realtime"></span>`;
+
+      // Nút trạng thái dạng Pill Switch
+      const pendingClass = isResolved ? 'status-pill-inactive' : 'status-pill-pending active';
+      const successClass = isResolved ? 'status-pill-success active' : 'status-pill-inactive';
       
-      const nextCol = r.new_flight_no ? `<span style="color: #fb923c; font-weight: bold;">✈️ ${r.new_flight_no}</span><br><span style="color: var(--text-muted); font-size: 0.75rem;">(${r.new_route})</span>` : `<span style="color: var(--text-muted); font-style: italic;">Chưa phát hiện</span>`;
+      const pendingClick = isResolved ? `onclick="confirmTempImportExport(${r.id}, 'pending')"` : '';
+      const successClick = isResolved ? '' : `onclick="confirmTempImportExport(${r.id}, 'confirm')"`;
+
+      const statusHtml = `
+        <div style="display: flex; align-items: center; gap: 6px; justify-content: center;">
+          <button class="status-pill-btn ${pendingClass}" ${pendingClick} style="outline:none;">
+            <i class="fa-solid fa-hourglass-half"></i> Chờ xử lý
+          </button>
+          <button class="status-pill-btn ${successClass}" ${successClick} style="outline:none;">
+            <i class="fa-solid fa-circle-check"></i> Đã xử lý
+          </button>
+        </div>
+      `;
+
+      const actionHtml = `<button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
       
+      const nextCol = r.new_flight_no 
+        ? `<span style="color: #fb923c; font-weight: bold;">✈️ ${r.new_flight_no}</span><br><span style="color: var(--text-muted); font-size: 0.72rem;">(${r.new_route})</span>` 
+        : `<span style="color: var(--text-muted); font-style: italic; font-size: 0.75rem;">Chưa phát hiện</span>`;
+
+      const oldFuelVal = parseInt(r.fuel_order) || 0;
+
       return `
-        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-          <td style="padding: 8px 4px; font-weight: bold; color: #fff;">${r.ac_reg}</td>
-          <td style="padding: 8px 4px; vertical-align: middle;">${typeBadge}</td>
-          <td style="padding: 8px 4px;">
-            <span style="font-weight: 600; color: #38bdf8;">${r.old_flight_no}</span><br>
-            <span style="color: var(--text-muted); font-size: 0.72rem;">${r.old_route} (${parseInt(r.fuel_order).toLocaleString()} kg)</span>
+        <tr class="${rowClass}" style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
+          <td style="padding: 10px 4px; font-weight: bold; color: #fff; vertical-align: middle;">
+            <div style="display: flex; align-items: center; justify-content: flex-start;">
+              ${ledDot} <span style="font-size: 0.85rem;">${r.ac_reg}</span>
+            </div>
           </td>
-          <td style="padding: 8px 4px;">${nextCol}</td>
-          <td style="padding: 8px 4px; text-align: center; vertical-align: middle;">
-            ${statusBadge}
-            <div style="margin-top: 4px;">${actionBtn}</div>
+          <td style="padding: 10px 4px; vertical-align: middle;">${typeBadge}</td>
+          <td style="padding: 10px 4px; vertical-align: middle;">
+            <span style="font-weight: 600; color: #38bdf8;">${r.old_flight_no}</span><br>
+            <span style="color: var(--text-muted); font-size: 0.72rem;">${r.old_route} (${oldFuelVal.toLocaleString()} kg)</span>
+          </td>
+          <td style="padding: 10px 4px; vertical-align: middle;">${nextCol}</td>
+          <td style="padding: 10px 4px; text-align: center; vertical-align: middle;">
+            <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;">
+              ${statusHtml}
+              ${actionHtml}
+            </div>
           </td>
         </tr>
       `;
@@ -2028,9 +2022,14 @@ window.fetchTempImportExportData = fetchTempImportExportData;
 
 // Xác nhận hoàn thành xử lý hóa đơn hoặc xóa theo dõi
 async function confirmTempImportExport(id, action) {
-  const confirmMsg = action === 'confirm' 
-    ? 'Khầy có chắc chắn đã xử lý hóa đơn Tạm nhập - Tái xuất cho tàu bay này?'
-    : 'Khầy có chắc chắn muốn xóa theo dõi cho tàu bay này?';
+  let confirmMsg = '';
+  if (action === 'confirm') {
+    confirmMsg = 'Khầy có chắc chắn đã xử lý hóa đơn Tạm nhập - Tái xuất cho tàu bay này?';
+  } else if (action === 'pending') {
+    confirmMsg = 'Khầy muốn khôi phục tàu bay này về trạng thái Chờ xử lý để tiếp tục theo dõi?';
+  } else {
+    confirmMsg = 'Khầy có chắc chắn muốn xóa theo dõi cho tàu bay này?';
+  }
     
   if (!confirm(confirmMsg)) return;
   

@@ -288,6 +288,81 @@
 
             <!-- Widget theo dõi Tạm nhập - Tái xuất tàu bay trong ngày -->
             <div id="fms-import-export-widget" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 12px; margin-top: 15px; border-color: rgba(56, 189, 248, 0.25);">
+              <style>
+                @keyframes pulse-green {
+                  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+                  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+                  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+                }
+                .pulse-dot-green {
+                  width: 8px;
+                  height: 8px;
+                  background-color: #10b981;
+                  border-radius: 50%;
+                  display: inline-block;
+                  animation: pulse-green 1.8s infinite;
+                  vertical-align: middle;
+                  margin-right: 6px;
+                }
+                .status-pill-btn {
+                  padding: 3px 8px;
+                  font-size: 0.7rem;
+                  font-weight: 600;
+                  border-radius: 20px;
+                  border: 1px solid transparent;
+                  cursor: pointer;
+                  transition: all 0.2s ease;
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 4px;
+                  user-select: none;
+                }
+                .status-pill-pending {
+                  background: rgba(245, 158, 11, 0.12);
+                  border-color: rgba(245, 158, 11, 0.3);
+                  color: #fb923c;
+                }
+                .status-pill-pending.active {
+                  background: #f59e0b;
+                  color: #000;
+                  border-color: #f59e0b;
+                  box-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+                }
+                .status-pill-success {
+                  background: rgba(16, 185, 129, 0.12);
+                  border-color: rgba(16, 185, 129, 0.25);
+                  color: #34d399;
+                }
+                .status-pill-success.active {
+                  background: #10b981;
+                  color: #fff;
+                  border-color: #10b981;
+                  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
+                }
+                .status-pill-inactive {
+                  background: rgba(255, 255, 255, 0.03);
+                  border-color: rgba(255, 255, 255, 0.08);
+                  color: var(--text-muted);
+                }
+                .row-resolved {
+                  opacity: 0.65;
+                  background: rgba(0, 0, 0, 0.15) !important;
+                }
+                .scenario-item {
+                  background: rgba(0, 0, 0, 0.25);
+                  border: 1px solid rgba(255, 255, 255, 0.05);
+                  border-radius: 6px;
+                  padding: 8px;
+                  display: flex;
+                  flex-direction: column;
+                  gap: 6px;
+                  transition: all 0.2s;
+                }
+                .scenario-item:hover {
+                  border-color: rgba(245, 158, 11, 0.3);
+                  background: rgba(0, 0, 0, 0.35);
+                }
+              </style>
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h4 style="margin: 0; font-size: 1.02rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
                   <i class="fa-solid fa-plane-circle-exclamation"></i> Giám Sát Tạm Nhập - Tái Xuất
@@ -296,6 +371,73 @@
                   <i class="fa-solid fa-vial"></i> Test Giả Lập
                 </button>
               </div>
+
+              <!-- Panel Danh sách tin nhắn mẫu để test -->
+              <div id="fms-test-scenarios-panel" style="display: none; flex-direction: column; gap: 10px; background: rgba(245, 158, 11, 0.03); padding: 12px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25); margin-bottom: 5px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed rgba(245, 158, 11, 0.25); padding-bottom: 6px; margin-bottom: 2px;">
+                  <span style="font-size: 0.8rem; font-weight: bold; color: #f59e0b;"><i class="fa-solid fa-vial"></i> Xem trước & Gửi thử các tin nhắn mẫu:</span>
+                  <i class="fa-solid fa-xmark" id="btn-close-test-panel" style="cursor: pointer; font-size: 0.95rem; color: var(--text-muted); padding: 2px 6px;"></i>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px;">
+                  
+                  <!-- Kịch bản 1 -->
+                  <div class="scenario-item">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span style="font-size:0.75rem; font-weight:bold; color:#38bdf8;">1. Nội địa ➔ Quốc tế (Tạm nhập - Tái xuất)</span>
+                      <button onclick="runZaloIeTest(1)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                    </div>
+                    <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO]
+Tàu bay VNA612 đã nạp 4,576 kg dầu cho chuyến bay nội địa VN7559 (HAN-CXR lúc 19:55) nhưng đổi tàu.
+Hiện tại, tàu VNA612 đang được phân công bay chuyến bay Quốc tế VN661 (HAN-SIN).
+Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
+📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
+                  </div>
+
+                  <!-- Kịch bản 2 -->
+                  <div class="scenario-item">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span style="font-size:0.75rem; font-weight:bold; color:#fb923c;">2. Quốc tế ➔ Nội địa (Truy thu thuế GTGT)</span>
+                      <button onclick="runZaloIeTest(2)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                    </div>
+                    <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
+Điều hành chú ý: Sử dụng tàu đã nạp Quốc tế cho chuyến bay Nội địa.
+✈️ Tàu bay: VNA321
+⛽ Đã nạp chặng Quốc tế: 12,500 kg (Chuyến cũ: VN513 lúc 08:35 chặng HAN-NRT)
+🔄 Hiện được phân công xếp bay chuyến Nội địa: VN217 (HAN-SGN)
+📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
+                  </div>
+
+                  <!-- Kịch bản 3 -->
+                  <div class="scenario-item">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span style="font-size:0.75rem; font-weight:bold; color:#c084fc;">3. HAN-HAN ➔ Nội địa (Dầu kỹ thuật nội địa)</span>
+                      <button onclick="runZaloIeTest(3)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                    </div>
+                    <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
+Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật cho chuyến bay nội địa.
+✈️ Tàu bay: VNA990
+⛽ Đã nạp kỹ thuật chặng HAN-HAN: 5,000 kg (Chuyến cũ: VN990 lúc 14:20)
+🔄 Hiện được phân công bay chuyến Nội địa: VN172 (HAN-DAD)
+📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
+                  </div>
+
+                  <!-- Kịch bản 4 -->
+                  <div class="scenario-item">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span style="font-size:0.75rem; font-weight:bold; color:#a7f3d0;">4. HAN-HAN ➔ Quốc tế (Dầu kỹ thuật quốc tế)</span>
+                      <button onclick="runZaloIeTest(4)" class="btn-glow" style="margin-top:0; padding:2px 8px; font-size:0.68rem; background:linear-gradient(135deg, #10b981 0%, #059669 100%); border:none;">Gửi thử</button>
+                    </div>
+                    <pre style="margin:0; font-family:monospace; font-size:0.68rem; color:#a1a1aa; background:#18181b; padding:6px; border-radius:4px; white-space:pre-wrap; border:1px solid #27272a;">⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
+Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật Han-Han cho chuyến bay Quốc Tế.
+✈️ Tàu bay: VNA990
+⛽ Đã nạp kỹ thuật chặng HAN-HAN: 5,000 kg (Chuyến cũ: VN990 lúc 14:20)
+🔄 Hiện được phân công bay chuyến Quốc tế: VN416 (HAN-ICN)
+📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
+                  </div>
+
+                </div>
+              </div>
+
               <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
                 Danh sách tàu bay đang giám sát chênh lệch tải dầu (Tạm nhập - Tái xuất, bay kỹ thuật đột xuất):
               </p>
