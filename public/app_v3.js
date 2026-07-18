@@ -4051,11 +4051,14 @@ async function fetchAirlineAlerts() {
       const status = r.is_warned >= 2
         ? '<span style="color:var(--success);font-weight:600;">Đã xử lý</span>'
         : '<span style="color:#dc2626;font-weight:600;">Cảnh báo</span>';
+      const actualDisplay = (r.actual_name && r.actual_name !== '-')
+        ? r.actual_name
+        : (r.actual_carrier || '-');
       return `<tr class="${r.is_warned >= 2 ? 'row-resolved' : ''}">
         <td><code style="color:var(--primary);font-weight:700;">${r.flight_no}</code></td>
         <td><strong>${r.expected_code}</strong></td>
         <td style="font-size:0.78rem;max-width:220px;">${r.expected_name}</td>
-        <td><span style="color:#dc2626;font-weight:700;">${r.actual_carrier || '-'}</span></td>
+        <td style="font-size:0.78rem;max-width:220px;"><span style="color:#dc2626;font-weight:700;">${actualDisplay}</span></td>
         <td style="font-size:0.8rem;">${r.crew_info || '-'}</td>
         <td>${r.date || '-'}</td>
         <td style="text-align:center;">

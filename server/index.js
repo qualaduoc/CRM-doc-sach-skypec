@@ -3037,30 +3037,82 @@ app.post('/api/fms/airline-alerts/test', authenticateToken, async (req, res) => 
     return res.status(403).json({ success: false, error: 'Không có quyền' });
   }
 
-  // scenario: 1=CA sai carrier, 2=IO sai, 3=BSF, 4=SAV, 5=QY
+  // scenario:
+  // 1=CA 4 số tên sai, 2=CA 3 số tên sai, 3=IO, 4=BSF, 5=SAV, 6=QY, 7=CA 4 số tên đúng (không cảnh báo)
   const scNum = parseInt(req.body.scenario, 10) || 1;
   const todayDb = getVietnamDbDateStr();
   const cases = {
-    1: { flight: 'CA6116', wrongCarrier: 'VN', code: 'CA' },
-    2: { flight: 'IO1234', wrongCarrier: 'BL', code: 'IO' },
-    3: { flight: 'BSF8801', wrongCarrier: 'VN', code: 'BSF' },
-    4: { flight: 'SAV220', wrongCarrier: '0V', code: 'SAV' },
-    5: { flight: 'QY9901', wrongCarrier: 'CA', code: 'QY' }
+    1: {
+      flight: 'CA6116',
+      wrongAirlineName: 'Tổng công ty Hàng không Việt Nam - CTCP',
+      code: 'CA'
+    },
+    2: {
+      flight: 'CA123',
+      wrongAirlineName: 'World Fuel Services European Holding Company B.V',
+      code: 'CA'
+    },
+    3: {
+      flight: 'IO1234',
+      wrongAirlineName: 'Pacific Airlines',
+      code: 'IO'
+    },
+    4: {
+      flight: 'BSF8801',
+      wrongAirlineName: 'Vietnam Airlines',
+      code: 'BSF'
+    },
+    5: {
+      flight: 'SAV220',
+      wrongAirlineName: 'Bamboo Airways',
+      code: 'SAV'
+    },
+    6: {
+      flight: 'QY9901',
+      wrongAirlineName: 'Air China Limited',
+      code: 'QY'
+    },
+    7: {
+      flight: 'CA8421',
+      wrongAirlineName: 'World Fuel Services European Holding Company B.V',
+      code: 'CA',
+      expectOk: true
+    }
   };
   const c = cases[scNum] || cases[1];
   const mismatch = evaluateAirlineMismatch({
     flightNo: c.flight,
-    carrierCode: c.wrongCarrier,
-    selectedAirlineName: ''
+    carrierCode: '',
+    actualAirlineName: c.wrongAirlineName,
+    selectedAirlineName: c.wrongAirlineName
   });
 
-  const expectedName = mismatch ? mismatch.expectedName : '-';
+  if (c.expectOk) {
+    return res.json({
+      success: true,
+      message: mismatch
+        ? `Kịch bản 7 kỳ vọng KHỚP nhưng hệ thống báo sai: ${mismatch.reason}`
+        : `OK — CA 4 số với tên đúng không sinh cảnh báo (${c.flight}).`,
+      preview: mismatch
+        ? JSON.stringify(mismatch, null, 2)
+        : `PASS: ${c.flight} + "${c.wrongAirlineName}" khớp tên đúng.`
+    });
+  }
+
+  if (!mismatch) {
+    return res.status(400).json({
+      success: false,
+      error: `Kịch bản ${scNum} không tạo mismatch — kiểm tra map/logic.`
+    });
+  }
+
+  const expectedName = mismatch.expectedName || '-';
   const msg = `⚠️ [CẢNH BÁO SAI TÊN HÃNG HÀNG KHÔNG] (TEST)
 ✈️ Chuyến bay: ${c.flight}
 📋 Ký hiệu đúng: ${c.code}
 🏢 Tên hãng đúng: ${expectedName}
-❌ Hãng đang ghi trên FMS: ${c.wrongCarrier}
-📝 Chi tiết: CARRIER FMS="${c.wrongCarrier}" khác ký hiệu chuyến "${c.code}"
+❌ Hãng bay trên Skypec/FMS: ${c.wrongAirlineName}
+📝 Chi tiết: ${mismatch.reason}
 👥 Cặp tra nạp: TEST - DEMO
 🚛 Xe: 99 | 📍 Gate: 12A | 🛩️ Tàu: VNA-TEST
 📅 Ngày FMS: ${todayDb}
@@ -3073,8 +3125,8 @@ app.post('/api/fms/airline-alerts/test', authenticateToken, async (req, res) => 
       `INSERT INTO fms_airline_alerts
         (flight_no, date, expected_code, expected_name, actual_carrier, actual_name, crew_info, reason, is_warned)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-      c.flight, todayDb, c.code, expectedName, c.wrongCarrier, '-', 'TEST - DEMO',
-      `CARRIER FMS="${c.wrongCarrier}" khác ký hiệu chuyến "${c.code}"`
+      c.flight, todayDb, c.code, expectedName, '-', c.wrongAirlineName, 'TEST - DEMO',
+      mismatch.reason
     );
 
     const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");

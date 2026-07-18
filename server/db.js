@@ -138,6 +138,7 @@ async function getDb() {
       standby_fuel TEXT,
       fuel_order TEXT,
       status TEXT,
+      airline_name TEXT,
       date TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(flight_no, date)
@@ -220,6 +221,7 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN old_etd TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_etd INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN truck_no TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN airline_name TEXT;`); } catch(e) {}
 
   // Thêm các cột cho fms_temp_import_exports của database cũ
   try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN monitor_type TEXT DEFAULT 'DOMESTIC_TO_INTL';`); } catch(e) {}

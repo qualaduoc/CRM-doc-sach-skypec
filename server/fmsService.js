@@ -389,15 +389,20 @@ function isDepartingIntlRoute(routeStr) {
 
 /**
  * Cảnh báo SAI TÊN HÃNG HÀNG KHÔNG:
- * - Lấy ký hiệu từ số chuyến (CA6116 → CA)
- * - So với CARRIER trên FMS VNA (và tên chọn nếu có)
+ * - Lấy ký hiệu từ số chuyến (CA6116 → CA; CA 3 số / 4 số → tên khác nhau)
+ * - Ưu tiên so "Hãng bay" trên FMS Skypec Flights với tên đúng
+ * - Fallback: CARRIER FMS VNA nếu chưa có Hãng bay
  * - Gửi Zalo nhóm riêng (fallback nhóm FMS chung)
+ *
+ * matchedFlights: mảng object có FLIGHTNO, CARRIER?, AIRLINE_NAME?, ACREG?, GATE?,
+ *   DRIVER_NAME?, OPERATOR_NAME?, TRUCK_NO?
  */
 async function checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, scheduleByFlight) {
   try {
     const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_airline_mismatch'");
     const notifyEnabled = notifySetting ? (notifySetting.value === 'true') : true;
     if (!notifyEnabled) return;
+    if (!matchedFlights || matchedFlights.length === 0) return;
 
     const zaloMaster = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
     const isZaloOn = zaloMaster ? (zaloMaster.value === 'true') : false;
@@ -420,17 +425,37 @@ async function checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, sc
       }
     }
 
+    // Map Hãng bay Skypec đã cào (bổ sung cho flight từ VNA nếu thiếu)
+    const liveRows = await db.all(
+      "SELECT flight_no, airline_name, driver_name, operator_name, truck_no, gate, ac_reg FROM fms_flights_live WHERE date = ?",
+      targetDate
+    ).catch(() => []);
+    const liveByFlight = {};
+    for (const row of liveRows || []) {
+      if (!row.flight_no) continue;
+      const key = String(row.flight_no).toUpperCase().replace(/\s+/g, '');
+      liveByFlight[key] = row;
+    }
+
     for (const flt of matchedFlights) {
       if (!flt.FLIGHTNO) continue;
       const cleanFltNo = String(flt.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
       const carrier = flt.CARRIER != null ? String(flt.CARRIER).trim() : '';
-      // Tên hãng chọn (nếu sau này FMS/Skypec có field) — hiện ưu tiên CARRIER
-      const selectedName = flt.AIRLINE_NAME || flt.CUSTOMER_NAME || flt.CUSTOMER || '';
+      const live = liveByFlight[cleanFltNo];
+      const actualAirlineName = (
+        flt.AIRLINE_NAME ||
+        flt.airline_name ||
+        (live && live.airline_name) ||
+        flt.CUSTOMER_NAME ||
+        flt.CUSTOMER ||
+        ''
+      );
 
       const mismatch = evaluateAirlineMismatch({
         flightNo: cleanFltNo,
         carrierCode: carrier,
-        selectedAirlineName: selectedName
+        actualAirlineName,
+        selectedAirlineName: actualAirlineName
       });
       if (!mismatch) continue;
 
@@ -442,23 +467,40 @@ async function checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, sc
       if (exists && exists.is_warned >= 1) continue;
 
       const sched = scheduleByFlight ? scheduleByFlight[cleanFltNo] : null;
+      const crewFromLive = live
+        ? [live.driver_name, live.operator_name].filter(Boolean).join(' - ')
+        : '';
+      const crewFromFlt = [flt.DRIVER_NAME || flt.driver_name, flt.OPERATOR_NAME || flt.operator_name]
+        .filter(Boolean).join(' - ');
       const crewInfo = sched
         ? (sched.crew_info || [sched.driver_name, sched.operator_name].filter(Boolean).join(' - ') || '-')
-        : '-';
-      const truckNo = sched ? (sched.truck_no || '-') : '-';
-      const gate = sched ? (sched.gate || '-') : (flt.GATE || '-');
-      const acReg = flt.ACREG ? String(flt.ACREG).trim() : '-';
+        : (crewFromFlt || crewFromLive || '-');
+      const truckNo = (sched && sched.truck_no)
+        || flt.TRUCK_NO || flt.truck_no
+        || (live && live.truck_no)
+        || '-';
+      const gate = (sched && sched.gate)
+        || flt.GATE || flt.gate
+        || (live && live.gate)
+        || '-';
+      const acReg = (flt.ACREG || flt.ac_reg || (live && live.ac_reg) || '-');
+      const acRegStr = acReg ? String(acReg).trim() : '-';
+      const displayActual = mismatch.actualAirlineName && mismatch.actualAirlineName !== '-'
+        ? mismatch.actualAirlineName
+        : mismatch.actualCarrier;
 
       const msg = `⚠️ [CẢNH BÁO SAI TÊN HÃNG HÀNG KHÔNG]
 ✈️ Chuyến bay: ${cleanFltNo}
 📋 Ký hiệu đúng: ${mismatch.expectedCode}
 🏢 Tên hãng đúng: ${mismatch.expectedName}
-❌ Hãng đang ghi trên FMS: ${mismatch.actualCarrier}${mismatch.selectedAirlineName && mismatch.selectedAirlineName !== '-' ? ` / ${mismatch.selectedAirlineName}` : ''}
+❌ Hãng bay trên Skypec/FMS: ${displayActual}
 📝 Chi tiết: ${mismatch.reason}
 👥 Cặp tra nạp: ${crewInfo}
-🚛 Xe: ${truckNo} | 📍 Gate: ${gate} | 🛩️ Tàu: ${acReg}
+🚛 Xe: ${truckNo} | 📍 Gate: ${gate} | 🛩️ Tàu: ${acRegStr}
 📅 Ngày FMS: ${targetDate}
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
+
+      const actualNameStore = mismatch.actualAirlineName || mismatch.selectedAirlineName || '-';
 
       if (exists) {
         await db.run(
@@ -467,7 +509,7 @@ async function checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, sc
             crew_info = ?, reason = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP
            WHERE id = ?`,
           mismatch.expectedCode, mismatch.expectedName, mismatch.actualCarrier,
-          mismatch.selectedAirlineName, crewInfo, mismatch.reason, exists.id
+          actualNameStore, crewInfo, mismatch.reason, exists.id
         );
       } else {
         await db.run(
@@ -475,7 +517,7 @@ async function checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, sc
             (flight_no, date, expected_code, expected_name, actual_carrier, actual_name, crew_info, reason, is_warned)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
           cleanFltNo, targetDate, mismatch.expectedCode, mismatch.expectedName,
-          mismatch.actualCarrier, mismatch.selectedAirlineName, crewInfo, mismatch.reason
+          mismatch.actualCarrier, actualNameStore, crewInfo, mismatch.reason
         );
       }
 
@@ -1293,7 +1335,14 @@ Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
 // Hàm giải mã ký tự HTML Entity
 function decodeHtmlEntities(str) {
   if (!str) return '';
-  return str.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
+  return String(str)
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, ' ');
 }
 
 // Gửi request POST lấy chi tiết tra nạp JRefuelInfo từ FMS Skypec
@@ -1502,6 +1551,16 @@ async function syncFmsSkypecLive(forceDate = null) {
       pos = trEnd + 5;
     }
 
+    // Map id_fms → tên "Hãng bay" (nằm ở hàng con item-flight-after-*)
+    const airlineByFmsId = {};
+    const airlineNameRe = /class="airline-name-(\d+)[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
+    let airlineMatch;
+    while ((airlineMatch = airlineNameRe.exec(tbodyHtml)) !== null) {
+      const fmsId = airlineMatch[1];
+      const rawName = airlineMatch[2].replace(/<[^>]+>/g, '').trim();
+      airlineByFmsId[fmsId] = decodeHtmlEntities(rawName);
+    }
+
     const flightsToSync = [];
 
     for (const rowHtml of rows) {
@@ -1514,6 +1573,7 @@ async function syncFmsSkypecLive(forceDate = null) {
       // ID FMS của chuyến bay từ checkbox value
       const idMatch = rowHtml.match(/value="(\d+)"/);
       const idFms = idMatch ? idMatch[1] : '';
+      const airlineName = idFms && airlineByFmsId[idFms] ? airlineByFmsId[idFms] : '';
 
       // Loại tàu bay
       const acTypeMatch = rowHtml.match(/id="AircraftType"[^>]*>([\s\S]*?)<\/span>/i);
@@ -1592,6 +1652,7 @@ async function syncFmsSkypecLive(forceDate = null) {
         standby_fuel: standbyFuel,
         fuel_order: fuelOrder,
         status: status,
+        airline_name: airlineName,
         date: targetDate
       });
     }
@@ -1710,8 +1771,8 @@ async function syncFmsSkypecLive(forceDate = null) {
       await db.run(`
         INSERT INTO fms_flights_live (
           flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel,
-          gate, truck_no, driver_name, operator_name, standby_fuel, fuel_order, status, date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          gate, truck_no, driver_name, operator_name, standby_fuel, fuel_order, status, airline_name, date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(flight_no, date) DO UPDATE SET
           ac_type = excluded.ac_type,
           ac_reg = excluded.ac_reg,
@@ -1726,16 +1787,44 @@ async function syncFmsSkypecLive(forceDate = null) {
           standby_fuel = excluded.standby_fuel,
           fuel_order = excluded.fuel_order,
           status = excluded.status,
+          airline_name = excluded.airline_name,
           created_at = CURRENT_TIMESTAMP
       `, 
         flight.flight_no, flight.ac_type, flight.ac_reg, flight.route, 
         flight.time_arr, flight.time_dep, flight.time_fuel, flight.gate, 
         flight.truck_no || '', flight.driver_name, flight.operator_name, flight.standby_fuel, 
-        flight.fuel_order, flight.status, flight.date
+        flight.fuel_order, flight.status, flight.airline_name || '', flight.date
       );
       insertCount++;
     }
     console.log(`[FMS Skypec Live] Đồng bộ thành công ${insertCount} chuyến bay của ngày: ${targetDate}`);
+
+    // 6. Giám sát SAI TÊN HÃNG theo field "Hãng bay" Skypec
+    try {
+      const scheduleRows = await db.all(
+        "SELECT * FROM fms_schedules WHERE date = ? OR fms_date = ?",
+        targetDate, targetDate
+      ).catch(() => []);
+      const scheduleByFlight = {};
+      for (const s of scheduleRows || []) {
+        if (!s.flight_no) continue;
+        const key = String(s.flight_no).toUpperCase().replace(/\s+/g, '');
+        scheduleByFlight[key] = s;
+      }
+      const liveAsMatched = flightsToSync.map(f => ({
+        FLIGHTNO: f.flight_no,
+        CARRIER: '',
+        AIRLINE_NAME: f.airline_name || '',
+        ACREG: f.ac_reg,
+        GATE: f.gate,
+        DRIVER_NAME: f.driver_name,
+        OPERATOR_NAME: f.operator_name,
+        TRUCK_NO: f.truck_no
+      }));
+      await checkAirlineNameMismatchAlerts(db, targetDate, liveAsMatched, scheduleByFlight);
+    } catch (alertErr) {
+      console.error('[FMS Skypec Live] Lỗi kiểm tra sai tên hãng:', alertErr.message);
+    }
   } catch (err) {
     console.error('[FMS Skypec Live] Lỗi cào FMS Skypec:', err.message);
   } finally {

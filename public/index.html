@@ -525,19 +525,23 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             </div>
           </div>
           <p style="margin: 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.45;">
-            Khi số hiệu chuyến thuộc IO / BSF / SAV / CA / QY, hệ thống so khớp <strong>ký hiệu chuyến</strong> với <strong>CARRIER FMS</strong>.
-            Sai → cảnh báo Zalo (nhóm riêng nếu cấu hình, không thì nhóm tạm nhập / FMS chung).
+            Khi số hiệu thuộc IO / BSF / SAV / CA / QY, hệ thống so <strong>tên hãng đúng</strong> với field
+            <strong>Hãng bay</strong> trên FMS Skypec Flights.
+            <strong>CA 3 số</strong> → Air China Limited · <strong>CA 4 số</strong> → World Fuel Services European Holding Company B.V.
+            Sai → cảnh báo Zalo (nhóm riêng nếu cấu hình).
           </p>
           <div id="airline-mappings-list" style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.78rem;"></div>
 
           <div id="airline-test-panel" style="display: none; flex-direction: column; gap: 8px; background: var(--panel-elevated); padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
-            <div style="font-weight: 700; color: var(--primary); font-size: 0.85rem;"><i class="fa-solid fa-vial"></i> Gửi thử tin cảnh báo (5 ký hiệu)</div>
+            <div style="font-weight: 700; color: var(--primary); font-size: 0.85rem;"><i class="fa-solid fa-vial"></i> Gửi thử tin cảnh báo (Hãng bay Skypec)</div>
             <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-              <button type="button" class="btn-secondary btn-airline-test" data-scenario="1" style="margin:0; padding:6px 10px; font-size:0.78rem;">1. CA6116 (sai → VN)</button>
-              <button type="button" class="btn-secondary btn-airline-test" data-scenario="2" style="margin:0; padding:6px 10px; font-size:0.78rem;">2. IO1234 (sai → BL)</button>
-              <button type="button" class="btn-secondary btn-airline-test" data-scenario="3" style="margin:0; padding:6px 10px; font-size:0.78rem;">3. BSF8801 (sai → VN)</button>
-              <button type="button" class="btn-secondary btn-airline-test" data-scenario="4" style="margin:0; padding:6px 10px; font-size:0.78rem;">4. SAV220 (sai → 0V)</button>
-              <button type="button" class="btn-secondary btn-airline-test" data-scenario="5" style="margin:0; padding:6px 10px; font-size:0.78rem;">5. QY9901 (sai → CA)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="1" style="margin:0; padding:6px 10px; font-size:0.78rem;">1. CA6116 (4 số, tên sai)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="2" style="margin:0; padding:6px 10px; font-size:0.78rem;">2. CA123 (3 số, tên sai)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="3" style="margin:0; padding:6px 10px; font-size:0.78rem;">3. IO1234 (sai)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="4" style="margin:0; padding:6px 10px; font-size:0.78rem;">4. BSF8801 (sai)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="5" style="margin:0; padding:6px 10px; font-size:0.78rem;">5. SAV220 (sai)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="6" style="margin:0; padding:6px 10px; font-size:0.78rem;">6. QY9901 (sai)</button>
+              <button type="button" class="btn-secondary btn-airline-test" data-scenario="7" style="margin:0; padding:6px 10px; font-size:0.78rem;">7. CA8421 (4 số, đúng)</button>
             </div>
             <pre id="airline-test-preview" style="margin:0; font-size:0.72rem; white-space:pre-wrap; background:var(--pre-bg); color:var(--pre-text); padding:8px; border-radius:6px; border:1px solid var(--border); max-height:140px; overflow:auto;">Chọn kịch bản để gửi thử...</pre>
           </div>
@@ -549,7 +553,7 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
                   <th>Chuyến bay</th>
                   <th>Ký hiệu đúng</th>
                   <th>Tên hãng đúng</th>
-                  <th>FMS ghi</th>
+                  <th>Hãng bay Skypec</th>
                   <th>Cặp nạp</th>
                   <th>Ngày</th>
                   <th style="text-align:center;">Thao tác</th>
@@ -713,7 +717,7 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <input type="checkbox" id="skyeyes-notify-airline-mismatch" style="cursor: pointer; width: 14px; height: 14px;" checked>
-                  <label for="skyeyes-notify-airline-mismatch" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi SAI TÊN HÃNG HK (IO/BSF/SAV/CA/QY)</label>
+                  <label for="skyeyes-notify-airline-mismatch" style="cursor: pointer; user-select: none; font-weight: 500;">Báo khi SAI TÊN HÃNG HK (so Hãng bay Skypec · CA 3/4 số)</label>
                 </div>
               </div>
             </div>
