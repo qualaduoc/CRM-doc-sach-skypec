@@ -370,13 +370,32 @@ function isDomesticRoute(routeStr) {
   return VN_DOMESTIC_AIRPORTS.includes(origin) && VN_DOMESTIC_AIRPORTS.includes(dest);
 }
 
+function isDepartingIntlRoute(routeStr) {
+  if (!routeStr) return false;
+  const cleanRoute = routeStr.toUpperCase().replace(/\s+/g, '');
+  const parts = cleanRoute.split('-');
+  if (parts.length !== 2) return false;
+  const [origin, dest] = parts;
+  
+  // Đi từ Việt Nam ra quốc tế (Điểm đi thuộc Việt Nam và Điểm đến là nước ngoài)
+  return VN_DOMESTIC_AIRPORTS.includes(origin) && !VN_DOMESTIC_AIRPORTS.includes(dest);
+}
+
 // Kiểm tra cảnh báo Tạm nhập - Tái xuất tàu bay
 async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
   try {
-    // 1. Lấy tất cả các tàu bay đang trong diện giám sát mà chưa được phát cảnh báo (is_warned = 0)
-    // Không lọc theo ngày để hỗ trợ giám sát dài hạn (TECHNICAL_HAN hoặc cấu hình Always)
+    const todayDb = getVietnamDbDateStr();
+    
+    // 1. Tự động chuyển các bản ghi giám sát cũ (is_warned = 0) của ngày hôm qua trở về trước sang trạng thái đã xử lý (is_warned = 2)
+    await db.run(
+      "UPDATE fms_temp_import_exports SET is_warned = 2 WHERE is_warned = 0 AND date < ?",
+      todayDb
+    );
+
+    // 2. Chỉ lấy các bản ghi đang giám sát từ ngày hiện tại trở đi
     const trackingRows = await db.all(
-      "SELECT * FROM fms_temp_import_exports WHERE is_warned = 0"
+      "SELECT * FROM fms_temp_import_exports WHERE is_warned = 0 AND date >= ?",
+      todayDb
     );
     
     if (trackingRows.length === 0) return;
@@ -408,22 +427,24 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
       if (nextFlight) {
         const newFltNo = nextFlight.FLIGHTNO ? nextFlight.FLIGHTNO.toUpperCase().replace(/\s+/g, '') : '';
         const newRoute = `${nextFlight.DEP_AP_SCHED || ''}-${nextFlight.ARR_AP_SCHED || ''}`;
-        const isNextIntl = !isDomesticRoute(newRoute);
+        const isNextIntl = isDepartingIntlRoute(newRoute);
+        const isNextDomestic = isDomesticRoute(newRoute);
         
         let shouldWarn = false;
         let warningMsg = '';
         
         if (track.monitor_type === 'TECHNICAL_HAN') {
           // Tàu nạp kỹ thuật HAN-HAN
-          shouldWarn = true;
           if (isNextIntl) {
+            shouldWarn = true;
             warningMsg = `⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
 Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật Han-Han cho chuyến bay Quốc Tế.
 ✈️ Tàu bay: ${trackAcReg}
 ⛽ Đã nạp kỹ thuật chặng HAN-HAN: ${parseInt(track.fuel_order).toLocaleString()} kg (Chuyến cũ: ${track.old_flight_no} lúc ${track.old_time})
 🔄 Hiện được phân công bay chuyến Quốc tế: ${newFltNo} (${newRoute})
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-          } else {
+          } else if (isNextDomestic) {
+            shouldWarn = true;
             warningMsg = `⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
 Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật cho chuyến bay nội địa.
 ✈️ Tàu bay: ${trackAcReg}
@@ -443,7 +464,7 @@ Yêu cầu Điều hành & Kế toán kiểm tra hóa đơn ngay lập tức!
           }
         } else if (track.monitor_type === 'INTL_TO_DOMESTIC') {
           // Tàu nạp quốc tế chuyển nội địa (Truy thu thuế GTGT)
-          if (!isNextIntl) {
+          if (isNextDomestic) {
             shouldWarn = true;
             warningMsg = `⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
 Điều hành chú ý: Sử dụng tàu đã nạp Quốc tế cho chuyến bay Nội địa.
@@ -1466,73 +1487,80 @@ async function syncFmsSkypecLive(forceDate = null) {
 
     // 5. Lưu toàn bộ chuyến bay vào SQLite
     let insertCount = 0;
+    const todayDb = getVietnamDbDateStr();
     for (const flight of flightsToSync) {
-      // TRƯỚC KHI LƯU: So sánh với bản ghi cũ để phát hiện đổi tàu bay đã nạp dầu thực tế
-      try {
-        const oldFlight = await db.get(
-          "SELECT ac_reg, fuel_order, time_fuel, route FROM fms_flights_live WHERE UPPER(flight_no) = UPPER(?) AND date = ?",
-          flight.flight_no, flight.date
-        );
+      const isFromToday = flight.date >= todayDb;
+      
+      if (isFromToday) {
+        // TRƯỚC KHI LƯU: So sánh với bản ghi cũ để phát hiện đổi tàu bay đã nạp dầu thực tế
+        try {
+          const oldFlight = await db.get(
+            "SELECT ac_reg, fuel_order, time_fuel, route FROM fms_flights_live WHERE UPPER(flight_no) = UPPER(?) AND date = ?",
+            flight.flight_no, flight.date
+          );
 
-        if (oldFlight && oldFlight.ac_reg && flight.ac_reg && 
-            String(oldFlight.ac_reg).trim().toUpperCase() !== String(flight.ac_reg).trim().toUpperCase()) {
-          
-          const oldAcReg = String(oldFlight.ac_reg).trim().toUpperCase();
-          const oldFuelOrder = parseInt(oldFlight.fuel_order) || 0;
-          
-          if (oldFuelOrder > 0) {
-            const oldRoute = String(oldFlight.route || '').trim().toUpperCase();
-            let monitorType = 'DOMESTIC_TO_INTL';
+          if (oldFlight && oldFlight.ac_reg && flight.ac_reg && 
+              String(oldFlight.ac_reg).trim().toUpperCase() !== String(flight.ac_reg).trim().toUpperCase()) {
             
-            if (oldRoute === 'HAN-HAN') {
-              monitorType = 'TECHNICAL_HAN';
-            } else if (isDomesticRoute(oldRoute)) {
-              monitorType = 'DOMESTIC_TO_INTL';
-            } else {
-              monitorType = 'INTL_TO_DOMESTIC';
-            }
+            const oldAcReg = String(oldFlight.ac_reg).trim().toUpperCase();
+            const oldFuelOrder = parseInt(oldFlight.fuel_order) || 0;
+            
+            if (oldFuelOrder > 0) {
+              const oldRoute = String(oldFlight.route || '').trim().toUpperCase();
+              let monitorType = 'DOMESTIC_TO_INTL';
+              
+              if (oldRoute === 'HAN-HAN') {
+                monitorType = 'TECHNICAL_HAN';
+              } else if (isDomesticRoute(oldRoute)) {
+                monitorType = 'DOMESTIC_TO_INTL';
+              } else {
+                monitorType = 'INTL_TO_DOMESTIC';
+              }
 
-            const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
-            const exists = await db.get(
-              "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ?",
-              oldAcReg, flight.date, cleanFltNo
-            );
+              const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
+              const exists = await db.get(
+                "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ?",
+                oldAcReg, flight.date, cleanFltNo
+              );
 
-            if (!exists) {
-              log(`[FMS Skypec Live] Phát hiện đổi tàu chéo: Tàu ${oldAcReg} đã nạp ${oldFuelOrder} kg dầu cho chuyến ${cleanFltNo} (${oldRoute}) nhưng bị đổi. Kiểu giám sát: ${monitorType}`);
-              await db.run(`
-                INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-              `, oldAcReg, cleanFltNo, oldRoute, oldFuelOrder, flight.date, monitorType, oldFlight.time_fuel || '-');
+              if (!exists) {
+                log(`[FMS Skypec Live] Phát hiện đổi tàu chéo: Tàu ${oldAcReg} đã nạp ${oldFuelOrder} kg dầu cho chuyến ${cleanFltNo} (${oldRoute}) nhưng bị đổi. Kiểu giám sát: ${monitorType}`);
+                await db.run(`
+                  INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
+                `, oldAcReg, cleanFltNo, oldRoute, oldFuelOrder, flight.date, monitorType, oldFlight.time_fuel || '-');
+              }
             }
           }
+        } catch (errDb) {
+          console.error('[FMS Skypec Live] Lỗi kiểm tra đổi tàu chéo:', errDb.message);
         }
-      } catch (errDb) {
-        console.error('[FMS Skypec Live] Lỗi kiểm tra đổi tàu chéo:', errDb.message);
       }
 
-      // TỰ ĐỘNG GIÁM SÁT tàu HAN-HAN nạp dầu kỹ thuật đột xuất (kể cả không đổi tàu)
-      try {
-        const currentRoute = String(flight.route || '').trim().toUpperCase();
-        const currentFuel = parseInt(flight.fuel_order) || 0;
-        if (currentRoute === 'HAN-HAN' && currentFuel > 0 && flight.ac_reg) {
-          const currentAcReg = String(flight.ac_reg).trim().toUpperCase();
-          const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
-          
-          const exists = await db.get(
-            "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ? AND monitor_type = 'TECHNICAL_HAN'",
-            currentAcReg, flight.date, cleanFltNo
-          );
-          if (!exists) {
-            log(`[FMS Skypec Live] Phát hiện chặng kỹ thuật đột xuất: Tàu ${currentAcReg} nạp ${currentFuel} kg chặng HAN-HAN (Chuyến ${cleanFltNo}). Đưa vào giám sát vô thời hạn.`);
-            await db.run(`
-              INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
-              VALUES (?, ?, ?, ?, ?, 'TECHNICAL_HAN', ?)
-            `, currentAcReg, cleanFltNo, currentRoute, currentFuel, flight.date, flight.time_fuel || '-');
+      if (isFromToday) {
+        // TỰ ĐỘNG GIÁM SÁT tàu HAN-HAN nạp dầu kỹ thuật đột xuất (kể cả không đổi tàu)
+        try {
+          const currentRoute = String(flight.route || '').trim().toUpperCase();
+          const currentFuel = parseInt(flight.fuel_order) || 0;
+          if (currentRoute === 'HAN-HAN' && currentFuel > 0 && flight.ac_reg) {
+            const currentAcReg = String(flight.ac_reg).trim().toUpperCase();
+            const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
+            
+            const exists = await db.get(
+              "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ? AND monitor_type = 'TECHNICAL_HAN'",
+              currentAcReg, flight.date, cleanFltNo
+            );
+            if (!exists) {
+              log(`[FMS Skypec Live] Phát hiện chặng kỹ thuật đột xuất: Tàu ${currentAcReg} nạp ${currentFuel} kg chặng HAN-HAN (Chuyến ${cleanFltNo}). Đưa vào giám sát vô thời hạn.`);
+              await db.run(`
+                INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
+                VALUES (?, ?, ?, ?, ?, 'TECHNICAL_HAN', ?)
+              `, currentAcReg, cleanFltNo, currentRoute, currentFuel, flight.date, flight.time_fuel || '-');
+            }
           }
+        } catch (errDb) {
+          console.error('[FMS Skypec Live] Lỗi kiểm tra chặng HAN-HAN:', errDb.message);
         }
-      } catch (errDb) {
-        console.error('[FMS Skypec Live] Lỗi kiểm tra chặng HAN-HAN:', errDb.message);
       }
 
       await db.run(`
@@ -1647,5 +1675,7 @@ module.exports = {
   syncFmsSkypecHistory,
   startFmsWorker,
   getVietnamDbDateStr,
-  getVietnamDateTimeStr
+  getVietnamDateTimeStr,
+  isDomesticRoute,
+  isDepartingIntlRoute
 };

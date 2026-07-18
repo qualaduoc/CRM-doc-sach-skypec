@@ -9,7 +9,7 @@ const querystring = require('querystring');
 const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
-const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr } = require('./fmsService');
+const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute } = require('./fmsService');
 const { performImageOCR, testSingleGeminiKey } = require('./ocrService');
 const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyEyesMessage, sendSkyEyesPrivateMessage, getBotState } = require('./zaloService');
 
