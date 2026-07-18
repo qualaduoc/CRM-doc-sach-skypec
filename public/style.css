@@ -1,21 +1,21 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --background: #0b0f19;
-  --panel-bg: rgba(17, 24, 39, 0.7);
-  --border: rgba(255, 255, 255, 0.08);
-  --primary: #4f46e5;
-  --primary-glow: rgba(79, 70, 229, 0.4);
-  --primary-hover: #6366f1;
+  --background: #080d16;
+  --panel-bg: rgba(11, 18, 30, 0.75);
+  --border: rgba(0, 114, 151, 0.15);
+  --primary: #007297;
+  --primary-glow: rgba(0, 114, 151, 0.35);
+  --primary-hover: #005f7e;
   --text: #f3f4f6;
   --text-muted: #9ca3af;
   --success: #10b981;
   --success-bg: rgba(16, 185, 129, 0.15);
   --danger: #ef4444;
   --danger-bg: rgba(239, 68, 68, 0.15);
-  --warning: #f59e0b;
-  --warning-bg: rgba(245, 158, 11, 0.15);
-  --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --warning: #e3a813;
+  --warning-bg: rgba(227, 168, 19, 0.15);
+  --card-shadow: 0 10px 35px 0 rgba(0, 0, 0, 0.45);
 }
 
 * {

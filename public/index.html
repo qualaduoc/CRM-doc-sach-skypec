@@ -58,9 +58,10 @@
     <canvas id="space-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;"></canvas>
     
     <div class="login-container" style="position: relative; z-index: 1;">
-      <div class="glass-panel login-card">
-        <h2 style="margin-bottom: 8px;">CỔNG ĐĂNG NHẬP HỆ THỐNG</h2>
-        <p class="subtitle" style="margin-bottom: 24px;">Đồng bộ & Tích lũy tiến độ đào tạo tự động Skypec</p>
+      <div class="glass-panel login-card" style="border-color: rgba(0, 114, 151, 0.3); background: rgba(8, 13, 22, 0.85);">
+        <img src="logo.png" alt="Skypec Logo" style="height: 60px; margin-bottom: 15px; filter: drop-shadow(0 4px 12px rgba(0, 114, 151, 0.45));">
+        <h2 style="margin-bottom: 8px; font-family: 'Outfit', sans-serif; font-weight: 800; letter-spacing: 0.5px; background: linear-gradient(135deg, #fff 0%, #007297 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">SkyEyes Portal</h2>
+        <p class="subtitle" style="margin-bottom: 24px; font-size: 0.85rem; letter-spacing: 0.2px;">Đồng bộ & Tích lũy tiến độ đào tạo tự động Skypec</p>
 
         <form id="login-form">
           <div class="input-group">
@@ -94,14 +95,16 @@
   <!-- ================= MÀN HÌNH DASHBOARD ADMIN ================= -->
   <div id="admin-screen" class="screen">
     <div class="container">
-      <header class="glass-panel app-header">
-        <div class="user-info">
-          <div class="avatar">
-            <i class="fa-solid fa-user-shield"></i>
-          </div>
-          <div class="user-text">
-            <h3>Hệ thống Quản trị LMS</h3>
-            <p>Quyền hạn: Quản trị viên cao cấp</p>
+      <header class="glass-panel app-header" style="padding: 15px 24px; border-color: rgba(0, 114, 151, 0.25);">
+        <div style="display: flex; align-items: center; gap: 15px;">
+          <img src="logo.png" alt="Skypec Logo" style="height: 42px; vertical-align: middle; filter: drop-shadow(0 2px 8px rgba(0, 114, 151, 0.35));">
+          <div style="width: 1px; height: 35px; background: rgba(255,255,255,0.15);"></div>
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.4rem; font-weight: 800; color: #fff; letter-spacing: 0.5px; font-family: 'Outfit', sans-serif;">SkyEyes</span>
+              <span style="background: rgba(0, 114, 151, 0.2); border: 1px solid rgba(0, 114, 151, 0.4); color: #38bdf8; font-size: 0.65rem; padding: 2px 6px; border-radius: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">ADMIN</span>
+            </div>
+            <span style="display: block; font-size: 0.72rem; color: var(--warning); font-weight: bold; letter-spacing: 0.4px; margin-top: 1px; text-transform: uppercase; font-family: 'Outfit', sans-serif;">Trung tâm khai thác - Chi nhánh Skypec khu vực miền Bắc</span>
           </div>
         </div>
         <div class="header-actions" style="display: flex; gap: 10px;">
@@ -538,14 +541,16 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
   <!-- ================= MÀN HÌNH CHI TIẾT NHÂN VIÊN / USER PANEL ================= -->
   <div id="user-screen" class="screen">
     <div class="container">
-      <header class="glass-panel app-header">
-        <div class="user-info">
-          <div class="avatar">
-            <i class="fa-solid fa-user-tie"></i>
-          </div>
-          <div class="user-text">
-            <h3 id="user-title-name">Học viên</h3>
-            <p id="user-title-dept">Đơn vị</p>
+      <header class="glass-panel app-header" style="padding: 15px 24px; border-color: rgba(0, 114, 151, 0.25);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <img src="logo.png" alt="Skypec Logo" style="height: 38px; vertical-align: middle;">
+          <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.15);"></div>
+          <div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 1.25rem; font-weight: 800; color: #fff; letter-spacing: 0.5px;">SkyEyes</span>
+              <span style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-size: 0.62rem; padding: 1px 5px; border-radius: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">MEMBER</span>
+            </div>
+            <span style="display: block; font-size: 0.65rem; color: var(--text-muted); font-weight: 600; margin-top: 1px;" id="user-title-name">Đang tải tên...</span>
           </div>
         </div>
         
