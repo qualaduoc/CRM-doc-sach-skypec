@@ -1280,6 +1280,30 @@ async function syncFMSData(forceDate = null, forceShift = null) {
         log(`[Dọn dẹp DB] Đã xóa ${delEpoch.changes} bản ghi giám sát trước mốc ${MONITOR_EPOCH_DATE}.`);
       }
 
+      // Xóa INTL_TO_DOMESTIC sai: route không có dạng XXX-YYY (VD "HAN") hoặc trùng NKT cùng tàu/ngày/kg
+      const badIntl = await db.all(
+        `SELECT id, ac_reg, date, old_route, fuel_order FROM fms_temp_import_exports
+         WHERE monitor_type = 'INTL_TO_DOMESTIC' AND is_warned < 2`
+      );
+      let purgedDup = 0;
+      for (const r of badIntl || []) {
+        const rt = String(r.old_route || '').toUpperCase().replace(/\s+/g, '');
+        const badRoute = !rt || rt === '-' || !rt.includes('-') || rt === 'HAN';
+        const tech = await db.get(
+          `SELECT id FROM fms_temp_import_exports
+           WHERE monitor_type = 'TECHNICAL_HAN' AND UPPER(TRIM(ac_reg)) = UPPER(TRIM(?))
+             AND date = ? AND is_warned < 2 AND ABS(COALESCE(fuel_order,0) - ?) < 2`,
+          r.ac_reg, r.date, r.fuel_order || 0
+        );
+        if (badRoute || tech) {
+          await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', r.id);
+          purgedDup++;
+        }
+      }
+      if (purgedDup > 0) {
+        log(`[Dọn dẹp DB] Đã xóa ${purgedDup} monitor INTL_TO_DOMESTIC sai/trùng NKT.`);
+      }
+
       // Chỉ giữ cửa sổ ngày theo dõi (+ đã đóng gần đây); không ôm TECHNICAL vô hạn nhiều ngày
       const watch = getCancelWatchDates();
       const keepDates = watch.length ? watch : [todayDb];
@@ -2352,29 +2376,50 @@ async function syncFmsSkypecLive(forceDate = null) {
             const oldFuelOrder = parseInt(oldFlight.fuel_order) || 0;
             
             if (oldFuelOrder > 0) {
-              const oldRoute = String(oldFlight.route || '').trim().toUpperCase();
-              let monitorType = 'DOMESTIC_TO_INTL';
-              
+              const oldRoute = String(oldFlight.route || '').trim().toUpperCase().replace(/\s+/g, '');
+              // Route không hợp lệ (VD chỉ "HAN") → không tạo monitor đổi tàu
+              const routeOk = oldRoute && oldRoute !== '-' && oldRoute.includes('-');
+              if (!routeOk) {
+                log(`[FMS Skypec Live] Bỏ monitor đổi tàu ${oldAcReg}/${flight.flight_no}: route không hợp lệ "${oldFlight.route}"`);
+              } else {
+              let monitorType = null;
               if (oldRoute === 'HAN-HAN') {
                 monitorType = 'TECHNICAL_HAN';
               } else if (isDomesticRoute(oldRoute)) {
+                // Đổi tàu sau nạp nội địa → bám có bay QT không
                 monitorType = 'DOMESTIC_TO_INTL';
-              } else {
+              } else if (isDepartingIntlRoute(oldRoute) || (!isDomesticRoute(oldRoute) && oldRoute.includes('-'))) {
+                // Đổi tàu sau nạp QT (HAN-ICN…) → bám có bay nội địa không
                 monitorType = 'INTL_TO_DOMESTIC';
               }
 
               const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
-              const exists = await db.get(
-                "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ?",
-                oldAcReg, flight.date, cleanFltNo
+              // Đã có NKT cùng tàu/ngày/kg → không tạo thêm dòng Q.tế→N.địa trùng
+              const hasTechSame = await db.get(
+                `SELECT id FROM fms_temp_import_exports
+                 WHERE UPPER(TRIM(ac_reg)) = ? AND date = ? AND monitor_type = 'TECHNICAL_HAN'
+                   AND is_warned < 2 AND ABS(COALESCE(fuel_order,0) - ?) < 2`,
+                oldAcReg, flight.date, oldFuelOrder
               );
+              if (hasTechSame && monitorType !== 'TECHNICAL_HAN') {
+                log(`[FMS Skypec Live] Bỏ monitor ${monitorType} ${oldAcReg}: đã có TECHNICAL_HAN cùng ngày/kg.`);
+                monitorType = null;
+              }
 
-              if (!exists) {
+              const exists = monitorType
+                ? await db.get(
+                    "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ?",
+                    oldAcReg, flight.date, cleanFltNo
+                  )
+                : { id: 1 };
+
+              if (monitorType && !exists) {
                 log(`[FMS Skypec Live] Phát hiện đổi tàu chéo: Tàu ${oldAcReg} đã nạp ${oldFuelOrder} kg dầu cho chuyến ${cleanFltNo} (${oldRoute}) nhưng bị đổi. Kiểu giám sát: ${monitorType}`);
                 await db.run(`
                   INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
                   VALUES (?, ?, ?, ?, ?, ?, ?)
                 `, oldAcReg, cleanFltNo, oldRoute, oldFuelOrder, flight.date, monitorType, oldFlight.time_fuel || '-');
+              }
               }
             }
           }
