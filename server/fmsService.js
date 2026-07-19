@@ -387,6 +387,39 @@ function isDepartingIntlRoute(routeStr) {
   return VN_DOMESTIC_AIRPORTS.includes(origin) && !VN_DOMESTIC_AIRPORTS.includes(dest);
 }
 
+/** Chuẩn hóa số hiệu chuyến để so khớp (bỏ khoảng, gạch) */
+function normalizeFlightNoKey(fn) {
+  return String(fn || '').toUpperCase().replace(/[\s\-_.]/g, '');
+}
+
+/**
+ * Chỉ Vietnam Airlines (VN… / VN/BL…).
+ * Loại: 9G, VU, và mọi hãng khác (KE, OZ, CX, …).
+ */
+function isVnAirlineFlightNo(fn) {
+  const c = normalizeFlightNoKey(fn);
+  if (!c) return false;
+  if (c.startsWith('9G') || c.startsWith('VU')) return false;
+  // VN1806, VNBL6081, VN/BL6081 → sau normalize còn VN/BL hoặc VNBL
+  if (c.startsWith('VN/BL') || c.startsWith('VNBL')) return true;
+  return c.startsWith('VN');
+}
+
+/**
+ * Đủ điều kiện Cancel / bám sau Cancel:
+ * - Chuyến VN (VNA)
+ * - Chặng nội địa (không quốc tế)
+ */
+function isCancelScopeFlight(flightNo, routeStr) {
+  if (!isVnAirlineFlightNo(flightNo)) return false;
+  const route = String(routeStr || '').trim().toUpperCase();
+  if (!route || route === '-') return true; // chưa có route → vẫn cho (sẽ lọc khi có)
+  // Quốc tế (đi QT hoặc không phải 2 đầu nội địa) → không Cancel-track
+  if (isDepartingIntlRoute(route)) return false;
+  if (!isDomesticRoute(route) && route !== 'HAN-HAN') return false;
+  return true;
+}
+
 /**
  * Cảnh báo SAI TÊN HÃNG HÀNG KHÔNG:
  * - Lấy ký hiệu từ số chuyến (CA6116 → CA; CA 3 số / 4 số → tên khác nhau)
@@ -567,9 +600,13 @@ async function upsertVnaPresence(db, targetDate, vnaFmsFlights) {
   for (const f of vnaFmsFlights || []) {
     if (!f || !f.FLIGHTNO) continue;
     const fltNo = String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
+    // Chỉ snapshot chuyến VN (VNA) — bỏ 9G, VU, hãng ngoài
+    if (!isVnAirlineFlightNo(fltNo)) continue;
     const acReg = String(f.ACREG || f.ac_reg || '').trim().toUpperCase();
     if (!fltNo || !acReg || acReg === '-') continue;
     const route = `${f.DEP_AP_SCHED || ''}-${f.ARR_AP_SCHED || ''}`.toUpperCase() || '-';
+    // Không snapshot chuyến quốc tế cho Cancel
+    if (route !== '-' && !isCancelScopeFlight(fltNo, route)) continue;
     await db.run(
       `INSERT INTO fms_vna_presence (flight_no, date, ac_reg, route, last_seen_at)
        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -592,20 +629,30 @@ async function upsertVnaPresence(db, targetDate, vnaFmsFlights) {
  */
 async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
   try {
-    // Dọn 1 lần bản ghi Cancel sai (hãng ngoài / chưa từng có snapshot VNA) — flag settings
+    // Dọn Cancel ngoài phạm vi: không phải VN / 9G / VU / quốc tế (mỗi vòng an toàn)
     try {
-      const purged = await db.get("SELECT value FROM settings WHERE key = 'cancel_false_positive_purged_v1'");
-      if (!purged || purged.value !== '1') {
-        const del = await db.run(
-          `DELETE FROM fms_temp_import_exports WHERE monitor_type = 'CANCELLED_FUELED' AND is_warned = 0`
-        );
-        await db.run(
-          "INSERT OR REPLACE INTO settings (key, value) VALUES ('cancel_false_positive_purged_v1', '1')"
-        );
-        log(`[Cancel] Đã dọn ${del && del.changes ? del.changes : 0} bản ghi Cancel nhầm (trước khi có snapshot VNA).`);
+      const badRows = await db.all(
+        `SELECT id, old_flight_no, old_route FROM fms_temp_import_exports
+         WHERE monitor_type = 'CANCELLED_FUELED'`
+      );
+      let purgedBad = 0;
+      for (const r of badRows || []) {
+        if (!isCancelScopeFlight(r.old_flight_no, r.old_route)) {
+          await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', r.id);
+          purgedBad++;
+        }
       }
+      if (purgedBad > 0) {
+        log(`[Cancel] Đã xóa ${purgedBad} bản ghi Cancel ngoài phạm vi (chỉ giữ chuyến VN nội địa).`);
+      }
+      // Xóa presence không phải VN
+      await db.run(
+        `DELETE FROM fms_vna_presence WHERE date = ?
+           AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) NOT LIKE 'VN%'`,
+        targetDate
+      );
     } catch (purgeErr) {
-      console.error('[Cancel] Lỗi dọn false-positive:', purgeErr.message);
+      console.error('[Cancel] Lỗi dọn ngoài phạm vi:', purgeErr.message);
     }
 
     if (!vnaFmsFlights || vnaFmsFlights.length === 0) {
@@ -629,6 +676,7 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
         const fltNo = raw.replace(new RegExp(`_${targetDate}$`), '').toUpperCase().replace(/\s+/g, '');
         const acReg = String(o.ac_reg || '').trim().toUpperCase();
         if (!fltNo || !acReg) continue;
+        if (!isVnAirlineFlightNo(fltNo)) continue; // chỉ VN
         await db.run(
           `INSERT INTO fms_vna_presence (flight_no, date, ac_reg, route, last_seen_at)
            VALUES (?, ?, ?, '-', CURRENT_TIMESTAMP)
@@ -662,6 +710,9 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
       const snapAc = String(prev.ac_reg || '').trim().toUpperCase();
       if (!fltNo || !snapAc || snapAc === '-') continue;
 
+      // Chỉ VN nội địa — bỏ 9G, VU, quốc tế, hãng ngoài
+      if (!isCancelScopeFlight(fltNo, prev.route)) continue;
+
       // Còn trên VNA → không Cancel
       if (vnaSet.has(fltNo)) continue;
       checked++;
@@ -686,6 +737,13 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
       }
       const acReg = snapAc;
 
+      const route = (skypec && skypec.route
+        ? String(skypec.route).trim().toUpperCase()
+        : String(prev.route || '-').trim().toUpperCase()) || '-';
+
+      // Chặn quốc tế / không phải VN (route Skypec có thể rõ hơn snapshot)
+      if (!isCancelScopeFlight(fltNo, route)) continue;
+
       // Đã báo 1 lần
       const exists = await db.get(
         `SELECT id FROM fms_temp_import_exports
@@ -694,10 +752,6 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
         acReg, fltNo, targetDate
       );
       if (exists) continue;
-
-      const route = (skypec && skypec.route
-        ? String(skypec.route).trim().toUpperCase()
-        : String(prev.route || '-').trim().toUpperCase()) || '-';
       let timeFuel = skypec && skypec.time_fuel && skypec.time_fuel !== '-'
         ? String(skypec.time_fuel).trim()
         : '-';
@@ -1120,13 +1174,20 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       await checkTempImportExportAlerts(db, targetDate, fmsFlights);
 
       // Lọc các chuyến bay khớp với lịch trực của ngày này
+      // Rà soát chi tiết FMS VNA: chỉ chuyến VN (VNA). Bỏ 9G, VU, hãng ngoài.
       const matchedFlights = fmsFlights.filter(f => {
         if (!f.FLIGHTNO) return false;
         const cleanFltNo = f.FLIGHTNO.toUpperCase().replace(/\s+/g, '');
-        return flightNumbers.includes(cleanFltNo);
+        if (!flightNumbers.includes(cleanFltNo)) return false;
+        if (!isVnAirlineFlightNo(cleanFltNo)) return false;
+        const route = `${f.DEP_AP_SCHED || ''}-${f.ARR_AP_SCHED || ''}`.toUpperCase();
+        // Không quét chi tiết chuyến quốc tế cho pipeline Cancel/FO nội địa VNA (vẫn có thể có VN QT — user yêu cầu bỏ QT)
+        if (route && route !== '-' && isDepartingIntlRoute(route)) return false;
+        if (route && route !== '-' && !isDomesticRoute(route) && route !== 'HAN-HAN') return false;
+        return true;
       });
 
-      log(`[Ngày ${targetDate}] Tìm thấy ${matchedFlights.length} chuyến bay khớp trên FMS.`);
+      log(`[Ngày ${targetDate}] Khớp FMS VNA (chỉ VN nội địa): ${matchedFlights.length} chuyến (lịch gốc ${flightNumbers.length}, bỏ 9G/VU/QT).`);
       if (matchedFlights.length === 0) continue;
 
       // Map lịch trực theo flight_no để gắn cặp nạp vào cảnh báo hãng
@@ -2252,6 +2313,8 @@ module.exports = {
   getVietnamDateTimeStr,
   isDomesticRoute,
   isDepartingIntlRoute,
+  isVnAirlineFlightNo,
+  isCancelScopeFlight,
   checkAirlineNameMismatchAlerts,
   listAirlineMappings,
   detectCancelledFueledFlights
