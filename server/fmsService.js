@@ -1405,59 +1405,97 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
       }
 
       // ── Ứng viên chặng mới (VNA + presence + Skypec, ngày monitor + ngày kế) ──
-      const candidates = await collectNextFlightCandidates(db, track, fmsFlights, targetDate);
+      let candidates = await collectNextFlightCandidates(db, track, fmsFlights, targetDate);
       const preferIntl = mType === 'CANCELLED_FUELED' || mType === 'DOMESTIC_TO_INTL';
-      const next = findNextMonitorFlight(candidates, track, targetDate, {
-        requireAfterOldTime: true,
-        preferIntl
-      });
-      if (!next) continue;
 
-      // Verify Skypec khi có live (không chặn QT chỉ có trên VNA/presence)
-      try {
-        const vdList = [...new Set([next.fDate, track.date, targetDate].filter(Boolean))];
-        let liveRejected = false;
-        for (const vd of vdList) {
-          const liveCheck = await db.get(
-            `SELECT ac_reg, route, time_fuel, time_dep FROM fms_flights_live
-             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
-            vd,
-            String(next.fltNo).replace(/[\s\-_.]/g, '')
+      // Thử lần lượt ứng viên (bỏ cái fail verify, không skip cả monitor)
+      let next = null;
+      let decision = { action: 'wait' };
+      const tried = new Set();
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const cand = findNextMonitorFlight(candidates, track, targetDate, {
+          requireAfterOldTime: true,
+          preferIntl
+        });
+        if (!cand) break;
+        const tryKey = `${cand.fDate || ''}|${cand.fltNo}`;
+        if (tried.has(tryKey)) {
+          candidates = candidates.filter(
+            (f) => String(f.FLIGHTNO || '').toUpperCase().replace(/\s+/g, '') !== cand.fltNo
           );
-          if (!liveCheck || !liveCheck.ac_reg) continue;
-          if (!acRegsMatch(liveCheck.ac_reg, trackAcReg)) {
-            log(`[Giám sát] Bỏ next ${next.fltNo}: Skypec tàu ${liveCheck.ac_reg} ≠ ${trackAcReg}`);
-            liveRejected = true;
-            break;
-          }
-          if (liveCheck.route) {
-            const { origin, dest } = parseRouteEndpoints(liveCheck.route);
-            if (origin && dest) {
-              next.route = `${origin}-${dest}`;
-              next.isIntl = isDepartingIntlRoute(next.route);
-            }
-          }
-          // Cùng ngày monitor: chống gán ngược giờ
-          if (String(vd) === String(track.date)) {
-            const oldM = parseHhMmToMinutes(track.old_time);
-            const liveM = parseHhMmToMinutes(liveCheck.time_dep);
-            const liveMf = liveM != null ? liveM : parseHhMmToMinutes(liveCheck.time_fuel);
-            if (oldM != null && liveMf != null && liveMf < oldM) {
-              log(`[Giám sát] Bỏ next ${next.fltNo}: giờ Skypec ${liveMf}p < old ${oldM}p`);
+          continue;
+        }
+        tried.add(tryKey);
+
+        // Verify Skypec khi có live đầy đủ; QT chỉ có trên VNA/presence vẫn được
+        let liveRejected = false;
+        try {
+          const vdList = [...new Set([cand.fDate, track.date, targetDate].filter(Boolean))];
+          for (const vd of vdList) {
+            const liveCheck = await db.get(
+              `SELECT ac_reg, route, time_fuel, time_dep FROM fms_flights_live
+               WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
+              vd,
+              String(cand.fltNo).replace(/[\s\-_.]/g, '')
+            );
+            if (!liveCheck || !liveCheck.ac_reg) continue;
+            const liveAc = normalizeAcRegKey(liveCheck.ac_reg);
+            if (!acRegsMatch(liveCheck.ac_reg, trackAcReg)) {
+              // Số đăng ký Skypec quá ngắn ("622") → không tin, giữ ACREG từ VNA/presence
+              if (liveAc.length < 5) {
+                log(`[Giám sát] Skypec ac="${liveCheck.ac_reg}" mơ hồ cho ${cand.fltNo} — tin VNA/presence ${trackAcReg}`);
+                break;
+              }
+              log(`[Giám sát] Bỏ next ${cand.fltNo}: Skypec tàu ${liveCheck.ac_reg} ≠ ${trackAcReg}`);
               liveRejected = true;
               break;
             }
+            if (liveCheck.route) {
+              const { origin, dest } = parseRouteEndpoints(liveCheck.route);
+              if (origin && dest) {
+                cand.route = `${origin}-${dest}`;
+                cand.isIntl = isDepartingIntlRoute(cand.route);
+              }
+            }
+            if (String(vd) === String(track.date)) {
+              const oldM = parseHhMmToMinutes(track.old_time);
+              const liveM = parseHhMmToMinutes(liveCheck.time_dep);
+              const liveMf = liveM != null ? liveM : parseHhMmToMinutes(liveCheck.time_fuel);
+              if (oldM != null && liveMf != null && liveMf < oldM) {
+                log(`[Giám sát] Bỏ next ${cand.fltNo}: giờ Skypec ${liveMf}p < old ${oldM}p`);
+                liveRejected = true;
+                break;
+              }
+            }
+            break;
           }
-          break;
+        } catch (verErr) {
+          console.error('[Giám sát] Lỗi verify next:', verErr.message);
         }
-        if (liveRejected) continue;
-      } catch (verErr) {
-        console.error('[Giám sát] Lỗi verify next:', verErr.message);
+
+        if (liveRejected) {
+          candidates = candidates.filter(
+            (f) => String(f.FLIGHTNO || '').toUpperCase().replace(/\s+/g, '') !== cand.fltNo
+          );
+          continue;
+        }
+
+        const dec = decideMonitorAction(track, cand);
+        if (dec.action === 'wait') {
+          // Ứng viên không khớp loại (vd Cancel gặp ND) → đóng an toàn đã handle trong decide;
+          // nếu wait thật (route lạ) bỏ và thử tiếp
+          candidates = candidates.filter(
+            (f) => String(f.FLIGHTNO || '').toUpperCase().replace(/\s+/g, '') !== cand.fltNo
+          );
+          continue;
+        }
+
+        next = cand;
+        decision = dec;
+        break;
       }
 
-      // ── Quyết định theo ma trận loại (không if-else lẫn) ─────────────────
-      const decision = decideMonitorAction(track, next);
-      if (decision.action === 'wait') continue;
+      if (!next || decision.action === 'wait') continue;
 
       if (decision.action === 'close') {
         log(`[Giám sát] Đóng #${track.id} ${mType} ${trackAcReg}: ${decision.kind} → ${next.fltNo} (${next.route})`);
