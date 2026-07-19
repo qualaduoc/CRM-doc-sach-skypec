@@ -617,18 +617,19 @@ function extractFmsFlightTimeMinutes(f) {
 /**
  * Chuyến tiếp hợp lệ để bám (Cancel / Kỹ thuật HAN / đổi tàu…):
  * - Cùng tàu, khác chuyến gốc
- * - Bỏ chặng về KIX-HAN, KHH-HAN, DAD-HAN, SIN-HAN, HAN-HAN…
- * - Chỉ chặng ĐI từ HAN (HAN-xxx) — QT: HAN-SIN; nội địa: HAN-DAD
- * - Mặc định: cùng ngày thì giờ chặng mới ≥ old_time (tránh gán nhầm chuyến đã bay trước)
+ * - Bỏ chặng về (*-HAN), HAN-HAN; chỉ chặng ĐI từ HAN
+ * - Cùng ngày monitor: giờ ≥ old_time (chống gán ngược VN837 trước VN7063)
+ * - Ngày SAU monitor: mọi giờ đều “sau” (bám tái xuất qua đêm — case VN1806 → QT ngày kế)
+ * - Mỗi flight có thể mang _date (ngày FMS); mặc định = scanDate
  */
 function findNextMonitorFlight(fmsFlights, track, scanDate, opts = {}) {
-  // Mặc định BẮT BUỘC sau giờ nạp/chuyến cũ — tránh VN837 (15:28) gán sau VN7063 (19:55)
   const requireAfterOldTime = opts.requireAfterOldTime !== false;
+  const preferIntl = !!opts.preferIntl;
   const trackAc = normalizeAcRegKey(track.ac_reg);
   const oldFlt = String(track.old_flight_no || '').toUpperCase().replace(/\s+/g, '');
   const oldMins = parseHhMmToMinutes(track.old_time);
   const trackDate = String(track.date || '').trim();
-  const scan = String(scanDate || '').trim();
+  const defaultScan = String(scanDate || '').trim();
 
   const scored = [];
   for (const f of fmsFlights || []) {
@@ -637,48 +638,220 @@ function findNextMonitorFlight(fmsFlights, track, scanDate, opts = {}) {
 
     const fltNo = String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
     if (!fltNo || fltNo === oldFlt) continue;
-    // Bỏ chuyến kỹ thuật / NKT làm "chặng mới"
     if (/NKT|HANHAN/i.test(fltNo) || fltNo === 'VNNKT') continue;
 
     const dep = normalizeAirportCode(f.DEP_AP_SCHED || f.DEP || '');
     const arr = normalizeAirportCode(f.ARR_AP_SCHED || f.ARR || '');
     const route = dep && arr ? `${dep}-${arr}` : '';
     if (!route || route === '-' || route === 'HAN-HAN') continue;
-
-    // Bỏ chặng về (*-HAN) — KIX-HAN, KHH-HAN, DAD-HAN, FRA-HAN…
     if (isReturnLegToHan(route)) continue;
-
-    // Chỉ chặng đi từ HAN ra ngoài
     if (!isOutboundFromHan(route)) continue;
 
     const intl = isDepartingIntlRoute(route);
     const domesticOut = isDomesticRoute(route);
-
-    // TECHNICAL / Cancel: QT hoặc nội địa đi đều được xét; bỏ route lạ
     if (!intl && !domesticOut) continue;
 
+    const fDate = String(f._date || f.date || f.FMS_DATE || defaultScan || '').trim();
+    if (trackDate && fDate && fDate < trackDate) continue;
+
     const ft = extractFmsFlightTimeMinutes(f);
-    // Cùng ngày: chặng mới phải SAU giờ nạp/chuyến cũ (bắt buộc có giờ nếu biết old_time)
-    if (requireAfterOldTime && trackDate && scan && scan === trackDate && oldMins != null) {
+    // Cùng ngày với monitor: bắt buộc sau giờ nạp
+    if (requireAfterOldTime && trackDate && fDate && fDate === trackDate && oldMins != null) {
       if (ft == null) continue;
       if (ft < oldMins) continue;
     }
-    if (trackDate && scan && scan < trackDate) continue;
+    // fDate > trackDate → ngày sau: OK (không so giờ)
 
-    scored.push({ f, route, fltNo, ft, intl });
+    scored.push({ f, route, fltNo, ft, intl, fDate });
   }
 
   if (!scored.length) return null;
-  // Ưu tiên QT (HAN-SIN…), rồi giờ sớm nhất (trong số đã lọc ≥ old_time)
   scored.sort((a, b) => {
-    if (a.intl !== b.intl) return a.intl ? -1 : 1;
+    // Ưu tiên ngày sớm hơn (gần sau sự kiện), rồi QT nếu prefer, rồi giờ
+    if (a.fDate && b.fDate && a.fDate !== b.fDate) return a.fDate < b.fDate ? -1 : 1;
+    if (preferIntl && a.intl !== b.intl) return a.intl ? -1 : 1;
     if (a.ft != null && b.ft != null) return a.ft - b.ft;
     if (a.ft != null) return -1;
     if (b.ft != null) return 1;
     return String(a.fltNo).localeCompare(String(b.fltNo));
   });
   const best = scored[0];
-  return { flight: best.f, route: best.route, fltNo: best.fltNo, isIntl: best.intl };
+  return {
+    flight: best.f,
+    route: best.route,
+    fltNo: best.fltNo,
+    isIntl: best.intl,
+    fDate: best.fDate
+  };
+}
+
+/**
+ * === MA TRẬN GIÁM SÁT (tách bạch, không lẫn) ===
+ *
+ * CANCELLED_FUELED  | Tạo: VN ND + kg>0 + mất VNA + ≥40p
+ *                   | Bám: tàu bay QT sau cancel → CẢNH BÁO tái xuất
+ *                   | Đóng: tàu bay ND đi sau → an toàn (dùng dầu ND)
+ *
+ * DOMESTIC_TO_INTL  | Tạo: đổi tàu sau nạp ND
+ *                   | Bám: tàu CŨ bay QT sau nạp → CẢNH BÁO
+ *                   | Đóng: tàu CŨ bay ND đi sau → an toàn
+ *
+ * INTL_TO_DOMESTIC  | Tạo: đổi tàu sau nạp QT
+ *                   | Bám: tàu CŨ bay ND sau nạp → CẢNH BÁO
+ *                   | Đóng: tàu CŨ bay QT tiếp → không phải case ND
+ *
+ * TECHNICAL_HAN     | Tạo: nạp HAN-HAN kg>0
+ *                   | Bám: tàu bay ND hoặc QT sau nạp → CẢNH BÁO (cả hai)
+ */
+function decideMonitorAction(track, next) {
+  if (!track || !next) return { action: 'wait' };
+  const type = String(track.monitor_type || '');
+  const route = String(next.route || '');
+  const isIntl = !!(next.isIntl || isDepartingIntlRoute(route));
+  const isDom =
+    isDomesticRoute(route) && isOutboundFromHan(route) && !isReturnLegToHan(route);
+
+  if (type === 'CANCELLED_FUELED') {
+    if (isIntl) return { action: 'warn', kind: 'cancel_reexport_intl' };
+    if (isDom) return { action: 'close', kind: 'cancel_used_domestic' };
+    return { action: 'wait' };
+  }
+  if (type === 'DOMESTIC_TO_INTL') {
+    if (isIntl) return { action: 'warn', kind: 'dom_to_intl' };
+    if (isDom) return { action: 'close', kind: 'dom_change_used_domestic' };
+    return { action: 'wait' };
+  }
+  if (type === 'INTL_TO_DOMESTIC') {
+    if (isDom) return { action: 'warn', kind: 'intl_to_dom' };
+    if (isIntl) return { action: 'close', kind: 'intl_still_intl' };
+    return { action: 'wait' };
+  }
+  if (type === 'TECHNICAL_HAN') {
+    if (isIntl) return { action: 'warn', kind: 'tech_intl' };
+    if (isDom) return { action: 'warn', kind: 'tech_domestic' };
+    return { action: 'wait' };
+  }
+  return { action: 'wait' };
+}
+
+function buildMonitorWarningMessage(track, next, kind) {
+  const ac = String(track.ac_reg || '').trim().toUpperCase();
+  const kg = parseInt(track.fuel_order, 10) || 0;
+  const kgStr = kg.toLocaleString('vi-VN');
+  const oldFlt = track.old_flight_no;
+  const oldRoute = track.old_route;
+  const oldTime = track.old_time;
+  const newFlt = next.fltNo;
+  const newRoute = next.route;
+  const now = getVietnamDateTimeStr();
+
+  if (kind === 'cancel_reexport_intl') {
+    return `⚠️ [CẢNH BÁO TÁI XUẤT – SAU CANCEL]
+Tàu ${ac} đã nạp ${kgStr} kg cho chuyến ${oldFlt} (${oldRoute} lúc ${oldTime}) — chuyến đã Cancel trên FMS VNA.
+🔄 Hiện được phân công bay Quốc tế: ${newFlt} (${newRoute})
+Yêu cầu Điều hành & thống kê kiểm tra ngay!
+📢 Giờ cảnh báo: ${now}`;
+  }
+  if (kind === 'dom_to_intl') {
+    return `⚠️ [CẢNH BÁO N.ĐỊA → Q.TẾ]
+Tàu ${ac} đã nạp ${kgStr} kg dầu nội địa cho ${oldFlt} (${oldRoute} lúc ${oldTime}) nhưng đổi tàu.
+🔄 Hiện tàu được phân công bay Quốc tế: ${newFlt} (${newRoute})
+Yêu cầu Điều hành & thống kê kiểm tra ngay!
+📢 Giờ cảnh báo: ${now}`;
+  }
+  if (kind === 'intl_to_dom') {
+    return `⚠️ [CẢNH BÁO Q.TẾ → N.ĐỊA]
+Tàu ${ac} đã nạp ${kgStr} kg dầu Quốc tế cho ${oldFlt} (${oldRoute} lúc ${oldTime}).
+🔄 Hiện xếp bay Nội địa: ${newFlt} (${newRoute})
+📢 Giờ cảnh báo: ${now}`;
+  }
+  if (kind === 'tech_intl') {
+    return `⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
+Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật Han-Han cho chuyến bay Quốc Tế.
+✈️ Tàu bay: ${ac}
+⛽ Đã nạp kỹ thuật HAN-HAN: ${kgStr} kg (Chuyến cũ: ${oldFlt} lúc ${oldTime})
+🔄 Quốc tế: ${newFlt} (${newRoute})
+📢 Giờ cảnh báo: ${now}`;
+  }
+  if (kind === 'tech_domestic') {
+    return `⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
+Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật cho chuyến bay nội địa.
+✈️ Tàu bay: ${ac}
+⛽ Đã nạp kỹ thuật HAN-HAN: ${kgStr} kg (Chuyến cũ: ${oldFlt} lúc ${oldTime})
+🔄 Nội địa: ${newFlt} (${newRoute})
+📢 Giờ cảnh báo: ${now}`;
+  }
+  return '';
+}
+
+/** Gom ứng viên chặng mới: VNA payload + presence + Skypec live (ngày monitor + ngày kế + ngày quét) */
+async function collectNextFlightCandidates(db, track, vnaFlights, scanDate) {
+  const out = [];
+  const seen = new Set();
+  const push = (f) => {
+    if (!f || !f.FLIGHTNO || !f.ACREG) return;
+    const key = `${String(f._date || '')}|${String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '')}|${normalizeAcRegKey(f.ACREG)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(f);
+  };
+
+  const trackDate = String(track.date || '').trim();
+  const nextDate = trackDate ? addDaysYmdStr(trackDate, 1) : '';
+  const today = getVietnamDbDateStr();
+  const dates = [...new Set([trackDate, nextDate, scanDate, today].filter(Boolean))];
+
+  for (const f of vnaFlights || []) {
+    push({
+      ...f,
+      _date: f._date || f.date || scanDate
+    });
+  }
+
+  for (const d of dates) {
+    try {
+      const pres = await db.all(
+        `SELECT flight_no, ac_reg, route FROM fms_vna_presence WHERE date = ?`,
+        d
+      );
+      for (const r of pres || []) {
+        if (!acRegsMatch(r.ac_reg, track.ac_reg)) continue;
+        const { origin, dest } = parseRouteEndpoints(r.route);
+        if (!origin || !dest) continue;
+        push({
+          FLIGHTNO: r.flight_no,
+          ACREG: r.ac_reg,
+          DEP_AP_SCHED: origin,
+          ARR_AP_SCHED: dest,
+          _date: d
+        });
+      }
+    } catch (_) { /* presence table optional */ }
+
+    try {
+      const lives = await db.all(
+        `SELECT flight_no, ac_reg, route, time_dep, time_fuel FROM fms_flights_live WHERE date = ?`,
+        d
+      );
+      for (const r of lives || []) {
+        if (!acRegsMatch(r.ac_reg, track.ac_reg)) continue;
+        const { origin, dest } = parseRouteEndpoints(r.route);
+        if (!origin || !dest) continue;
+        push({
+          FLIGHTNO: r.flight_no,
+          ACREG: r.ac_reg,
+          DEP_AP_SCHED: origin,
+          ARR_AP_SCHED: dest,
+          STD: r.time_dep,
+          time_dep: r.time_dep,
+          time_fuel: r.time_fuel,
+          _date: d
+        });
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  return out;
 }
 
 /** Alias Cancel */
@@ -1100,65 +1273,42 @@ Tàu ${acReg} đã được đưa vào theo dõi Tái xuất.
   }
 }
 
-// Kiểm tra cảnh báo Tạm nhập - Tái xuất tàu bay
+// Kiểm tra cảnh báo Tạm nhập - Tái xuất tàu bay (logic tách theo loại — không lẫn)
 async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
   try {
     const todayDb = getVietnamDbDateStr();
     const durationSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_duration'");
     const durationVal = durationSetting ? durationSetting.value : '24h';
 
-    // 0. Xóa "Chặng bay mới" nhầm (chặng về KIX-HAN / KHH-HAN / DAD-HAN…) trên mọi monitor chưa đóng hẳn
+    // ── 0. Dọn gán "chặng mới" sai hình học / sai loại ──────────────────────
     try {
       const dirty = await db.all(
-        `SELECT id, monitor_type, new_route, new_flight_no, is_warned FROM fms_temp_import_exports
+        `SELECT id, monitor_type, new_route, new_flight_no, old_time, old_flight_no, date, ac_reg, is_warned
+         FROM fms_temp_import_exports
          WHERE is_warned < 2 AND new_route IS NOT NULL AND TRIM(new_route) != '' AND TRIM(new_route) != '-'`
       );
       let cleared = 0;
       for (const r of dirty || []) {
         const nr = String(r.new_route || '').toUpperCase().replace(/\s+/g, '');
-        if (isReturnLegToHan(nr) || !isOutboundFromHan(nr) || nr === 'HAN-HAN') {
-          await db.run(
-            `UPDATE fms_temp_import_exports
-             SET is_warned = 0, new_flight_no = NULL, new_route = NULL, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            r.id
-          );
-          cleared++;
-        }
-      }
-      if (cleared > 0) {
-        log(`[Giám sát] Đã xóa ${cleared} chặng bay mới nhầm (chặng về / không phải HAN-đi).`);
-      }
-
-      // Xóa "chặng mới" gán ngược thời gian hoặc DOMESTIC_TO_INTL gán nhầm chặng nội địa (HAN-SAI → HAN-SGN)
-      const assigned = await db.all(
-        `SELECT id, monitor_type, old_time, old_flight_no, new_flight_no, new_route, date, ac_reg, is_warned
-         FROM fms_temp_import_exports
-         WHERE is_warned < 2 AND new_flight_no IS NOT NULL AND TRIM(new_flight_no) != ''`
-      );
-      let clearedBadNext = 0;
-      for (const r of assigned || []) {
-        let bad = false;
-        const nr = String(r.new_route || '').toUpperCase().replace(/\s+/g, '');
-        // N.địa→Q.tế nhưng "chặng mới" thực ra nội địa (SAI alias SGN)
-        if (r.monitor_type === 'DOMESTIC_TO_INTL' && nr && isDomesticRoute(nr) && !isDepartingIntlRoute(nr)) {
+        let bad = isReturnLegToHan(nr) || !isOutboundFromHan(nr) || nr === 'HAN-HAN';
+        // N.địa→Q.tế không được gán chặng ND (HAN-SAI…)
+        if (!bad && r.monitor_type === 'DOMESTIC_TO_INTL' && isDomesticRoute(nr) && !isDepartingIntlRoute(nr)) {
           bad = true;
         }
-        // So giờ Skypec: chặng mới < old_time → gán ngược
-        if (!bad && r.old_time && r.new_flight_no) {
+        // Cancel / N.địa→Q.tế: không gán chặng mới nếu thực ra là ND khi type đòi QT — đã cover ở decide
+        if (!bad && r.old_time && r.new_flight_no && r.date) {
           const oldM = parseHhMmToMinutes(r.old_time);
           const live = await db.get(
-            `SELECT time_fuel, time_dep, ac_reg, route FROM fms_flights_live
-             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ?
-             LIMIT 1`,
+            `SELECT time_fuel, time_dep, ac_reg FROM fms_flights_live
+             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
             r.date,
             String(r.new_flight_no).replace(/[\s\-_.]/g, '')
           );
           if (live) {
             if (!acRegsMatch(live.ac_reg, r.ac_reg)) bad = true;
-            const liveM = parseHhMmToMinutes(live.time_dep);
-            const liveMf = liveM != null ? liveM : parseHhMmToMinutes(live.time_fuel);
-            if (oldM != null && liveMf != null && liveMf < oldM) bad = true;
+            const liveMf = parseHhMmToMinutes(live.time_dep);
+            const liveM = liveMf != null ? liveMf : parseHhMmToMinutes(live.time_fuel);
+            if (oldM != null && liveM != null && liveM < oldM) bad = true;
           }
         }
         if (bad) {
@@ -1168,211 +1318,167 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
              WHERE id = ?`,
             r.id
           );
-          clearedBadNext++;
-          log(`[Giám sát] Gỡ chặng mới sai ${r.ac_reg}: ${r.old_flight_no} → ${r.new_flight_no} (${r.new_route})`);
+          cleared++;
         }
       }
-      if (clearedBadNext > 0) {
-        log(`[Giám sát] Đã gỡ ${clearedBadNext} chặng bay mới gán ngược/sai loại.`);
-      }
-
-      // Cancel đóng nhầm bằng chặng về → mở lại
-      const closedCancels = await db.all(
-        `SELECT id, new_route FROM fms_temp_import_exports
-         WHERE monitor_type = 'CANCELLED_FUELED' AND is_warned = 2`
-      );
-      let reopened = 0;
-      for (const r of closedCancels || []) {
-        const nr = String(r.new_route || '').toUpperCase().replace(/\s+/g, '');
-        if (!nr || isReturnLegToHan(nr) || !isOutboundFromHan(nr)) {
-          await db.run(
-            `UPDATE fms_temp_import_exports
-             SET is_warned = 0, new_flight_no = NULL, new_route = NULL, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            r.id
-          );
-          reopened++;
-        }
-      }
-      if (reopened > 0) {
-        log(`[Cancel] Đã mở lại ${reopened} monitor đóng nhầm (chặng về).`);
-      }
+      if (cleared > 0) log(`[Giám sát] Gỡ ${cleared} chặng mới sai (hình học / ngược giờ / sai loại).`);
     } catch (reErr) {
-      console.error('[Giám sát] Lỗi dọn chặng về:', reErr.message);
+      console.error('[Giám sát] Lỗi dọn chặng mới:', reErr.message);
     }
 
-    // 1. Auto-đóng monitor cũ theo cấu hình 24h / Luôn luôn
-    // - always: không auto-đóng theo ngày (giữ đến nội địa / user xác nhận)
-    // - 24h: đóng các monitor thương mại cũ; giữ TECHNICAL_HAN + CANCELLED_FUELED mở
+    // ── 1. Auto-đóng monitor thương mại quá hạn (giữ Cancel + NKT mở đến khi resolve) ──
     if (durationVal !== 'always') {
+      const closeBefore = addDaysYmdStr(todayDb, -1); // giữ hôm qua cho đổi tàu
       await db.run(
-        `UPDATE fms_temp_import_exports SET is_warned = 2
+        `UPDATE fms_temp_import_exports SET is_warned = 2, updated_at = CURRENT_TIMESTAMP
          WHERE is_warned = 0 AND date < ?
            AND monitor_type NOT IN ('TECHNICAL_HAN', 'CANCELLED_FUELED')`,
-        todayDb
+        closeBefore
+      );
+      // Cancel / NKT mở quá 2 ngày → đóng
+      const cancelExpire = addDaysYmdStr(todayDb, -2);
+      await db.run(
+        `UPDATE fms_temp_import_exports SET is_warned = 2, updated_at = CURRENT_TIMESTAMP
+         WHERE is_warned = 0 AND date < ?
+           AND monitor_type IN ('TECHNICAL_HAN', 'CANCELLED_FUELED')`,
+        cancelExpire
       );
     }
 
-    // 2. Chỉ bám bản ghi trong cửa sổ ngày (và >= epoch 19/07) — không quét NKT tháng cũ
-    const watchDates = getCancelWatchDates();
+    // ── 2. Cửa sổ bám: hôm nay + hôm qua (≥ epoch) — KHÔNG cắt Cancel sau 07:30 ──
+    // (Lỗi cũ: date IN getCancelWatchDates() → mất VN1806 ngày 19 khi sang 20)
+    let keepFrom = addDaysYmdStr(todayDb, -1);
+    if (keepFrom < MONITOR_EPOCH_DATE) keepFrom = MONITOR_EPOCH_DATE;
     const trackingRows = await db.all(
       `SELECT * FROM fms_temp_import_exports
-       WHERE is_warned = 0
-         AND date >= ?
-         AND date IN (${watchDates.map(() => '?').join(',') || '?'})`,
+       WHERE is_warned = 0 AND date >= ? AND date >= ?
+       ORDER BY id`,
       MONITOR_EPOCH_DATE,
-      ...(watchDates.length ? watchDates : [todayDb])
+      keepFrom
     );
-    
-    if (trackingRows.length === 0) return;
+    if (!trackingRows.length) return;
 
     const { isSkyOneEnabled, targetGroupId } = await getImportExportNotifyTargets(db);
 
+    // Tập chuyến VNA hiện tại (để self-heal Cancel)
+    const vnaFltSet = new Set();
+    for (const f of fmsFlights || []) {
+      if (f && f.FLIGHTNO) vnaFltSet.add(String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, ''));
+    }
+
     for (const track of trackingRows) {
-      const trackAcReg = String(track.ac_reg).trim().toUpperCase();
+      const trackAcReg = String(track.ac_reg || '').trim().toUpperCase();
       const oldFlt = String(track.old_flight_no || '').toUpperCase().replace(/\s+/g, '');
-      // Chỉ bám chuyến VN — dọn luôn nếu lọt VU/9G/hãng QT
-      if (!isVnAirlineFlightNo(oldFlt)) {
+      const mType = String(track.monitor_type || '');
+
+      // Chỉ VN (NKT synthetic VNNKT vẫn startsWith VN)
+      if (oldFlt && !isVnAirlineFlightNo(oldFlt) && mType !== 'TECHNICAL_HAN') {
         await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', track.id);
         continue;
       }
 
-      let shouldWarn = false;
-      let closeOnly = false;
-      let warningMsg = '';
-      let newFltNo = '';
-      let newRoute = '';
+      // ── Self-heal theo loại (không lẫn) ──────────────────────────────────
+      if (mType === 'CANCELLED_FUELED') {
+        // Chỉ khi đang quét đúng ngày monitor: chuyến cũ quay lại VNA → Cancel giả
+        // (không dùng list ngày khác — VN1806 ngày 20 trên tàu khác ≠ hủy ngày 19)
+        if (String(targetDate) === String(track.date) && vnaFltSet.has(oldFlt)) {
+          log(`[Cancel] Self-heal: ${oldFlt} đã có lại trên VNA ngày ${track.date} → xóa #${track.id}`);
+          await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', track.id);
+          continue;
+        }
+      }
+      if (mType === 'DOMESTIC_TO_INTL' || mType === 'INTL_TO_DOMESTIC') {
+        // Chuyến cũ vẫn gắn đúng tàu đang bám → không còn “đổi tàu”
+        try {
+          const liveOld = await db.get(
+            `SELECT ac_reg FROM fms_flights_live
+             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
+            track.date,
+            oldFlt.replace(/[\s\-_.]/g, '')
+          );
+          if (liveOld && liveOld.ac_reg && acRegsMatch(liveOld.ac_reg, trackAcReg)) {
+            log(`[Giám sát] Self-heal đổi tàu: ${oldFlt} vẫn tàu ${liveOld.ac_reg} → xóa #${track.id}`);
+            await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', track.id);
+            continue;
+          }
+        } catch (_) { /* ignore */ }
+      }
 
-      // Mọi loại giám sát: cùng rule next — chỉ HAN-đi, bỏ chặng về, SAU giờ nạp (tránh gán ngược)
-      const next = findNextMonitorFlight(fmsFlights, track, targetDate, {
-        requireAfterOldTime: true
+      // ── Ứng viên chặng mới (VNA + presence + Skypec, ngày monitor + ngày kế) ──
+      const candidates = await collectNextFlightCandidates(db, track, fmsFlights, targetDate);
+      const preferIntl = mType === 'CANCELLED_FUELED' || mType === 'DOMESTIC_TO_INTL';
+      const next = findNextMonitorFlight(candidates, track, targetDate, {
+        requireAfterOldTime: true,
+        preferIntl
       });
       if (!next) continue;
 
-      // Xác minh lại với Skypec live: cùng ngày (hoặc ngày scan), flight_no + ac_reg phải khớp
-      // (tránh FMS VNA gán nhầm tàu → hiện VN7051/VNA358 thành “chặng mới” của VNA613)
+      // Verify Skypec khi có live (không chặn QT chỉ có trên VNA/presence)
       try {
-        const verifyDates = [targetDate, track.date].filter(Boolean);
-        let acOk = false;
+        const vdList = [...new Set([next.fDate, track.date, targetDate].filter(Boolean))];
         let liveRejected = false;
-        for (const vd of verifyDates) {
+        for (const vd of vdList) {
           const liveCheck = await db.get(
             `SELECT ac_reg, route, time_fuel, time_dep FROM fms_flights_live
-             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ?
-             LIMIT 1`,
+             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
             vd,
             String(next.fltNo).replace(/[\s\-_.]/g, '')
           );
-          if (liveCheck && liveCheck.ac_reg) {
-            if (acRegsMatch(liveCheck.ac_reg, trackAcReg)) {
-              acOk = true;
-              if (liveCheck.route) {
-                const { origin, dest } = parseRouteEndpoints(liveCheck.route);
-                next.route = origin && dest ? `${origin}-${dest}` : String(liveCheck.route).toUpperCase().replace(/\s+/g, '');
-                next.isIntl = isDepartingIntlRoute(next.route);
-              }
-              // Skypec: chặng “mới” phải sau giờ nạp (chống gán ngược thời gian)
-              const oldM = parseHhMmToMinutes(track.old_time);
-              const liveM = parseHhMmToMinutes(liveCheck.time_dep) ?? parseHhMmToMinutes(liveCheck.time_fuel);
-              if (oldM != null && liveM != null && liveM < oldM && String(vd) === String(track.date || targetDate)) {
-                log(`[Giám sát] Bỏ next ${next.fltNo}: Skypec ${liveM}p < old_time ${oldM}p (gán ngược).`);
-                acOk = false;
-                liveRejected = true;
-              }
-              break;
-            }
-            // Skypec có chuyến nhưng KHÁC tàu → không nhận (vd "601" ≠ "VNA601")
-            log(`[Giám sát] Bỏ next ${next.fltNo}: Skypec tàu ${liveCheck.ac_reg} ≠ monitor ${trackAcReg}`);
-            acOk = false;
+          if (!liveCheck || !liveCheck.ac_reg) continue;
+          if (!acRegsMatch(liveCheck.ac_reg, trackAcReg)) {
+            log(`[Giám sát] Bỏ next ${next.fltNo}: Skypec tàu ${liveCheck.ac_reg} ≠ ${trackAcReg}`);
             liveRejected = true;
             break;
           }
+          if (liveCheck.route) {
+            const { origin, dest } = parseRouteEndpoints(liveCheck.route);
+            if (origin && dest) {
+              next.route = `${origin}-${dest}`;
+              next.isIntl = isDepartingIntlRoute(next.route);
+            }
+          }
+          // Cùng ngày monitor: chống gán ngược giờ
+          if (String(vd) === String(track.date)) {
+            const oldM = parseHhMmToMinutes(track.old_time);
+            const liveM = parseHhMmToMinutes(liveCheck.time_dep);
+            const liveMf = liveM != null ? liveM : parseHhMmToMinutes(liveCheck.time_fuel);
+            if (oldM != null && liveMf != null && liveMf < oldM) {
+              log(`[Giám sát] Bỏ next ${next.fltNo}: giờ Skypec ${liveMf}p < old ${oldM}p`);
+              liveRejected = true;
+              break;
+            }
+          }
+          break;
         }
         if (liveRejected) continue;
-        // Không có trên Skypec: vẫn tin VNA (ACREG đã khớp trong findNext) — nhưng TECHNICAL chỉ nhận nếu có live khớp
-        if (!acOk && track.monitor_type === 'TECHNICAL_HAN') {
-          // Nếu Skypec có bản ghi khác tàu → đã log; nếu không có live → vẫn cho qua VNA
-          const anyLive = await db.get(
-            `SELECT ac_reg FROM fms_flights_live
-             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
-            track.date || targetDate,
-            String(next.fltNo).replace(/[\s\-_.]/g, '')
-          );
-          if (anyLive && anyLive.ac_reg) {
-            continue; // có live nhưng khác tàu → skip
-          }
-        }
       } catch (verErr) {
-        console.error('[Giám sát] Lỗi verify next vs Skypec:', verErr.message);
+        console.error('[Giám sát] Lỗi verify next:', verErr.message);
       }
 
-      newFltNo = next.fltNo;
-      newRoute = next.route;
-      const isNextIntl = next.isIntl || isDepartingIntlRoute(newRoute);
-      const isNextDomesticOut =
-        isDomesticRoute(newRoute) && isOutboundFromHan(newRoute) && !isReturnLegToHan(newRoute);
+      // ── Quyết định theo ma trận loại (không if-else lẫn) ─────────────────
+      const decision = decideMonitorAction(track, next);
+      if (decision.action === 'wait') continue;
 
-      if (track.monitor_type === 'CANCELLED_FUELED') {
-        if (isNextIntl) {
-          shouldWarn = true;
-          warningMsg = `⚠️ [CẢNH BÁO TÁI XUẤT – SAU CANCEL]
-Tàu ${trackAcReg} đã nạp ${parseInt(track.fuel_order).toLocaleString()} kg cho chuyến ${track.old_flight_no} (${track.old_route} lúc ${track.old_time}) — chuyến đã Cancel trên FMS VNA.
-🔄 Hiện được phân công bay Quốc tế: ${newFltNo} (${newRoute})
-Yêu cầu Điều hành & thống kê kiểm tra ngay!
-📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-        } else if (isNextDomesticOut) {
-          closeOnly = true;
-          log(`[Cancel/Tái xuất] Tàu ${trackAcReg} chặng đi nội địa ${newFltNo} (${newRoute}) → đóng bám.`);
-        }
-      } else if (track.monitor_type === 'TECHNICAL_HAN') {
-        if (isNextIntl) {
-          shouldWarn = true;
-          warningMsg = `⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
-Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật Han-Han cho chuyến bay Quốc Tế.
-✈️ Tàu bay: ${trackAcReg}
-⛽ Đã nạp kỹ thuật chặng HAN-HAN: ${parseInt(track.fuel_order).toLocaleString()} kg (Chuyến cũ: ${track.old_flight_no} lúc ${track.old_time})
-🔄 Hiện được phân công bay chuyến Quốc tế: ${newFltNo} (${newRoute})
-📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-        } else if (isNextDomesticOut) {
-          shouldWarn = true;
-          warningMsg = `⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
-Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật cho chuyến bay nội địa.
-✈️ Tàu bay: ${trackAcReg}
-⛽ Đã nạp kỹ thuật chặng HAN-HAN: ${parseInt(track.fuel_order).toLocaleString()} kg (Chuyến cũ: ${track.old_flight_no} lúc ${track.old_time})
-🔄 Hiện được phân công bay chuyến Nội địa: ${newFltNo} (${newRoute})
-📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-        }
-      } else if (track.monitor_type === 'DOMESTIC_TO_INTL') {
-        if (isNextIntl) {
-          shouldWarn = true;
-          warningMsg = `⚠️ [CẢNH BÁO]
-Tàu bay ${trackAcReg} đã nạp ${parseInt(track.fuel_order).toLocaleString()} kg dầu cho chuyến bay nội địa ${track.old_flight_no} (${track.old_route} lúc ${track.old_time}) nhưng đổi tàu.
-Hiện tại, tàu ${trackAcReg} đang được phân công bay chuyến bay Quốc tế ${newFltNo} (${newRoute}).
-Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
-📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-        }
-      } else if (track.monitor_type === 'INTL_TO_DOMESTIC') {
-        if (isNextDomesticOut) {
-          shouldWarn = true;
-          warningMsg = `⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
-Điều hành chú ý: Sử dụng tàu đã nạp Quốc tế cho chuyến bay Nội địa.
-✈️ Tàu bay: ${trackAcReg}
-⛽ Đã nạp chặng Quốc tế: ${parseInt(track.fuel_order).toLocaleString()} kg (Chuyến cũ: ${track.old_flight_no} lúc ${track.old_time} chặng ${track.old_route})
-🔄 Hiện được phân công xếp bay chuyến Nội địa: ${newFltNo} (${newRoute})
-📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-        }
-      }
-
-      if (closeOnly) {
+      if (decision.action === 'close') {
+        log(`[Giám sát] Đóng #${track.id} ${mType} ${trackAcReg}: ${decision.kind} → ${next.fltNo} (${next.route})`);
         await db.run(
-          "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-          newFltNo, newRoute, track.id
+          `UPDATE fms_temp_import_exports
+           SET new_flight_no = ?, new_route = ?, is_warned = 2, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          next.fltNo, next.route, track.id
         );
-      } else if (shouldWarn && warningMsg) {
-        log(`[Cảnh báo Giám sát tàu] Tàu ${trackAcReg} (${track.monitor_type}) → ${newFltNo} (${newRoute})`);
+        continue;
+      }
+
+      if (decision.action === 'warn') {
+        const warningMsg = buildMonitorWarningMessage(track, next, decision.kind);
+        if (!warningMsg) continue;
+        log(`[Giám sát] Cảnh báo #${track.id} ${mType} ${trackAcReg} → ${next.fltNo} (${next.route}) [${decision.kind}]`);
         await db.run(
-          "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-          newFltNo, newRoute, track.id
+          `UPDATE fms_temp_import_exports
+           SET new_flight_no = ?, new_route = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          next.fltNo, next.route, track.id
         );
         sendImportExportZalo(targetGroupId, isSkyOneEnabled, warningMsg, `Giám sát ${trackAcReg}`);
       }
