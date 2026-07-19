@@ -991,49 +991,69 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               template = template.replace('{{flight_no}}', '{{flight_no}} - {{ac_reg}}');
             }
 
-            // 1. Phân giải tag Zalo trực tiếp cho lái xe và nhân viên nạp
-            const drName = sched && sched.driver_name ? sched.driver_name.toUpperCase().trim() : '';
-            const opName = sched && sched.operator_name ? sched.operator_name.toUpperCase().trim() : '';
-            
-            let driverCrewPart = drName || '-';
-            let operatorCrewPart = opName || '-';
-            
+            // 1. Phân giải tag Zalo TỪNG NGƯỜI (Lái xe / NV tra nạp) — không map cả cặp
+            const rawDr = sched && sched.driver_name ? String(sched.driver_name).trim() : '';
+            const rawOp = sched && sched.operator_name ? String(sched.operator_name).trim() : '';
+            const stripAccents = (s) => String(s || '')
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+              .toUpperCase().replace(/\s+/g, ' ').trim();
+            const drName = stripAccents(rawDr);
+            const opName = stripAccents(rawOp);
+
+            let driverCrewPart = rawDr || '-';
+            let operatorCrewPart = rawOp || '-';
             let driverMentionInfo = null;
             let operatorMentionInfo = null;
-            
+
             try {
               const dbMappings = await db.all('SELECT schedule_name, zalo_uid, zalo_name FROM zalo_user_mappings');
+              // Map theo tên đầy đủ (chuẩn hóa) — mỗi người 1 mapping
               const mappingMap = {};
               dbMappings.forEach(m => {
-                mappingMap[m.schedule_name.toUpperCase().trim()] = {
-                  uid: m.zalo_uid,
-                  name: m.zalo_name || m.schedule_name
-                };
+                const key = stripAccents(m.schedule_name);
+                if (key) {
+                  mappingMap[key] = {
+                    uid: m.zalo_uid,
+                    name: m.zalo_name || m.schedule_name
+                  };
+                }
               });
-              
-              if (drName && mappingMap[drName]) {
-                const mapInfo = mappingMap[drName];
-                driverCrewPart = `@${mapInfo.name}`;
-                driverMentionInfo = {
-                  uid: mapInfo.uid,
-                  tagLabel: `@${mapInfo.name}`
-                };
+
+              const resolveOne = (normKey, displayName) => {
+                if (!normKey || normKey === '-') return null;
+                if (mappingMap[normKey]) return mappingMap[normKey];
+                // Khớp mềm: mapping là họ-tên đầy đủ chứa key, hoặc ngược lại
+                for (const [k, v] of Object.entries(mappingMap)) {
+                  if (k.includes(normKey) || normKey.includes(k)) return v;
+                }
+                return null;
+              };
+
+              if (drName) {
+                const mapInfo = resolveOne(drName, rawDr);
+                if (mapInfo) {
+                  driverCrewPart = `@${mapInfo.name}`;
+                  driverMentionInfo = { uid: mapInfo.uid, tagLabel: `@${mapInfo.name}` };
+                }
               }
-              
-              if (opName && mappingMap[opName]) {
-                const mapInfo = mappingMap[opName];
-                operatorCrewPart = `@${mapInfo.name}`;
-                operatorMentionInfo = {
-                  uid: mapInfo.uid,
-                  tagLabel: `@${mapInfo.name}`
-                };
+              if (opName) {
+                const mapInfo = resolveOne(opName, rawOp);
+                if (mapInfo) {
+                  operatorCrewPart = `@${mapInfo.name}`;
+                  operatorMentionInfo = { uid: mapInfo.uid, tagLabel: `@${mapInfo.name}` };
+                }
               }
             } catch (mappingErr) {
               console.error('[Mapping Fetch Error]', mappingErr.message);
             }
-            
-            const crewInfoVal = (drName || opName)
-              ? (drName && opName ? `${driverCrewPart} - ${operatorCrewPart}` : (driverCrewPart || operatorCrewPart))
+
+            // Hiển thị tách role trong tin nhắn
+            const crewInfoVal = (rawDr || rawOp)
+              ? [
+                  rawDr ? `Lái: ${driverCrewPart}` : null,
+                  rawOp ? `NV: ${operatorCrewPart}` : null
+                ].filter(Boolean).join(' | ')
               : (sched ? (sched.crew_info || '-') : '-');
 
             const formatNumber = (val) => {

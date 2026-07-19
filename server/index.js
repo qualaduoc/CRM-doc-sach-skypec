@@ -2743,30 +2743,38 @@ app.get('/api/fms/zalo/unmapped-crews', authenticateToken, async (req, res) => {
     const pad = (n) => String(n).padStart(2, '0');
     const todayStr = `${vnDate.getUTCFullYear()}-${pad(vnDate.getUTCMonth() + 1)}-${pad(vnDate.getUTCDate())}`;
     
-    // Lấy lịch bay của ngày hôm nay
-    const schedules = await db.all("SELECT driver_name, operator_name FROM fms_schedules WHERE date = ?", todayStr);
-    
-    // Lấy tất cả tên độc nhất của nhân sự trực hôm nay
-    const activeCrews = new Set();
+    // Lấy lịch bay của ngày hôm nay — từng người (Lái / NV), không gộp cặp
+    const schedules = await db.all(
+      "SELECT driver_name, operator_name FROM fms_schedules WHERE date = ? OR fms_date = ?",
+      todayStr, todayStr
+    );
+
+    const activePeople = new Map(); // displayName upper -> { name, roles }
+    const addPerson = (name, role) => {
+      const raw = String(name || '').trim();
+      if (!raw || raw === '-' || raw === '---' || /^NAFSC$/i.test(raw)) return;
+      const key = raw.toUpperCase().trim();
+      if (!activePeople.has(key)) activePeople.set(key, { name: raw, roles: new Set() });
+      activePeople.get(key).roles.add(role);
+    };
     schedules.forEach(s => {
-      if (s.driver_name) activeCrews.add(s.driver_name.toUpperCase().trim());
-      if (s.operator_name) activeCrews.add(s.operator_name.toUpperCase().trim());
+      addPerson(s.driver_name, 'Lái xe');
+      addPerson(s.operator_name, 'NV tra nạp');
     });
-    
-    // Lấy danh sách mappings hiện tại
+
     const mappings = await db.all("SELECT schedule_name FROM zalo_user_mappings");
     const mappedNames = new Set(mappings.map(m => m.schedule_name.toUpperCase().trim()));
-    
-    // Lọc ra các nhân sự chưa được map
+
     const unmapped = [];
-    activeCrews.forEach(name => {
-      if (name && name !== '-' && !mappedNames.has(name)) {
-        unmapped.push(name);
+    activePeople.forEach((info, key) => {
+      if (!mappedNames.has(key)) {
+        const roles = [...info.roles].join('/');
+        unmapped.push(`${info.name} (${roles})`);
       }
     });
-    
-    unmapped.sort();
-    res.json({ success: true, unmapped: unmapped });
+
+    unmapped.sort((a, b) => a.localeCompare(b, 'vi'));
+    res.json({ success: true, unmapped });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

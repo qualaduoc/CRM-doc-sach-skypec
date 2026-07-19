@@ -381,14 +381,39 @@ async function buildScheduleCandidatesFromFlights(dutyDate, shift = 'day') {
 }
 
 async function resolveZaloUids(db, driverName, operatorName) {
+  // Map TỪNG người (Lái / NV) theo họ tên đầy đủ — không map cả chuỗi cặp
+  const strip = (s) => String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toUpperCase().replace(/\s+/g, ' ').trim();
+
+  let allMaps = [];
+  try {
+    allMaps = await db.all('SELECT schedule_name, zalo_uid FROM zalo_user_mappings');
+  } catch (_) {
+    return '';
+  }
+  const byKey = {};
+  allMaps.forEach(m => {
+    const k = strip(m.schedule_name);
+    if (k) byKey[k] = m.zalo_uid;
+  });
+
   const uids = [];
   for (const name of [driverName, operatorName]) {
-    if (!name || name === 'NAFSC') continue;
-    const row = await db.get(
-      'SELECT zalo_uid FROM zalo_user_mappings WHERE UPPER(schedule_name) = UPPER(?)',
-      name
-    ).catch(() => null);
-    if (row && row.zalo_uid) uids.push(row.zalo_uid);
+    if (!name || /^NAFSC$/i.test(name) || name === '-') continue;
+    const key = strip(name);
+    if (byKey[key]) {
+      uids.push(byKey[key]);
+      continue;
+    }
+    // khớp mềm họ-tên đầy đủ
+    for (const [k, uid] of Object.entries(byKey)) {
+      if (k.includes(key) || key.includes(k)) {
+        uids.push(uid);
+        break;
+      }
+    }
   }
   return [...new Set(uids)].join(',');
 }

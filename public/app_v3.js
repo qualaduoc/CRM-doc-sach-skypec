@@ -2244,31 +2244,36 @@ async function loadFmsSchedules(isSilent = false) {
   }
 }
 
-// Cập nhật danh sách cặp tra nạp vào Dropdown filter (admin và/hoặc user)
+// Cập nhật dropdown lọc theo người (Lái / NV) — value = tên đầy đủ 1 người
 function updateFmsCrewFilter(rows, selectId = 'fms-crew-filter') {
   const crewSelect = document.getElementById(selectId);
   if (!crewSelect) return;
 
-  // Lưu giữ giá trị đang chọn hiện tại để không bị mất trạng thái
   const currentVal = crewSelect.value;
+  const people = new Map(); // norm -> display name
 
-  // Lấy các giá trị cặp tra nạp duy nhất, không rỗng
-  const crews = [...new Set(rows.map(r => r.crew_info ? r.crew_info.trim() : '').filter(Boolean))].sort();
+  (rows || []).forEach(r => {
+    const { driver, operator } = parseCrewRoles(r);
+    [driver, operator].forEach(name => {
+      if (!name) return;
+      const k = normalizePersonName(name);
+      if (!k || k === '-') return;
+      if (!people.has(k)) people.set(k, name);
+    });
+  });
 
-  let html = '<option value="">-- Tất cả Cặp tra nạp --</option>';
-  crews.forEach(c => {
-    const selectedAttr = c === currentVal ? 'selected' : '';
-    const safe = String(c)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/"/g, '&quot;');
+  const sorted = [...people.entries()].sort((a, b) => a[1].localeCompare(b[1], 'vi'));
+  let html = '<option value="">-- Tất cả Lái xe / NV tra nạp --</option>';
+  sorted.forEach(([norm, display]) => {
+    const safe = escapeHtml(display);
+    const selectedAttr = display === currentVal || norm === normalizePersonName(currentVal) ? 'selected' : '';
     html += `<option value="${safe}" ${selectedAttr}>${safe}</option>`;
   });
 
   crewSelect.innerHTML = html;
-  // Khôi phục selection (trình duyệt decode entity trong value)
-  if (currentVal && crews.includes(currentVal)) {
-    crewSelect.value = currentVal;
+  if (currentVal) {
+    const match = sorted.find(([, d]) => d === currentVal || normalizePersonName(d) === normalizePersonName(currentVal));
+    if (match) crewSelect.value = match[1];
   }
 }
 
@@ -2481,6 +2486,81 @@ function isFlightRefueled(r) {
   return skypecKg > 0;
 }
 
+/** Chuẩn hóa tên để so/gộp (bỏ dấu, hoa) */
+function normalizePersonName(name) {
+  return String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanCrewPerson(name) {
+  const s = String(name || '').trim();
+  if (!s || s === '-' || s === '---' || /^NAFSC$/i.test(s)) return '';
+  return s;
+}
+
+/**
+ * Tách Lái xe / NV tra nạp từ bản ghi lịch (không gộp chung 1 chuỗi mơ hồ).
+ * Ưu tiên driver_name + operator_name; fallback tách crew_info "A - B".
+ */
+function parseCrewRoles(r) {
+  let driver = cleanCrewPerson(r && r.driver_name);
+  let operator = cleanCrewPerson(r && r.operator_name);
+  if ((!driver || !operator) && r && r.crew_info && r.crew_info !== '-') {
+    const parts = String(r.crew_info).split(/\s+-\s+/).map(p => cleanCrewPerson(p));
+    if (!driver && parts[0]) driver = parts[0];
+    if (!operator && parts[1]) operator = parts[1];
+  }
+  return { driver, operator };
+}
+
+function escapeHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** HTML cột nhân viên: Lái xe / NV tra nạp / Xe (tên đầy đủ) */
+function formatCrewCellHtml(r) {
+  const { driver, operator } = parseCrewRoles(r);
+  const truck = r && r.truck_no && String(r.truck_no).trim() && r.truck_no !== '-'
+    ? String(r.truck_no).trim()
+    : '';
+  if (!driver && !operator && !truck) {
+    return '<span style="color:var(--text-muted);">-</span>';
+  }
+  let html = '<div style="line-height:1.45;font-size:0.84rem;text-align:left;">';
+  if (driver) {
+    html += `<div><span style="color:var(--text-muted);font-size:0.7rem;font-weight:600;">Lái xe</span><br><strong style="color:#c2410c;">${escapeHtml(driver)}</strong></div>`;
+  }
+  if (operator) {
+    html += `<div style="margin-top:3px;"><span style="color:var(--text-muted);font-size:0.7rem;font-weight:600;">NV tra nạp</span><br><strong style="color:#0369a1;">${escapeHtml(operator)}</strong></div>`;
+  }
+  if (!driver && !operator) {
+    html += `<div style="color:var(--text-muted);">Chưa gán NV</div>`;
+  }
+  if (truck) {
+    html += `<div style="margin-top:4px;color:var(--primary);font-weight:700;font-size:0.8rem;"><i class="fa-solid fa-truck-field"></i> ${escapeHtml(truck)}</div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+/** Nhãn ngắn cho badge Zalo / filter */
+function formatCrewPairLabel(r) {
+  const { driver, operator } = parseCrewRoles(r);
+  if (driver && operator) return `Lái: ${driver} · NV: ${operator}`;
+  if (driver) return `Lái: ${driver}`;
+  if (operator) return `NV: ${operator}`;
+  return r.crew_info && r.crew_info !== '-' ? r.crew_info : '-';
+}
+
 function getRefuelStatusMeta(r) {
   const done = isFlightRefueled(r);
   const kg = parseInt(String(r.skypec_fuel_order || '').replace(/[^\d]/g, ''), 10) || 0;
@@ -2499,21 +2579,27 @@ function renderFmsTable() {
   const tbody = document.getElementById('fms-table-body');
   if (!tbody) return;
 
-  // Vẽ cấu hình thông báo Zalo theo Cặp trực ban
+  // Vẽ cấu hình thông báo Zalo — gộp theo cặp Lái+NV (tên đầy đủ), hiển thị tách role
   const crewContainer = document.getElementById('fms-crew-notify-settings-container');
   if (crewContainer) {
     const crewMap = {};
     cachedFmsRows.forEach(r => {
-      if (r.crew_info && r.crew_info !== '-') {
-        const key = r.crew_info.toUpperCase().trim();
-        if (!crewMap[key]) {
-          crewMap[key] = {
-            crewName: r.crew_info,
-            truckNo: r.truck_no || '-',
-            notifyType: r.notify_type || 1,
-            date: r.date
-          };
-        }
+      const { driver, operator } = parseCrewRoles(r);
+      if (!driver && !operator) return;
+      // Gộp theo người (không gộp theo chuỗi Excel ngắn lẫn FMS dài)
+      const key = `${normalizePersonName(driver)}|${normalizePersonName(operator)}`;
+      if (!crewMap[key]) {
+        const crewName = [driver, operator].filter(Boolean).join(' - ') || r.crew_info;
+        crewMap[key] = {
+          crewName,
+          driver,
+          operator,
+          truckNo: r.truck_no || '-',
+          notifyType: r.notify_type || 1,
+          date: r.date
+        };
+      } else if (r.truck_no && (!crewMap[key].truckNo || crewMap[key].truckNo === '-')) {
+        crewMap[key].truckNo = r.truck_no;
       }
     });
 
@@ -2521,13 +2607,17 @@ function renderFmsTable() {
     if (crews.length > 0) {
       crewContainer.innerHTML = `
         <div style="width: 100%; font-size: 0.85rem; font-weight: bold; color: #fb923c; margin-bottom: 5px; display: flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-comments"></i> Hình Thức Báo Tin Zalo Theo Cặp Trực Ban:
+          <i class="fa-solid fa-comments"></i> Hình thức báo Zalo theo cặp (Lái xe / NV tra nạp):
         </div>
         <div style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
           ${crews.map(c => `
-            <div class="crew-notify-badge" style="background: rgba(0, 114, 151, 0.08); border: 1px solid rgba(0, 114, 151, 0.18); padding: 6px 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.82rem;">
-              <span style="font-weight: bold; color: var(--primary);">👥 ${c.crewName} ${c.truckNo !== '-' ? `(Xe: ${c.truckNo})` : ''}</span>
-              <select class="fms-crew-notify-select" data-crew="${c.crewName}" data-date="${c.date || ''}" data-original-val="${c.notifyType}" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); cursor: pointer; outline: none;">
+            <div class="crew-notify-badge" style="background: rgba(0, 114, 151, 0.08); border: 1px solid rgba(0, 114, 151, 0.18); padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 10px; font-size: 0.8rem;">
+              <div style="line-height:1.35; min-width: 140px;">
+                ${c.driver ? `<div><span style="color:var(--text-muted);font-size:0.68rem;">Lái xe</span><br><strong style="color:#c2410c;">${escapeHtml(c.driver)}</strong></div>` : ''}
+                ${c.operator ? `<div style="margin-top:2px;"><span style="color:var(--text-muted);font-size:0.68rem;">NV tra nạp</span><br><strong style="color:#0369a1;">${escapeHtml(c.operator)}</strong></div>` : ''}
+                ${c.truckNo && c.truckNo !== '-' ? `<div style="margin-top:3px;color:var(--primary);font-weight:700;font-size:0.75rem;"><i class="fa-solid fa-truck-field"></i> ${escapeHtml(c.truckNo)}</div>` : ''}
+              </div>
+              <select class="fms-crew-notify-select" data-crew="${escapeHtml(c.crewName)}" data-date="${c.date || ''}" data-original-val="${c.notifyType}" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); cursor: pointer; outline: none;">
                 <option value="1" ${c.notifyType == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
                 <option value="2" ${c.notifyType == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
                 <option value="3" ${c.notifyType == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
@@ -2547,26 +2637,28 @@ function renderFmsTable() {
   const crewSelect = document.getElementById('fms-crew-filter');
 
   const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
-  const selectedCrew = crewSelect ? crewSelect.value : '';
+  const selectedPerson = crewSelect ? crewSelect.value : '';
+  const selectedNorm = selectedPerson ? normalizePersonName(selectedPerson) : '';
 
   // Lọc dữ liệu
   const filteredRows = cachedFmsRows.filter(r => {
-    // 1. Lọc theo dropdown Cặp tra nạp
-    if (selectedCrew && r.crew_info !== selectedCrew) {
-      return false;
+    // 1. Lọc theo 1 người (Lái hoặc NV)
+    if (selectedNorm) {
+      const { driver, operator } = parseCrewRoles(r);
+      const hit =
+        normalizePersonName(driver) === selectedNorm ||
+        normalizePersonName(operator) === selectedNorm ||
+        normalizePersonName(r.crew_info).includes(selectedNorm);
+      if (!hit) return false;
     }
 
-    // 2. Lọc theo tìm kiếm nhanh (số hiệu chuyến bay, số hiệu tàu bay, tên người tra nạp)
+    // 2. Lọc theo tìm kiếm nhanh
     if (query) {
       const fltNo = r.flight_no ? r.flight_no.toLowerCase() : '';
       const acReg = r.ac_reg ? r.ac_reg.toLowerCase() : '';
-      const crewInfo = r.crew_info ? r.crew_info.toLowerCase() : '';
-      
-      const matchFltNo = fltNo.includes(query);
-      const matchAcReg = acReg.includes(query);
-      const matchCrew = crewInfo.includes(query);
-
-      return matchFltNo || matchAcReg || matchCrew;
+      const { driver, operator } = parseCrewRoles(r);
+      const crewBlob = `${driver} ${operator} ${r.crew_info || ''}`.toLowerCase();
+      return fltNo.includes(query) || acReg.includes(query) || crewBlob.includes(query);
     }
 
     return true;
@@ -2592,9 +2684,7 @@ function renderFmsTable() {
     const statusText = refuelMeta.statusText;
     
     const tripVal = parseInt(r.trip_fuel) > 0 ? `${parseInt(r.trip_fuel).toLocaleString()} kg` : '-';
-    
-    const crewText = r.crew_info || '-';
-    const truckText = r.truck_no ? `<br><span style="color: var(--primary); font-size: 0.8rem; font-weight: bold;"><i class="fa-solid fa-truck-field"></i> Xe: ${r.truck_no}</span>` : '';
+    const crewHtml = formatCrewCellHtml(r);
 
     
     // 1. Tính toán hiệu ứng nhấp nháy cảnh báo (hết hạn nhấp nháy sau giờ tra nạp 15 phút)
@@ -2709,7 +2799,7 @@ function renderFmsTable() {
     return `
       <tr class="${refueled ? 'row-refueled' : ''}">
         <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
-        <td>${crewText}${truckText}</td>
+        <td>${crewHtml}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
         <td style="text-align: center; font-weight: 700; color: #b45309; font-size: 1rem;">${gateHtml}</td>
         <td class="${etdTdClass}">${timesHtml}</td>
@@ -2805,20 +2895,26 @@ function renderUserFmsTable() {
   
   if (!tbody) return;
 
+  const selectedNorm = selectedCrew ? normalizePersonName(selectedCrew) : '';
   const filteredRows = cachedUserFmsRows.filter(r => {
-    // 1. Lọc theo cặp tra nạp
-    if (selectedCrew) {
-      const crew = (r.crew_info || '').trim();
-      if (crew !== selectedCrew) return false;
+    // 1. Lọc theo 1 người (Lái hoặc NV)
+    if (selectedNorm) {
+      const { driver, operator } = parseCrewRoles(r);
+      const hit =
+        normalizePersonName(driver) === selectedNorm ||
+        normalizePersonName(operator) === selectedNorm ||
+        normalizePersonName(r.crew_info).includes(selectedNorm);
+      if (!hit) return false;
     }
 
     // 2. Lọc tìm kiếm nhanh
     if (query) {
       const flightNo = (r.flight_no || '').toUpperCase();
       const acReg = (r.ac_reg || '').toUpperCase();
-      const crewInfo = (r.crew_info || '').toUpperCase();
+      const { driver, operator } = parseCrewRoles(r);
+      const crewBlob = `${driver} ${operator} ${r.crew_info || ''}`.toUpperCase();
       const route = (r.route || '').toUpperCase();
-      return flightNo.includes(query) || acReg.includes(query) || crewInfo.includes(query) || route.includes(query);
+      return flightNo.includes(query) || acReg.includes(query) || crewBlob.includes(query) || route.includes(query);
     }
     return true;
   });
@@ -2841,7 +2937,7 @@ function renderUserFmsTable() {
     return `
       <tr class="${refueled ? 'row-refueled' : ''}">
         <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
-        <td><span style="font-weight: 600; color: #c2410c;">${r.crew_info || '-'}</span> ${r.truck_no && r.truck_no !== '-' ? `<span style="font-size: 0.85em; color: var(--primary);"> (Xe ${r.truck_no})</span>` : ''}</td>
+        <td>${formatCrewCellHtml(r)}</td>
         <td style="text-align: center;">
           <span style="font-weight: bold; color: var(--text);">${r.ac_reg || '-'}</span>
           <span style="color: var(--text-muted); font-size: 0.8em;"> (${r.ac_type || '-'})</span>
