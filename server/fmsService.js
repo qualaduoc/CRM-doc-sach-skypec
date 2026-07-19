@@ -1282,63 +1282,35 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
 
     // ── 0. Dọn gán "chặng mới" sai hình học / sai loại ──────────────────────
     try {
+      // Chỉ dọn hình học sai trên bản ghi ĐÃ gán nhưng chưa “khóa” cảnh báo.
+      // is_warned=1 (đã cảnh báo Zalo) → KHÔNG clear-loop (tránh spam).
       const dirty = await db.all(
-        `SELECT id, monitor_type, new_route, new_flight_no, old_time, old_flight_no, date, ac_reg, is_warned
+        `SELECT id, monitor_type, new_route, new_flight_no, old_time, date, ac_reg, is_warned
          FROM fms_temp_import_exports
-         WHERE is_warned < 2 AND new_route IS NOT NULL AND TRIM(new_route) != '' AND TRIM(new_route) != '-'`
+         WHERE is_warned = 0
+           AND new_route IS NOT NULL AND TRIM(new_route) != '' AND TRIM(new_route) != '-'`
       );
       let cleared = 0;
       for (const r of dirty || []) {
         const nr = String(r.new_route || '').toUpperCase().replace(/\s+/g, '');
         let bad = isReturnLegToHan(nr) || !isOutboundFromHan(nr) || nr === 'HAN-HAN';
-        // N.địa→Q.tế không được gán chặng ND (HAN-SAI…)
         if (!bad && r.monitor_type === 'DOMESTIC_TO_INTL' && isDomesticRoute(nr) && !isDepartingIntlRoute(nr)) {
           bad = true;
         }
-        // Cancel chỉ được gán chặng QT (không để ND làm “tái xuất”)
         if (!bad && r.monitor_type === 'CANCELLED_FUELED' && nr && isDomesticRoute(nr) && !isDepartingIntlRoute(nr)) {
           bad = true;
-        }
-        // Kiểm tra Skypec: ngày monitor + ngày kế (tái xuất qua đêm)
-        if (!bad && r.old_time && r.new_flight_no && r.date) {
-          const oldM = parseHhMmToMinutes(r.old_time);
-          const datesToCheck = [r.date, addDaysYmdStr(r.date, 1)];
-          for (const vd of datesToCheck) {
-            const live = await db.get(
-              `SELECT time_fuel, time_dep, ac_reg FROM fms_flights_live
-               WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
-              vd,
-              String(r.new_flight_no).replace(/[\s\-_.]/g, '')
-            );
-            if (!live) continue;
-            const liveAc = normalizeAcRegKey(live.ac_reg);
-            // ac Skypec đầy đủ mà khác tàu → gán sai; ac mơ hồ ("622") bỏ qua
-            if (liveAc.length >= 5 && !acRegsMatch(live.ac_reg, r.ac_reg)) {
-              bad = true;
-              break;
-            }
-            // Chỉ so giờ ngược khi live cùng ngày monitor
-            if (String(vd) === String(r.date)) {
-              const liveMf = parseHhMmToMinutes(live.time_dep);
-              const liveM = liveMf != null ? liveMf : parseHhMmToMinutes(live.time_fuel);
-              if (oldM != null && liveM != null && liveM < oldM) {
-                bad = true;
-                break;
-              }
-            }
-          }
         }
         if (bad) {
           await db.run(
             `UPDATE fms_temp_import_exports
-             SET is_warned = 0, new_flight_no = NULL, new_route = NULL, updated_at = CURRENT_TIMESTAMP
+             SET new_flight_no = NULL, new_route = NULL, updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
             r.id
           );
           cleared++;
         }
       }
-      if (cleared > 0) log(`[Giám sát] Gỡ ${cleared} chặng mới sai (hình học / ngược giờ / sai loại).`);
+      if (cleared > 0) log(`[Giám sát] Gỡ ${cleared} chặng mới sai hình học (is_warned=0).`);
     } catch (reErr) {
       console.error('[Giám sát] Lỗi dọn chặng mới:', reErr.message);
     }
