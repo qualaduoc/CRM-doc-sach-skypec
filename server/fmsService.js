@@ -99,6 +99,86 @@ function getVietnamDateTimeStr() {
   return `${hour}:${minute} ${day}/${month}/${year}`;
 }
 
+/** Phút trong ngày VN + ymd (UTC+7 wall clock) */
+function getVietnamNowParts() {
+  const vn = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
+  return {
+    ymd: `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, '0')}-${String(vn.getUTCDate()).padStart(2, '0')}`,
+    minutes: vn.getUTCHours() * 60 + vn.getUTCMinutes(),
+    ms: vn.getTime()
+  };
+}
+
+/**
+ * Ops Cancel: chỉ theo dõi sát trong ngày.
+ * - Nạp xong thường bay sau 40p–1h, tối đa ~2h (thời tiết).
+ * - Trước 40p sau giờ nạp: chưa kết luận Cancel (tránh nhiễu FMS).
+ * - Ngoài “hôm nay” (và nửa đêm ca tối): không quét Cancel rộng.
+ */
+const CANCEL_GRACE_MIN_AFTER_FUEL = 40;
+const CANCEL_TYPICAL_MAX_HOURS = 2;
+
+function addDaysYmdStr(ymd, days) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  const dt = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Ngày được phép quét Cancel: hôm nay; nếu <07:30 còn giữ hôm qua (đuôi ca tối) */
+function getCancelWatchDates() {
+  const now = getVietnamNowParts();
+  const dates = [now.ymd];
+  if (now.minutes < 7 * 60 + 30) {
+    dates.push(addDaysYmdStr(now.ymd, -1));
+  }
+  return dates;
+}
+
+function isCancelWatchDate(targetDate) {
+  return getCancelWatchDates().includes(String(targetDate || '').trim());
+}
+
+/**
+ * Phút đã trôi từ (date + HH:MM giờ VN wall) đến hiện tại VN.
+ * null nếu không parse được giờ nạp.
+ */
+function minutesSinceFuelEvent(dateYmd, timeFuelStr) {
+  const tm = String(timeFuelStr || '').match(/^(\d{1,2}):(\d{2})/);
+  const dm = String(dateYmd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!tm || !dm) return null;
+  // So sánh trên cùng hệ “VN wall clock as UTC components” (chỉ hiệu phút)
+  const fuelAsVnFakeUtc = Date.UTC(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2], 0);
+  const nowVn = getVietnamNowParts();
+  const np = String(nowVn.ymd).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!np) return null;
+  const nowAsVnFakeUtc = Date.UTC(
+    +np[1], +np[2] - 1, +np[3],
+    Math.floor(nowVn.minutes / 60), nowVn.minutes % 60, 0
+  );
+  return Math.floor((nowAsVnFakeUtc - fuelAsVnFakeUtc) / 60000);
+}
+
+/**
+ * Có được phép báo Cancel theo cửa sổ ops sau giờ nạp?
+ * - Chưa đủ 40 phút sau nạp → chờ (chưa chắc hủy / đổi tàu)
+ * - Trong ngày theo dõi + đã qua grace → được báo
+ */
+function canReportCancelAfterFuel(dateYmd, timeFuelStr) {
+  const mins = minutesSinceFuelEvent(dateYmd, timeFuelStr);
+  if (mins === null) {
+    // Không có giờ nạp: chỉ cho báo nếu đang trong ngày theo dõi (tránh spam)
+    return isCancelWatchDate(dateYmd);
+  }
+  if (mins < CANCEL_GRACE_MIN_AFTER_FUEL) {
+    return false; // còn trong cửa sổ “sắp bay”
+  }
+  // Quá grace: cho Cancel (cùng ngày). Không giới hạn cứng 2h cho biến mất —
+  // 2h là kỳ vọng bay; biến mất sau 2h trong ngày vẫn là Cancel hợp lệ.
+  return true;
+}
+
 // Chuyển đổi giờ UTC (từ FMS gốc dạng HH:MM) sang giờ Việt Nam (GMT+7)
 function convertUtcToVnTime(utcTimeStr) {
   if (!utcTimeStr || utcTimeStr === '-') return '-';
@@ -620,16 +700,24 @@ async function upsertVnaPresence(db, targetDate, vnaFmsFlights) {
 }
 
 /**
- * CANCEL đã nạp:
- * 1) Từng xuất hiện trên FMS VNA (fms_vna_presence) với đúng tàu
- * 2) Skypec kg > 0 (cùng flight_no + date, tàu khớp nếu Skypec có ac_reg)
- * 3) Hiện không còn trên list VNA lần quét này
+ * CANCEL đã nạp (ops sát trong ngày):
+ * 1) Chỉ ngày theo dõi: hôm nay (+ hôm qua nếu <07:30 ca tối) — không quét rộng
+ * 2) VN nội địa, từng có trên FMS VNA (snapshot) + đúng tàu
+ * 3) Skypec kg > 0
+ * 4) Mất trên VNA
+ * 5) Đã qua ≥40 phút sau giờ nạp (thường bay 40p–1h, tối đa ~2h → đổi tàu hoặc hủy)
  * → Zalo 1 lần + monitor CANCELLED_FUELED
- * An toàn: VNA 0 chuyến → bỏ qua (cookie/lỗi).
+ * Đổi tàu: nhánh riêng (Skypec ac_reg đổi khi còn chuyến).
  */
 async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
   try {
-    // Dọn Cancel ngoài phạm vi: không phải VN / 9G / VU / quốc tế (mỗi vòng an toàn)
+    // Chỉ quét sát trong ngày — không Cancel cho ngày xa
+    if (!isCancelWatchDate(targetDate)) {
+      log(`[Cancel] Bỏ qua ngày ${targetDate}: ngoài cửa sổ theo dõi trong ngày (${getCancelWatchDates().join(', ')}).`);
+      return { checked: 0, cancelled: 0, skipped: 'out_of_day_window' };
+    }
+
+    // Dọn Cancel ngoài phạm vi + presence cũ
     try {
       const badRows = await db.all(
         `SELECT id, old_flight_no, old_route FROM fms_temp_import_exports
@@ -643,9 +731,11 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
         }
       }
       if (purgedBad > 0) {
-        log(`[Cancel] Đã xóa ${purgedBad} bản ghi Cancel ngoài phạm vi (chỉ giữ chuyến VN nội địa).`);
+        log(`[Cancel] Đã xóa ${purgedBad} bản ghi Cancel ngoài phạm vi (VN nội địa).`);
       }
-      // Xóa presence không phải VN
+      // Presence: chỉ giữ 2 ngày gần (hôm nay + hôm qua)
+      const keepFrom = addDaysYmdStr(getVietnamDbDateStr(), -1);
+      await db.run('DELETE FROM fms_vna_presence WHERE date < ?', keepFrom);
       await db.run(
         `DELETE FROM fms_vna_presence WHERE date = ?
            AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) NOT LIKE 'VN%'`,
@@ -781,7 +871,18 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
         }
       }
 
+      // Cửa sổ ops: sau nạp ≥40p mới kết luận Cancel (trước đó có thể sắp bay / nhiễu FMS)
+      if (!canReportCancelAfterFuel(targetDate, timeFuel)) {
+        const mins = minutesSinceFuelEvent(targetDate, timeFuel);
+        log(`[Cancel] Chờ ${fltNo}: mới nạp ${mins != null ? mins + 'p' : '?'} (<${CANCEL_GRACE_MIN_AFTER_FUEL}p) — chưa báo.`);
+        continue;
+      }
+
       const crewPair = [driver, operator].filter(Boolean).join(' - ') || '-';
+      const minsAfter = minutesSinceFuelEvent(targetDate, timeFuel);
+      const windowNote = minsAfter != null
+        ? ` (sau nạp ~${minsAfter}p; kỳ vọng bay 40p–${CANCEL_TYPICAL_MAX_HOURS}h)`
+        : '';
 
       await db.run(
         `INSERT INTO fms_temp_import_exports
@@ -792,13 +893,13 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
 
       const msg = `⚠️ [CẢNH BÁO CANCEL CHUYẾN BAY]
 Chuyến ${fltNo} (${route}) đã nạp ${kg.toLocaleString('vi-VN')} kg trên tàu ${acReg}
-Cặp tra nạp: ${crewPair} vào lúc: ${timeFuel}
+Cặp tra nạp: ${crewPair} vào lúc: ${timeFuel}${windowNote}
 → Phát hiện không tồn tại trên hệ thống FMS VNA
 → Khả năng cao đã hủy chuyến. Đề nghị Điều hành theo dõi.
 Tàu ${acReg} đã được đưa vào theo dõi Tái xuất.
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
 
-      log(`[Cancel] ${fltNo} / ${acReg} / ${kg} kg — từng có VNA, nay mất + Skypec đã nạp → báo 1 lần.`);
+      log(`[Cancel] ${fltNo} / ${acReg} / ${kg} kg — mất VNA sau nạp${windowNote} → báo 1 lần.`);
       sendImportExportZalo(targetGroupId, isSkyOneEnabled, msg, `Cancel ${fltNo}`);
       cancelled++;
     }
@@ -1104,15 +1205,17 @@ async function syncFMSData(forceDate = null, forceShift = null) {
         return list;
       };
 
-      // Không có lịch SkyEyes: vẫn quét Cancel (Skypec kg>0 vs VNA)
+      // Không có lịch SkyEyes: chỉ quét Cancel nếu trong cửa sổ “trong ngày”
       if (schedules.length === 0) {
-        try {
-          const vnaOnly = await loadVnaFlightsForDate();
-          log(`[Ngày ${targetDate}] Không có lịch SkyEyes — vẫn quét Cancel (VNA ${vnaOnly.length} chuyến).`);
-          await detectCancelledFueledFlights(db, targetDate, vnaOnly);
-          await checkTempImportExportAlerts(db, targetDate, vnaOnly);
-        } catch (e) {
-          console.error(`[Cancel] Ngày ${targetDate} (no schedule):`, e.message);
+        if (isCancelWatchDate(targetDate)) {
+          try {
+            const vnaOnly = await loadVnaFlightsForDate();
+            log(`[Ngày ${targetDate}] Không lịch SkyEyes — quét Cancel sát trong ngày (VNA ${vnaOnly.length}).`);
+            await detectCancelledFueledFlights(db, targetDate, vnaOnly);
+            await checkTempImportExportAlerts(db, targetDate, vnaOnly);
+          } catch (e) {
+            console.error(`[Cancel] Ngày ${targetDate} (no schedule):`, e.message);
+          }
         }
         continue;
       }
@@ -1163,11 +1266,13 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       const fmsFlights = await loadVnaFlightsForDate();
       log(`[Ngày ${targetDate}] Đã tải danh sách chuyến bay từ FMS, tổng cộng ${fmsFlights.length} chuyến.`);
 
-      // Cancel: Skypec kg>0 + mất trên FMS VNA (đúng chuyến/tàu) → Zalo 1 lần + list Tái xuất
-      try {
-        await detectCancelledFueledFlights(db, targetDate, fmsFlights);
-      } catch (cancelErr) {
-        console.error('[Cancel] Lỗi khi quét:', cancelErr.message);
+      // Cancel: chỉ sát trong ngày (VN nội địa, ≥40p sau nạp, mất VNA)
+      if (isCancelWatchDate(targetDate)) {
+        try {
+          await detectCancelledFueledFlights(db, targetDate, fmsFlights);
+        } catch (cancelErr) {
+          console.error('[Cancel] Lỗi khi quét:', cancelErr.message);
+        }
       }
 
       // Kiểm tra và cảnh báo Tạm nhập - Tái xuất tàu bay (gồm sau Cancel)
