@@ -1795,6 +1795,41 @@ async function syncFmsSkypecLive(forceDate = null) {
         flight.truck_no || '', flight.driver_name, flight.operator_name, flight.standby_fuel, 
         flight.fuel_order, flight.status, flight.airline_name || '', flight.date
       );
+
+      // Đồng bộ tên lái/NV sang fms_schedules nếu lịch đang thiếu tên (tránh cột nhân viên trống)
+      try {
+        const dName = String(flight.driver_name || '').split(',')[0].trim();
+        const oName = String(flight.operator_name || '').split(',')[0].trim();
+        const realD = dName && !/^NAFSC$/i.test(dName) ? dName : '';
+        const realO = oName && !/^NAFSC$/i.test(oName) ? oName : '';
+        if (realD || realO) {
+          const cleanFn = String(flight.flight_no || '').toUpperCase().replace(/[\s\-_.]/g, '');
+          const crewInfo = [realD, realO].filter(Boolean).join(' - ');
+          await db.run(
+            `UPDATE fms_schedules SET
+              driver_name = CASE
+                WHEN driver_name IS NULL OR TRIM(driver_name) = '' OR UPPER(TRIM(driver_name)) = 'NAFSC'
+                THEN ? ELSE driver_name END,
+              operator_name = CASE
+                WHEN operator_name IS NULL OR TRIM(operator_name) = '' OR UPPER(TRIM(operator_name)) = 'NAFSC'
+                THEN ? ELSE operator_name END,
+              crew_info = CASE
+                WHEN crew_info IS NULL OR TRIM(crew_info) = '' OR TRIM(crew_info) = '-' OR UPPER(crew_info) LIKE '%NAFSC%'
+                THEN ? ELSE crew_info END,
+              truck_no = COALESCE(NULLIF(truck_no, ''), ?)
+             WHERE (date = ? OR fms_date = ?)
+               AND REPLACE(REPLACE(UPPER(flight_no), ' ', ''), '-', '') = ?`,
+            realD || null,
+            realO || null,
+            crewInfo || null,
+            (flight.truck_no || '').split(',')[0].trim() || null,
+            flight.date,
+            flight.date,
+            cleanFn
+          );
+        }
+      } catch (_) { /* ignore schedule enrich errors */ }
+
       insertCount++;
     }
     console.log(`[FMS Skypec Live] Đồng bộ thành công ${insertCount} chuyến bay của ngày: ${targetDate}`);

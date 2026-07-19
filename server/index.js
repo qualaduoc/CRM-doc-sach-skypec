@@ -1609,10 +1609,25 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         s.time_dep,
         s.time_fuel,
         s.gate,
-        s.truck_no,
-        s.driver_name,
-        s.operator_name,
-        s.crew_info,
+        COALESCE(NULLIF(TRIM(s.truck_no), ''), fl.truck_no) as truck_no,
+        COALESCE(
+          NULLIF(CASE WHEN UPPER(TRIM(COALESCE(s.driver_name,''))) IN ('','NAFSC','-') THEN NULL ELSE s.driver_name END, ''),
+          NULLIF(CASE WHEN UPPER(TRIM(COALESCE(fl.driver_name,''))) IN ('','NAFSC','-') THEN NULL ELSE fl.driver_name END, '')
+        ) as driver_name,
+        COALESCE(
+          NULLIF(CASE WHEN UPPER(TRIM(COALESCE(s.operator_name,''))) IN ('','NAFSC','-') THEN NULL ELSE s.operator_name END, ''),
+          NULLIF(CASE WHEN UPPER(TRIM(COALESCE(fl.operator_name,''))) IN ('','NAFSC','-') THEN NULL ELSE fl.operator_name END, '')
+        ) as operator_name,
+        COALESCE(
+          NULLIF(CASE WHEN TRIM(COALESCE(s.crew_info,'')) IN ('','-') OR UPPER(s.crew_info) LIKE '%NAFSC%' THEN NULL ELSE s.crew_info END, ''),
+          CASE
+            WHEN fl.driver_name IS NOT NULL AND TRIM(fl.driver_name) != '' AND UPPER(TRIM(fl.driver_name)) != 'NAFSC'
+            THEN TRIM(fl.driver_name) || CASE
+              WHEN fl.operator_name IS NOT NULL AND TRIM(fl.operator_name) != '' AND UPPER(TRIM(fl.operator_name)) != 'NAFSC'
+              THEN ' - ' || TRIM(fl.operator_name) ELSE '' END
+            ELSE s.crew_info
+          END
+        ) as crew_info,
         s.crew_zalo_uids,
         s.notify_type,
         s.date,

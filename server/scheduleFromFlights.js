@@ -234,39 +234,61 @@ function parseFlightsHtml(html) {
     const parkingMatch = rowHtml.match(/id="Parking"[^>]*>([\s\S]*?)<\/span>/i);
     const gate = parkingMatch ? parkingMatch[1].replace(/<[^>]+>/g, '').trim() : '';
 
+    // ---- Xe / Lái xe / NV tra nạp ----
+    // 1) Hàng đang phân công: <select class="...driverId..."> option selected
+    // 2) Hàng đã tra nạp (xanh): không còn select → text thuần trong td sau ô xe
     let truckNo = '';
-    const truckSelect = rowHtml.match(/<select[^>]*class="[^"]*truckId[^"]*"[^>]*>([\s\S]*?)<\/select>/i)
-      || rowHtml.match(/HAN3-20-\d{4}/);
-    if (truckSelect && truckSelect[1]) {
-      const sel = truckSelect[1].match(/<option[^>]*selected[^>]*>([\s\S]*?)<\/option>/i);
-      truckNo = sel ? decodeHtmlEntities(sel[1].replace(/<[^>]+>/g, '').trim()) : '';
-    } else if (typeof truckSelect === 'object' && truckSelect[0] && !truckSelect[1]) {
-      truckNo = truckSelect[0];
+    let driverName = '';
+    let operatorName = '';
+
+    const pickSelected = (selectInner) => {
+      if (!selectInner) return '';
+      const m = selectInner.match(/<option[^>]*selected[^>]*>([\s\S]*?)<\/option>/i)
+        || selectInner.match(/<option[^>]*selected=["']?selected["']?[^>]*>([\s\S]*?)<\/option>/i);
+      return m ? decodeHtmlEntities(m[1].replace(/<[^>]+>/g, '').trim()) : '';
+    };
+
+    const truckSelect = rowHtml.match(/<select[^>]*class="[^"]*truckId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
+    if (truckSelect) truckNo = pickSelected(truckSelect[1]);
+
+    const driverSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*driverId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
+    if (driverSelectMatch) driverName = pickSelected(driverSelectMatch[1]);
+
+    const operatorSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*operatorId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
+    if (operatorSelectMatch) operatorName = pickSelected(operatorSelectMatch[1]);
+
+    // Plain-text tds (chuyến đã nạp: td xe → td lái → td NV)
+    if (!truckNo || !driverName || !operatorName) {
+      const tds = [...rowHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(td =>
+        decodeHtmlEntities(
+          td[1]
+            .replace(/<script[\s\S]*?<\/script>/gi, '')
+            .replace(/<select[\s\S]*?<\/select>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+        )
+      );
+      const truckIdx = tds.findIndex(t => /HAN3-20-\d{4}/i.test(t));
+      if (truckIdx >= 0) {
+        if (!truckNo) {
+          const tm = tds[truckIdx].match(/HAN3-20-\d{4}/i);
+          if (tm) truckNo = tm[0];
+        }
+        if (!driverName && tds[truckIdx + 1]) driverName = tds[truckIdx + 1];
+        if (!operatorName && tds[truckIdx + 2]) operatorName = tds[truckIdx + 2];
+      }
     }
-    // fallback: span or text HAN3-20-
     if (!truckNo) {
-      const tm = rowHtml.match(/HAN3-20-\d{4}/);
+      const tm = rowHtml.match(/HAN3-20-\d{4}/i);
       if (tm) truckNo = tm[0];
     }
 
-    let driverName = '';
-    const driverSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*driverId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
-    if (driverSelectMatch) {
-      const selectedOptionMatch = driverSelectMatch[1].match(/<option[^>]*selected[^>]*>([\s\S]*?)<\/option>/i);
-      if (selectedOptionMatch) driverName = decodeHtmlEntities(selectedOptionMatch[1].replace(/<[^>]+>/g, '').trim());
-    }
-
-    let operatorName = '';
-    const operatorSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*operatorId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
-    if (operatorSelectMatch) {
-      const selectedOptionMatch = operatorSelectMatch[1].match(/<option[^>]*selected[^>]*>([\s\S]*?)<\/option>/i);
-      if (selectedOptionMatch) operatorName = decodeHtmlEntities(selectedOptionMatch[1].replace(/<[^>]+>/g, '').trim());
-    }
-
-    // Clean placeholders
+    // Clean placeholders (NAFSC = chưa gán người thật trên FMS)
     const cleanName = (n) => {
       const s = String(n || '').trim();
-      if (!s || s === '---' || s === '-' || s === '…') return '';
+      if (!s || s === '---' || s === '-' || s === '…' || s === '...') return '';
+      if (/^NAFSC$/i.test(s)) return '';
       return s;
     };
     driverName = cleanName(driverName);
@@ -376,6 +398,52 @@ async function resolveZaloUids(db, driverName, operatorName) {
  * Apply candidates to fms_schedules.
  * @param {'merge'|'replace'} mode
  */
+async function enrichCrewFromLive(db, item, dutyDate) {
+  // Bổ sung tên từ fms_flights_live (JRefuelInfo) nếu HTML Flights thiếu
+  if (item.driver_name && item.operator_name) return item;
+  try {
+    const live = await db.get(
+      `SELECT driver_name, operator_name, truck_no FROM fms_flights_live
+       WHERE REPLACE(REPLACE(UPPER(flight_no),' ',''),'-','') = ?
+         AND date IN (?, ?)
+       ORDER BY
+         CASE WHEN driver_name IS NOT NULL AND driver_name != '' AND UPPER(driver_name) != 'NAFSC' THEN 0 ELSE 1 END,
+         created_at DESC
+       LIMIT 1`,
+      normalizeFlightNo(item.flight_no),
+      dutyDate,
+      item.fms_date || dutyDate
+    );
+    if (!live) return item;
+    const clean = (n) => {
+      const s = String(n || '').trim();
+      if (!s || s === '-' || s === '---' || /^NAFSC$/i.test(s)) return '';
+      // live may be "A, B" multi-refuel — take first segment pair later
+      return s;
+    };
+    let d = clean(live.driver_name);
+    let o = clean(live.operator_name);
+    // Nếu "A, B" gộp nhiều mẻ: lấy phần đầu trước dấu phẩy cho mỗi field
+    if (d.includes(',')) d = d.split(',')[0].trim();
+    if (o.includes(',')) o = o.split(',')[0].trim();
+    // JRefuelInfo đôi khi gộp "Lái NV" trong một span — driver_name có thể là "Lái - NV"
+    if (d && !o && d.includes(' - ')) {
+      const parts = d.split(/\s+-\s+/);
+      d = parts[0] || d;
+      o = parts[1] || o;
+    }
+    if (!item.driver_name && d) item.driver_name = d;
+    if (!item.operator_name && o) item.operator_name = o;
+    if (!item.truck_no && live.truck_no) {
+      const t = String(live.truck_no).split(',')[0].trim();
+      if (t) item.truck_no = t;
+    }
+    const parts = [item.driver_name, item.operator_name].filter(Boolean);
+    item.crew_info = parts.length ? parts.join(' - ') : (item.crew_info || '-');
+  } catch (_) { /* ignore */ }
+  return item;
+}
+
 async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
   const db = await getDb();
   const candidates = await buildScheduleCandidatesFromFlights(dutyDate, shift);
@@ -388,27 +456,43 @@ async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
   let added = 0;
   let updated = 0;
   let skipped = 0;
+  let named = 0;
 
-  for (const item of candidates) {
+  for (let item of candidates) {
+    item = await enrichCrewFromLive(db, item, dutyDate);
+    if (item.driver_name || item.operator_name) named++;
+
     const flightNo = normalizeFlightNo(item.flight_no);
     const existing = await db.get(
-      'SELECT id, schedule_source, notify_type, crew_zalo_uids FROM fms_schedules WHERE UPPER(REPLACE(REPLACE(flight_no,\' \',\'\'),\'-\',\'\')) = ? AND date = ?',
+      'SELECT id, schedule_source, notify_type, crew_zalo_uids, driver_name, operator_name, crew_info FROM fms_schedules WHERE UPPER(REPLACE(REPLACE(flight_no,\' \',\'\'),\'-\',\'\')) = ? AND date = ?',
       flightNo, dutyDate
     );
 
+    // Không ghi đè tên tốt đã có bằng rỗng
+    let driverName = item.driver_name || '';
+    let operatorName = item.operator_name || '';
+    if (existing) {
+      const exD = String(existing.driver_name || '').trim();
+      const exO = String(existing.operator_name || '').trim();
+      if (!driverName && exD && !/^NAFSC$/i.test(exD)) driverName = exD;
+      if (!operatorName && exO && !/^NAFSC$/i.test(exO)) operatorName = exO;
+    }
+    const crewParts = [driverName, operatorName].filter(Boolean);
+    const crewInfo = crewParts.length ? crewParts.join(' - ') : '-';
+
     const crewZalo = existing && existing.crew_zalo_uids
       ? existing.crew_zalo_uids
-      : await resolveZaloUids(db, item.driver_name, item.operator_name);
+      : await resolveZaloUids(db, driverName, operatorName);
 
     const notifyType = existing ? (existing.notify_type || 1) : 1;
 
     if (existing) {
-      // merge: update operational fields from Flights; keep notify_type
       await db.run(
         `UPDATE fms_schedules SET
           flight_no = ?, ac_type = ?, ac_reg = ?, route = ?,
           time_arr = ?, time_dep = ?, time_fuel = ?, gate = ?,
-          truck_no = ?, driver_name = ?, operator_name = ?, crew_info = ?,
+          truck_no = COALESCE(NULLIF(?, ''), truck_no),
+          driver_name = ?, operator_name = ?, crew_info = ?,
           crew_zalo_uids = COALESCE(NULLIF(?, ''), crew_zalo_uids),
           fms_date = ?, unit_code = 'BOTH', schedule_source = 'flights',
           id_fms = ?, updated_from_flights_at = ?
@@ -422,9 +506,9 @@ async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
         item.time_fuel || '',
         item.gate || '',
         item.truck_no || '',
-        item.driver_name || '',
-        item.operator_name || '',
-        item.crew_info || '-',
+        driverName,
+        operatorName,
+        crewInfo,
         crewZalo,
         item.fms_date || dutyDate,
         item.id_fms || '',
@@ -448,9 +532,9 @@ async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
         item.time_fuel || '',
         item.gate || '',
         item.truck_no || '',
-        item.driver_name || '',
-        item.operator_name || '',
-        item.crew_info || '-',
+        driverName,
+        operatorName,
+        crewInfo,
         crewZalo,
         notifyType,
         dutyDate,
@@ -462,8 +546,8 @@ async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
     }
   }
 
-  console.log(`[ScheduleFlights] date=${dutyDate} shift=${shift} mode=${mode} added=${added} updated=${updated} candidates=${candidates.length}`);
-  return { added, updated, skipped, total: candidates.length, candidates };
+  console.log(`[ScheduleFlights] date=${dutyDate} shift=${shift} mode=${mode} added=${added} updated=${updated} named=${named}/${candidates.length}`);
+  return { added, updated, skipped, named, total: candidates.length, candidates };
 }
 
 /**
