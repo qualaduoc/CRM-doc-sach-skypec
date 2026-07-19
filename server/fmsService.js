@@ -88,6 +88,22 @@ function getVietnamDbDateStr() {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Mốc giám sát Tạm nhập / Tái xuất / Cancel / NKT:
+ * chỉ tính từ 19/07/2026; không truy xuất / tạo monitor ngày cũ hơn.
+ */
+const MONITOR_EPOCH_DATE = '2026-07-19';
+
+function isMonitorEpochDate(dateStr) {
+  const d = String(dateStr || '').trim();
+  return !!d && d >= MONITOR_EPOCH_DATE;
+}
+
+/** Được phép TẠO monitor: >= epoch và nằm trong cửa sổ ngày đang theo dõi (hôm nay / đuôi ca tối) */
+function canCreateMonitorForDate(dateStr) {
+  return isMonitorEpochDate(dateStr) && isCancelWatchDate(dateStr);
+}
+
 // Lấy ngày giờ hiện tại dạng HH:MM DD/MM/YYYY theo múi giờ Việt Nam (GMT+7)
 function getVietnamDateTimeStr() {
   const vnTime = new Date(new Date().getTime() + 7 * 60 * 60 * 1000);
@@ -126,14 +142,16 @@ function addDaysYmdStr(ymd, days) {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
 }
 
-/** Ngày được phép quét Cancel: hôm nay; nếu <07:30 còn giữ hôm qua (đuôi ca tối) */
+/** Ngày được phép quét Cancel / NKT trong ngày: hôm nay; nếu <07:30 còn giữ hôm qua (đuôi ca tối) */
 function getCancelWatchDates() {
   const now = getVietnamNowParts();
   const dates = [now.ymd];
   if (now.minutes < 7 * 60 + 30) {
-    dates.push(addDaysYmdStr(now.ymd, -1));
+    const yest = addDaysYmdStr(now.ymd, -1);
+    // Không kéo về trước mốc epoch
+    if (isMonitorEpochDate(yest)) dates.push(yest);
   }
-  return dates;
+  return dates.filter(isMonitorEpochDate);
 }
 
 function isCancelWatchDate(targetDate) {
@@ -1105,15 +1123,16 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
       );
     }
 
-    // 2. Bản ghi đang bám: always = mọi is_warned=0; 24h = từ hôm nay + type dài hạn còn mở
-    //    CANCELLED đã is_warned=1 (đã báo QT) không lặp; is_warned=0 = đang bám
-    const trackingRows = durationVal === 'always'
-      ? await db.all("SELECT * FROM fms_temp_import_exports WHERE is_warned = 0")
-      : await db.all(
-          `SELECT * FROM fms_temp_import_exports WHERE is_warned = 0
-           AND (date >= ? OR monitor_type IN ('TECHNICAL_HAN','CANCELLED_FUELED'))`,
-          todayDb
-        );
+    // 2. Chỉ bám bản ghi trong cửa sổ ngày (và >= epoch 19/07) — không quét NKT tháng cũ
+    const watchDates = getCancelWatchDates();
+    const trackingRows = await db.all(
+      `SELECT * FROM fms_temp_import_exports
+       WHERE is_warned = 0
+         AND date >= ?
+         AND date IN (${watchDates.map(() => '?').join(',') || '?'})`,
+      MONITOR_EPOCH_DATE,
+      ...(watchDates.length ? watchDates : [todayDb])
+    );
     
     if (trackingRows.length === 0) return;
 
@@ -1252,26 +1271,35 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       const durationSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_duration'");
       const durationVal = durationSetting ? durationSetting.value : '24h';
       
-      let deletedTemp;
-      if (durationVal === 'always') {
-        // Luôn luôn: chỉ xóa bản ghi đã đóng/xác nhận (is_warned = 2) của ngày trước
-        deletedTemp = await db.run("DELETE FROM fms_temp_import_exports WHERE date < ? AND is_warned = 2", todayDb);
-      } else {
-        // 24h: xóa monitor thương mại cũ; giữ TECHNICAL_HAN + CANCELLED_FUELED (đang bám) đến khi đóng
-        deletedTemp = await db.run(
-          `DELETE FROM fms_temp_import_exports WHERE date < ?
-             AND monitor_type NOT IN ('TECHNICAL_HAN', 'CANCELLED_FUELED')`,
-          todayDb
-        );
-        // CANCELLED_FUELED đã đóng (is_warned=2) thì dọn
-        await db.run(
-          `DELETE FROM fms_temp_import_exports WHERE date < ? AND monitor_type = 'CANCELLED_FUELED' AND is_warned = 2`,
-          todayDb
-        );
+      // Xóa toàn bộ monitor trước mốc 19/07/2026 (NKT lịch sử / spam cũ)
+      const delEpoch = await db.run(
+        'DELETE FROM fms_temp_import_exports WHERE date < ?',
+        MONITOR_EPOCH_DATE
+      );
+      if (delEpoch && delEpoch.changes > 0) {
+        log(`[Dọn dẹp DB] Đã xóa ${delEpoch.changes} bản ghi giám sát trước mốc ${MONITOR_EPOCH_DATE}.`);
       }
-      
-      if (deletedTemp && deletedTemp.changes > 0) {
-        log(`[Dọn dẹp DB] Đã dọn dẹp ${deletedTemp.changes} bản ghi giám sát cũ theo cấu hình (${durationVal}).`);
+
+      // Chỉ giữ cửa sổ ngày theo dõi (+ đã đóng gần đây); không ôm TECHNICAL vô hạn nhiều ngày
+      const watch = getCancelWatchDates();
+      const keepDates = watch.length ? watch : [todayDb];
+      const ph = keepDates.map(() => '?').join(',');
+      const delOld = await db.run(
+        `DELETE FROM fms_temp_import_exports
+         WHERE date >= ? AND date NOT IN (${ph}) AND is_warned = 2`,
+        MONITOR_EPOCH_DATE,
+        ...keepDates
+      );
+      // Bản ghi mở ngoài cửa sổ ngày → đóng (không hiển thị/truy xuất ngày cũ)
+      await db.run(
+        `UPDATE fms_temp_import_exports SET is_warned = 2, updated_at = CURRENT_TIMESTAMP
+         WHERE date >= ? AND date NOT IN (${ph}) AND is_warned < 2`,
+        MONITOR_EPOCH_DATE,
+        ...keepDates
+      );
+
+      if (delOld && delOld.changes > 0) {
+        log(`[Dọn dẹp DB] Đã dọn monitor ngoài cửa sổ ngày (${durationVal}): ${delOld.changes} dòng.`);
       }
     } catch (cleanupErr) {
       console.error('[Dọn dẹp DB] Lỗi khi dọn dẹp dữ liệu cũ:', cleanupErr.message);
@@ -2306,9 +2334,10 @@ async function syncFmsSkypecLive(forceDate = null) {
     let insertCount = 0;
     const todayDb = getVietnamDbDateStr();
     for (const flight of flightsToSync) {
-      const isFromToday = flight.date >= todayDb;
+      // Chỉ tạo monitor từ mốc 19/07/2026 và trong cửa sổ ngày đang quét (không cào lịch sử NKT cũ)
+      const allowMonitor = canCreateMonitorForDate(flight.date);
       
-      if (isFromToday) {
+      if (allowMonitor) {
         // TRƯỚC KHI LƯU: So sánh với bản ghi cũ để phát hiện đổi tàu bay đã nạp dầu thực tế
         try {
           const oldFlight = await db.get(
@@ -2354,11 +2383,11 @@ async function syncFmsSkypecLive(forceDate = null) {
         }
       }
 
-      if (isFromToday) {
-        // TỰ ĐỘNG GIÁM SÁT tàu HAN-HAN nạp dầu kỹ thuật đột xuất (kể cả không đổi tàu)
+      if (allowMonitor) {
+        // TỰ ĐỘNG GIÁM SÁT tàu HAN-HAN nạp dầu kỹ thuật (chỉ ngày trong cửa sổ, từ 19/07)
         try {
           const currentRoute = String(flight.route || '').trim().toUpperCase();
-          const currentFuel = parseInt(flight.fuel_order) || 0;
+          const currentFuel = parseInt(String(flight.fuel_order || '0').replace(/[^\d]/g, ''), 10) || 0;
           if (currentRoute === 'HAN-HAN' && currentFuel > 0 && flight.ac_reg) {
             const currentAcReg = String(flight.ac_reg).trim().toUpperCase();
             const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
@@ -2368,7 +2397,7 @@ async function syncFmsSkypecLive(forceDate = null) {
               currentAcReg, flight.date, cleanFltNo
             );
             if (!exists) {
-              log(`[FMS Skypec Live] Phát hiện chặng kỹ thuật đột xuất: Tàu ${currentAcReg} nạp ${currentFuel} kg chặng HAN-HAN (Chuyến ${cleanFltNo}). Đưa vào giám sát vô thời hạn.`);
+              log(`[FMS Skypec Live] NKT HAN-HAN: Tàu ${currentAcReg} nạp ${currentFuel} kg (${cleanFltNo}) date=${flight.date} → giám sát.`);
               await db.run(`
                 INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
                 VALUES (?, ?, ?, ?, ?, 'TECHNICAL_HAN', ?)
@@ -2588,5 +2617,8 @@ module.exports = {
   isCancelScopeFlight,
   checkAirlineNameMismatchAlerts,
   listAirlineMappings,
-  detectCancelledFueledFlights
+  detectCancelledFueledFlights,
+  MONITOR_EPOCH_DATE,
+  isMonitorEpochDate,
+  canCreateMonitorForDate
 };

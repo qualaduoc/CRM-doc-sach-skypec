@@ -2948,18 +2948,32 @@ app.delete('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   }
 });
 
-// API lấy danh sách tàu bay giám sát Tạm nhập - Tái xuất trong ngày (Admin hoặc có quyền FMS/Zalo)
+// API lấy danh sách giám sát Tạm nhập - Tái xuất — CHỈ theo ngày chọn, từ mốc 19/07/2026
 app.get('/api/fms/temp-import-exports', authenticateToken, async (req, res) => {
+  const { getVietnamDbDateStr } = require('./fmsService');
+  const MONITOR_EPOCH = '2026-07-19';
   const { date } = req.query;
-  const targetDate = date ? String(date).trim() : new Date().toISOString().split('T')[0];
+  let targetDate = date ? String(date).trim() : getVietnamDbDateStr();
+  // Không cho xem / trả dữ liệu trước mốc epoch
+  if (!targetDate || targetDate < MONITOR_EPOCH) {
+    targetDate = MONITOR_EPOCH;
+  }
 
   try {
     const db = await getDb();
+    // Chỉ đúng 1 ngày — không kéo is_warned < 2 của tháng cũ (NKT lịch sử)
     const rows = await db.all(
-      "SELECT * FROM fms_temp_import_exports WHERE date = ? OR is_warned < 2 ORDER BY id DESC",
-      targetDate
+      `SELECT * FROM fms_temp_import_exports
+       WHERE date = ? AND date >= ?
+       ORDER BY id DESC`,
+      targetDate,
+      MONITOR_EPOCH
     );
-    res.json({ success: true, data: rows });
+    res.json({
+      success: true,
+      data: rows,
+      meta: { date: targetDate, epoch: MONITOR_EPOCH, count: rows.length }
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
