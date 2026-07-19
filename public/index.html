@@ -262,14 +262,20 @@
         <!-- Bảng theo dõi tải dầu -->
         <div class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; width: 100%; box-sizing: border-box;">
           <div class="fms-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
-              <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
-            </h4>
-            <div class="fms-toolbar-actions" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <div id="fms-unit-toggle" style="display: inline-flex; border-radius: 8px; overflow: hidden; border: 1px solid rgba(0, 114, 151, 0.3);">
-                <button type="button" class="fms-unit-btn active" data-unit="SKYPEC" style="margin:0; padding: 6px 14px; font-size: 0.82rem; font-weight: 700; border: none; background: var(--primary); color: #fff; cursor: pointer;">Skypec</button>
-                <button type="button" class="fms-unit-btn" data-unit="NAFC" style="margin:0; padding: 6px 14px; font-size: 0.82rem; font-weight: 700; border: none; background: var(--panel-elevated, #f1f5f9); color: var(--text); cursor: pointer;">NAFC</button>
+            <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start;">
+              <h4 id="fms-panel-title" style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-circle-check"></i> Lịch tra nạp Skypec
+              </h4>
+              <div id="fms-unit-toggle" style="display: inline-flex; border-radius: 10px; overflow: hidden; border: 2px solid rgba(0, 114, 151, 0.35); box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+                <button type="button" class="fms-unit-btn active" data-unit="SKYPEC" title="Lịch đơn vị Skypec (mặc định)" style="margin:0; padding: 8px 18px; font-size: 0.88rem; font-weight: 700; border: none; background: var(--primary); color: #fff; cursor: pointer;">
+                  <i class="fa-solid fa-building"></i> Skypec
+                </button>
+                <button type="button" class="fms-unit-btn" data-unit="NAFC" title="Lịch đơn vị NAFC" style="margin:0; padding: 8px 18px; font-size: 0.88rem; font-weight: 700; border: none; background: #e2e8f0; color: #334155; cursor: pointer;">
+                  <i class="fa-solid fa-building-user"></i> NAFC
+                </button>
               </div>
+            </div>
+            <div class="fms-toolbar-actions" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <input type="date" id="fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
               <button id="btn-fms-sync-now" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: var(--success); padding: 6px 12px; font-size: 0.85rem; margin-top: 0;">
                 <i class="fa-solid fa-rotate"></i> Quét FMS Ngay
@@ -598,7 +604,8 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.06);">
               <div style="font-weight: 700; color: #059669; font-size: 0.9rem;"><i class="fa-solid fa-cloud-arrow-down"></i> Nguồn chính: Skypec Flights</div>
               <p style="margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
-                Tự lấy kế hoạch theo ca (ngày 07:30–19:29 · tối 19:30–07:30). Worker quét 3–5 phút — bắt cả chuyến phát sinh (vd HAN-HAN). Ghi <strong>NAFC</strong> song song (không cần roster).
+                Tự lấy kế hoạch theo ca (ngày 07:30–19:29 · tối 19:30–07:30). Worker quét 3–5 phút — bắt cả chuyến phát sinh (vd HAN-HAN).
+                Mỗi lần đồng bộ tạo <strong>2 lịch tách riêng: Skypec + NAFC</strong> (cùng chuyến, chuyển tab để xem).
               </p>
               <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                 <button type="button" id="btn-fms-flights-preview" class="btn-secondary" style="margin:0; padding: 8px 12px; font-size: 0.85rem;">
@@ -1059,14 +1066,20 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
       <!-- Bảng theo dõi tải dầu FMS dành cho nhân viên (C1, C2) chỉ xem -->
       <div id="user-fms-section" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <h4 style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
-            <i class="fa-solid fa-circle-check"></i> Bảng Theo Dõi Tải Dầu FMS
-          </h4>
-          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-            <div id="user-fms-unit-toggle" style="display: inline-flex; border-radius: 8px; overflow: hidden; border: 1px solid rgba(0, 114, 151, 0.3);">
-              <button type="button" class="user-fms-unit-btn active" data-unit="SKYPEC" style="margin:0; padding: 6px 12px; font-size: 0.8rem; font-weight: 700; border: none; background: var(--primary); color: #fff; cursor: pointer;">Skypec</button>
-              <button type="button" class="user-fms-unit-btn" data-unit="NAFC" style="margin:0; padding: 6px 12px; font-size: 0.8rem; font-weight: 700; border: none; background: var(--panel-elevated, #f1f5f9); color: var(--text); cursor: pointer;">NAFC</button>
+          <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start;">
+            <h4 id="user-fms-panel-title" style="margin: 0; font-size: 1.1rem; color: var(--success); display: flex; align-items: center; gap: 10px;">
+              <i class="fa-solid fa-circle-check"></i> Lịch tra nạp Skypec
+            </h4>
+            <div id="user-fms-unit-toggle" style="display: inline-flex; border-radius: 10px; overflow: hidden; border: 2px solid rgba(0, 114, 151, 0.35);">
+              <button type="button" class="user-fms-unit-btn active" data-unit="SKYPEC" style="margin:0; padding: 8px 16px; font-size: 0.85rem; font-weight: 700; border: none; background: var(--primary); color: #fff; cursor: pointer;">
+                <i class="fa-solid fa-building"></i> Skypec
+              </button>
+              <button type="button" class="user-fms-unit-btn" data-unit="NAFC" style="margin:0; padding: 8px 16px; font-size: 0.85rem; font-weight: 700; border: none; background: #e2e8f0; color: #334155; cursor: pointer;">
+                <i class="fa-solid fa-building-user"></i> NAFC
+              </button>
             </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <select id="user-fms-crew-filter" title="Lọc theo cặp tra nạp" style="min-width: 180px; max-width: 260px; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: 600; cursor: pointer; outline: none;">
               <option value="">-- Tất cả Cặp tra nạp --</option>
             </select>

@@ -826,17 +826,10 @@ function setupEventListeners() {
   const btnFlightsApply = document.getElementById('btn-fms-flights-apply');
   if (btnFlightsApply) btnFlightsApply.addEventListener('click', () => handleFlightsScheduleSync('apply'));
 
-  // Toggle đơn vị Skypec | NAFC (admin)
+  // Toggle đơn vị Skypec | NAFC (admin) — tách lịch riêng, mặc định Skypec
   document.querySelectorAll('.fms-unit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const unit = btn.getAttribute('data-unit') || 'SKYPEC';
-      window.fmsUnitFilter = unit;
-      document.querySelectorAll('.fms-unit-btn').forEach(b => {
-        const on = b.getAttribute('data-unit') === unit;
-        b.classList.toggle('active', on);
-        b.style.background = on ? 'var(--primary)' : 'var(--panel-elevated, #f1f5f9)';
-        b.style.color = on ? '#fff' : 'var(--text)';
-      });
+      setFmsUnitFilter(btn.getAttribute('data-unit') || 'SKYPEC', 'admin');
       loadFmsSchedules(false);
     });
   });
@@ -871,17 +864,13 @@ function setupEventListeners() {
   }
   document.querySelectorAll('.user-fms-unit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const unit = btn.getAttribute('data-unit') || 'SKYPEC';
-      window.userFmsUnitFilter = unit;
-      document.querySelectorAll('.user-fms-unit-btn').forEach(b => {
-        const on = b.getAttribute('data-unit') === unit;
-        b.classList.toggle('active', on);
-        b.style.background = on ? 'var(--primary)' : 'var(--panel-elevated, #f1f5f9)';
-        b.style.color = on ? '#fff' : 'var(--text)';
-      });
+      setFmsUnitFilter(btn.getAttribute('data-unit') || 'SKYPEC', 'user');
       loadUserFmsSchedules(false);
     });
   });
+  // Đảm bảo mặc định Skypec khi load
+  setFmsUnitFilter('SKYPEC', 'admin');
+  setFmsUnitFilter('SKYPEC', 'user');
 
   // Đóng Modal Preview FMS
   document.getElementById('btn-close-fms-preview-modal').addEventListener('click', () => {
@@ -2134,6 +2123,45 @@ function formatDateVN(dateStr) {
 
 window.fmsUnitFilter = window.fmsUnitFilter || 'SKYPEC';
 window.userFmsUnitFilter = window.userFmsUnitFilter || 'SKYPEC';
+
+/** Cập nhật toggle + tiêu đề lịch theo đơn vị (SKYPEC mặc định) */
+function setFmsUnitFilter(unit, scope) {
+  const u = String(unit || 'SKYPEC').toUpperCase() === 'NAFC' ? 'NAFC' : 'SKYPEC';
+  const isNa = u === 'NAFC';
+  const title = isNa ? 'Lịch tra nạp NAFC' : 'Lịch tra nạp Skypec';
+  const activeBg = isNa ? '#0f766e' : 'var(--primary)';
+  const idleBg = '#e2e8f0';
+  const idleColor = '#334155';
+
+  if (scope === 'admin' || scope === 'both') {
+    window.fmsUnitFilter = u;
+    document.querySelectorAll('.fms-unit-btn').forEach(b => {
+      const on = (b.getAttribute('data-unit') || '') === u;
+      b.classList.toggle('active', on);
+      b.style.background = on ? activeBg : idleBg;
+      b.style.color = on ? '#fff' : idleColor;
+    });
+    const t = document.getElementById('fms-panel-title');
+    if (t) {
+      t.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${title}`;
+      t.style.color = isNa ? '#0f766e' : 'var(--success)';
+    }
+  }
+  if (scope === 'user' || scope === 'both') {
+    window.userFmsUnitFilter = u;
+    document.querySelectorAll('.user-fms-unit-btn').forEach(b => {
+      const on = (b.getAttribute('data-unit') || '') === u;
+      b.classList.toggle('active', on);
+      b.style.background = on ? activeBg : idleBg;
+      b.style.color = on ? '#fff' : idleColor;
+    });
+    const t = document.getElementById('user-fms-panel-title');
+    if (t) {
+      t.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${title}`;
+      t.style.color = isNa ? '#0f766e' : 'var(--success)';
+    }
+  }
+}
 
 async function loadFmsSchedules(isSilent = false) {
   try {

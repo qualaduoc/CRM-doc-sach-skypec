@@ -1590,12 +1590,12 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 
 // Lấy danh sách lịch bay và dữ liệu tải dầu tương ứng (Cho phép tất cả người dùng đăng nhập xem)
 // Ghép thêm fms_flights_live (Skypec Flights) để đánh dấu "Đã tra nạp"
-// Query unit=SKYPEC|NAFC|ALL — BOTH hiện ở cả hai tab Skypec/NAFC
+// Query unit=SKYPEC|NAFC|ALL — mặc định SKYPEC (tách riêng với NAFC)
 app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
   try {
     const db = await getDb();
     const targetDate = req.query.date || getVietnamDbDateStr();
-    const unit = String(req.query.unit || 'SKYPEC').toUpperCase();
+    const unit = String(req.query.unit || 'SKYPEC').toUpperCase() === 'NAFC' ? 'NAFC' : 'SKYPEC';
     const uf = unitFilterSql(unit);
 
     const rows = await db.all(`
@@ -1700,7 +1700,7 @@ app.post('/api/fms/schedule/from-flights/preview', authenticateToken, async (req
       shift,
       count: candidates.length,
       data: candidates.slice(0, 80),
-      message: `Tìm thấy ${candidates.length} chuyến trong ca ${shift} ngày ${date} (unit BOTH → hiện Skypec & NAFC).`
+      message: `Tìm thấy ${candidates.length} chuyến trong ca ${shift} ngày ${date}. Áp dụng sẽ tạo/cập nhật 2 lịch: Skypec + NAFC.`
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

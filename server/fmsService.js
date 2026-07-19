@@ -1818,7 +1818,8 @@ async function syncFmsSkypecLive(forceDate = null) {
                 THEN ? ELSE crew_info END,
               truck_no = COALESCE(NULLIF(truck_no, ''), ?)
              WHERE (date = ? OR fms_date = ?)
-               AND REPLACE(REPLACE(UPPER(flight_no), ' ', ''), '-', '') = ?`,
+               AND REPLACE(REPLACE(UPPER(flight_no), ' ', ''), '-', '') = ?
+               AND UPPER(COALESCE(NULLIF(unit_code,''),'SKYPEC')) IN ('SKYPEC','NAFC','BOTH')`,
             realD || null,
             realO || null,
             crewInfo || null,

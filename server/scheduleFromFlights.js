@@ -2,7 +2,8 @@
  * Xây dựng / đồng bộ kế hoạch tra nạp từ FMS Skypec Flights.
  * - Ca ngày: 07:30–19:29
  * - Ca tối: 19:30–23:59 D + 00:00–07:30 D+1
- * - unit_code BOTH: hiển thị cả view Skypec và NAFC (không cần roster NAFC)
+ * - unit_code SKYPEC | NAFC: import song song 2 bản lịch (cùng chuyến, tách giao diện)
+ * - Không cần roster NAFC — chỉ ghi nhãn unit_code = NAFC
  */
 const https = require('https');
 const querystring = require('querystring');
@@ -366,8 +367,6 @@ async function buildScheduleCandidatesFromFlights(dutyDate, shift = 'day') {
         ...f,
         date: dutyDate,
         fms_date: fmsDate,
-        // BOTH: hiện ở tab Skypec và NAFC — không cần roster NAFC
-        unit_code: 'BOTH',
         schedule_source: 'flights'
       };
       if (!prev || score(candidate) >= score(prev)) byFlight.set(key, candidate);
@@ -444,13 +443,122 @@ async function enrichCrewFromLive(db, item, dutyDate) {
   return item;
 }
 
+/**
+ * Upsert 1 dòng lịch cho đúng unit_code (SKYPEC | NAFC)
+ */
+async function upsertOneUnitSchedule(db, item, dutyDate, unitCode, nowStr) {
+  const flightNo = normalizeFlightNo(item.flight_no);
+  const unit = String(unitCode || 'SKYPEC').toUpperCase();
+
+  const existing = await db.get(
+    `SELECT id, schedule_source, notify_type, crew_zalo_uids, driver_name, operator_name, crew_info
+     FROM fms_schedules
+     WHERE UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ?
+       AND date = ?
+       AND UPPER(COALESCE(NULLIF(unit_code,''),'SKYPEC')) = ?`,
+    flightNo, dutyDate, unit
+  );
+
+  let driverName = item.driver_name || '';
+  let operatorName = item.operator_name || '';
+  if (existing) {
+    const exD = String(existing.driver_name || '').trim();
+    const exO = String(existing.operator_name || '').trim();
+    if (!driverName && exD && !/^NAFSC$/i.test(exD)) driverName = exD;
+    if (!operatorName && exO && !/^NAFSC$/i.test(exO)) operatorName = exO;
+  }
+  const crewParts = [driverName, operatorName].filter(Boolean);
+  const crewInfo = crewParts.length ? crewParts.join(' - ') : '-';
+
+  const crewZalo = existing && existing.crew_zalo_uids
+    ? existing.crew_zalo_uids
+    : await resolveZaloUids(db, driverName, operatorName);
+
+  const notifyType = existing ? (existing.notify_type || 1) : 1;
+  const displayFn = item.flight_no_display || flightNo;
+
+  if (existing) {
+    await db.run(
+      `UPDATE fms_schedules SET
+        flight_no = ?, ac_type = ?, ac_reg = ?, route = ?,
+        time_arr = ?, time_dep = ?, time_fuel = ?, gate = ?,
+        truck_no = COALESCE(NULLIF(?, ''), truck_no),
+        driver_name = ?, operator_name = ?, crew_info = ?,
+        crew_zalo_uids = COALESCE(NULLIF(?, ''), crew_zalo_uids),
+        fms_date = ?, unit_code = ?, schedule_source = 'flights',
+        id_fms = ?, updated_from_flights_at = ?
+       WHERE id = ?`,
+      displayFn,
+      item.ac_type || '',
+      item.ac_reg || '',
+      item.route || '',
+      item.time_arr || '',
+      item.time_dep || '',
+      item.time_fuel || '',
+      item.gate || '',
+      item.truck_no || '',
+      driverName,
+      operatorName,
+      crewInfo,
+      crewZalo,
+      item.fms_date || dutyDate,
+      unit,
+      item.id_fms || '',
+      nowStr,
+      existing.id
+    );
+    return 'updated';
+  }
+
+  await db.run(
+    `INSERT INTO fms_schedules (
+      flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel,
+      gate, truck_no, driver_name, operator_name, crew_info, crew_zalo_uids,
+      notify_type, date, fms_date, unit_code, schedule_source, id_fms, updated_from_flights_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'flights', ?, ?)`,
+    displayFn,
+    item.ac_type || '',
+    item.ac_reg || '',
+    item.route || '',
+    item.time_arr || '',
+    item.time_dep || '',
+    item.time_fuel || '',
+    item.gate || '',
+    item.truck_no || '',
+    driverName,
+    operatorName,
+    crewInfo,
+    crewZalo,
+    notifyType,
+    dutyDate,
+    item.fms_date || dutyDate,
+    unit,
+    item.id_fms || '',
+    nowStr
+  );
+  return 'added';
+}
+
 async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
   const db = await getDb();
   const candidates = await buildScheduleCandidatesFromFlights(dutyDate, shift);
   const nowStr = getVietnamDateTimeStr();
 
+  // migrate legacy BOTH → SKYPEC (một lần nhẹ)
+  try {
+    await db.run(
+      `UPDATE fms_schedules SET unit_code = 'SKYPEC'
+       WHERE date = ? AND UPPER(COALESCE(unit_code,'')) IN ('BOTH','')`,
+      dutyDate
+    );
+  } catch (_) { /* ignore */ }
+
   if (mode === 'replace') {
-    await db.run('DELETE FROM fms_schedules WHERE date = ?', dutyDate);
+    // Chỉ xóa lịch nguồn flights của cả 2 unit (giữ excel/manual nếu có)
+    await db.run(
+      `DELETE FROM fms_schedules WHERE date = ? AND COALESCE(schedule_source,'manual') = 'flights'`,
+      dutyDate
+    );
   }
 
   let added = 0;
@@ -458,96 +566,23 @@ async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
   let skipped = 0;
   let named = 0;
 
+  // Import song song: mỗi chuyến → 2 bản SKYPEC + NAFC (chỉ ghi nhãn unit, không cần roster)
+  const UNITS = ['SKYPEC', 'NAFC'];
+
   for (let item of candidates) {
     item = await enrichCrewFromLive(db, item, dutyDate);
     if (item.driver_name || item.operator_name) named++;
 
-    const flightNo = normalizeFlightNo(item.flight_no);
-    const existing = await db.get(
-      'SELECT id, schedule_source, notify_type, crew_zalo_uids, driver_name, operator_name, crew_info FROM fms_schedules WHERE UPPER(REPLACE(REPLACE(flight_no,\' \',\'\'),\'-\',\'\')) = ? AND date = ?',
-      flightNo, dutyDate
-    );
-
-    // Không ghi đè tên tốt đã có bằng rỗng
-    let driverName = item.driver_name || '';
-    let operatorName = item.operator_name || '';
-    if (existing) {
-      const exD = String(existing.driver_name || '').trim();
-      const exO = String(existing.operator_name || '').trim();
-      if (!driverName && exD && !/^NAFSC$/i.test(exD)) driverName = exD;
-      if (!operatorName && exO && !/^NAFSC$/i.test(exO)) operatorName = exO;
-    }
-    const crewParts = [driverName, operatorName].filter(Boolean);
-    const crewInfo = crewParts.length ? crewParts.join(' - ') : '-';
-
-    const crewZalo = existing && existing.crew_zalo_uids
-      ? existing.crew_zalo_uids
-      : await resolveZaloUids(db, driverName, operatorName);
-
-    const notifyType = existing ? (existing.notify_type || 1) : 1;
-
-    if (existing) {
-      await db.run(
-        `UPDATE fms_schedules SET
-          flight_no = ?, ac_type = ?, ac_reg = ?, route = ?,
-          time_arr = ?, time_dep = ?, time_fuel = ?, gate = ?,
-          truck_no = COALESCE(NULLIF(?, ''), truck_no),
-          driver_name = ?, operator_name = ?, crew_info = ?,
-          crew_zalo_uids = COALESCE(NULLIF(?, ''), crew_zalo_uids),
-          fms_date = ?, unit_code = 'BOTH', schedule_source = 'flights',
-          id_fms = ?, updated_from_flights_at = ?
-         WHERE id = ?`,
-        item.flight_no_display || flightNo,
-        item.ac_type || '',
-        item.ac_reg || '',
-        item.route || '',
-        item.time_arr || '',
-        item.time_dep || '',
-        item.time_fuel || '',
-        item.gate || '',
-        item.truck_no || '',
-        driverName,
-        operatorName,
-        crewInfo,
-        crewZalo,
-        item.fms_date || dutyDate,
-        item.id_fms || '',
-        nowStr,
-        existing.id
-      );
-      updated++;
-    } else {
-      await db.run(
-        `INSERT INTO fms_schedules (
-          flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel,
-          gate, truck_no, driver_name, operator_name, crew_info, crew_zalo_uids,
-          notify_type, date, fms_date, unit_code, schedule_source, id_fms, updated_from_flights_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOTH', 'flights', ?, ?)`,
-        item.flight_no_display || flightNo,
-        item.ac_type || '',
-        item.ac_reg || '',
-        item.route || '',
-        item.time_arr || '',
-        item.time_dep || '',
-        item.time_fuel || '',
-        item.gate || '',
-        item.truck_no || '',
-        driverName,
-        operatorName,
-        crewInfo,
-        crewZalo,
-        notifyType,
-        dutyDate,
-        item.fms_date || dutyDate,
-        item.id_fms || '',
-        nowStr
-      );
-      added++;
+    for (const unit of UNITS) {
+      const r = await upsertOneUnitSchedule(db, item, dutyDate, unit, nowStr);
+      if (r === 'added') added++;
+      else if (r === 'updated') updated++;
+      else skipped++;
     }
   }
 
-  console.log(`[ScheduleFlights] date=${dutyDate} shift=${shift} mode=${mode} added=${added} updated=${updated} named=${named}/${candidates.length}`);
-  return { added, updated, skipped, named, total: candidates.length, candidates };
+  console.log(`[ScheduleFlights] date=${dutyDate} shift=${shift} mode=${mode} added=${added} updated=${updated} named=${named}/${candidates.length} units=${UNITS.join('+')}`);
+  return { added, updated, skipped, named, total: candidates.length, units: UNITS, candidates };
 }
 
 /**
@@ -579,19 +614,19 @@ async function autoSyncScheduleFromFlightsIfEnabled() {
   }
 }
 
-/** unit filter for schedules API */
+/** unit filter for schedules API — tách hẳn Skypec / NAFC, mặc định SKYPEC */
 function unitFilterSql(unit) {
   const u = String(unit || 'SKYPEC').toUpperCase();
   if (u === 'ALL') return { clause: '1=1', params: [] };
   if (u === 'NAFC') {
     return {
-      clause: `(UPPER(COALESCE(s.unit_code,'SKYPEC')) IN ('NAFC','BOTH'))`,
+      clause: `UPPER(COALESCE(NULLIF(s.unit_code,''),'SKYPEC')) = 'NAFC'`,
       params: []
     };
   }
-  // SKYPEC default: SKYPEC, BOTH, empty, null
+  // SKYPEC: gồm legacy BOTH/null/empty coi là Skypec
   return {
-    clause: `(UPPER(COALESCE(NULLIF(s.unit_code,''),'SKYPEC')) IN ('SKYPEC','BOTH'))`,
+    clause: `UPPER(COALESCE(NULLIF(s.unit_code,''),'SKYPEC')) IN ('SKYPEC','BOTH')`,
     params: []
   };
 }
