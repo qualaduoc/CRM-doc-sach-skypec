@@ -516,6 +516,22 @@ function initSpaceBackground() {
   animate();
 }
 
+/** Đang thao tác mapping / filter trên tab FMS → không auto-refresh (tránh mất lựa chọn) */
+function isFmsUiBusy() {
+  const el = document.activeElement;
+  if (!el || el === document.body) return false;
+  if (el.closest('#fms-crew-notify-settings-container')) return true;
+  if (el.closest('#settings-zalo-mapping-panel')) return true;
+  if (el.closest('#zalo-mappings-modal') && document.getElementById('zalo-mappings-modal')?.classList.contains('active')) {
+    return true;
+  }
+  // select/input đang focus trong tab kế hoạch FMS
+  if (el.matches && el.matches('select, input, textarea, button')) {
+    if (el.closest('#tab-fms') || el.closest('#tab-settings')) return true;
+  }
+  return !!window.__fmsMappingPaused;
+}
+
 function startDashboardPolling() {
   if (dashboardInterval) clearInterval(dashboardInterval);
   dashboardInterval = setInterval(() => {
@@ -533,7 +549,9 @@ function startDashboardPolling() {
       loadAdminDashboard(true);
       
       const activeTabBtn = document.querySelector('.admin-tab-btn.active');
+      // Tab FMS: auto-refresh bảng, nhưng bỏ qua nếu user đang chọn mapping/filter
       if (activeTabBtn && activeTabBtn.getAttribute('data-tab') === 'tab-fms') {
+        if (isFmsUiBusy()) return;
         loadFmsSchedules(true);
       }
     }
@@ -727,6 +745,15 @@ function setupEventListeners() {
       if (['tab-fms', 'tab-temp-import-export', 'tab-fms-schedule-admin', 'tab-settings'].includes(tabId)) {
         if (tabId === 'tab-fms' || tabId === 'tab-fms-schedule-admin') {
           loadFmsSchedules();
+        }
+        if (tabId === 'tab-settings') {
+          // Mapping Zalo nằm ở đây — tải lịch nếu chưa có + render form
+          if (!cachedFmsRows || cachedFmsRows.length === 0) {
+            loadFmsSchedules(true).then(() => renderSettingsZaloMappingPanel());
+          } else {
+            renderSettingsZaloMappingPanel();
+          }
+          fetchUnmappedCrews();
         }
         if (tabId === 'tab-temp-import-export') {
           fetchTempImportExportData();
@@ -1193,15 +1220,18 @@ function setupEventListeners() {
 
   }
 
-  // Map Zalo + báo tin theo từng người (Lái | NV) — bảng gọn trên trang chính
-  const notifyContainer = document.getElementById('fms-crew-notify-settings-container');
-  if (notifyContainer && !notifyContainer.getAttribute('data-has-listener')) {
-    notifyContainer.setAttribute('data-has-listener', 'true');
-    notifyContainer.addEventListener('change', async (e) => {
+  // Map Zalo + báo tin — event global (FMS banner + tab Cấu hình)
+  if (!document.body.dataset.zaloMapListener) {
+    document.body.dataset.zaloMapListener = '1';
+    document.body.addEventListener('change', async (e) => {
       const t = e.target;
+      if (!t || !t.classList) return;
+      const isMapSel = t.classList.contains('fms-zalo-map-select') || t.classList.contains('zalo-member-select');
+      const isNotifySel = t.classList.contains('fms-crew-notify-select');
+      if (!isMapSel && !isNotifySel) return;
 
       // --- Map tài khoản Zalo ---
-      if (t.classList.contains('fms-zalo-map-select') || t.classList.contains('zalo-member-select')) {
+      if (isMapSel) {
         const select = t;
         const personName = select.getAttribute('data-person')
           || (select.closest('[data-person]') && select.closest('[data-person]').getAttribute('data-person'))
@@ -1230,7 +1260,9 @@ function setupEventListeners() {
               select.classList.remove('is-mapped');
               select.classList.add('is-unmapped');
               showToast(`Đã bỏ map: ${personName}`, 'success', 'Zalo');
-              renderFmsTable();
+              renderSettingsZaloMappingPanel();
+              // Chỉ cập nhật banner FMS, không full table rebuild
+              if (typeof renderFmsTable === 'function') renderFmsTable();
             } else {
               showToast(data.error || 'Lỗi bỏ map', 'error');
               select.value = originalUid;
@@ -1289,6 +1321,7 @@ function setupEventListeners() {
               });
               r.crew_zalo_uids = Array.from(new Set(uids)).join(',');
             });
+            renderSettingsZaloMappingPanel();
             renderFmsTable();
           } else {
             showToast(data.error || 'Lỗi map Zalo', 'error');
@@ -1302,7 +1335,7 @@ function setupEventListeners() {
       }
 
       // --- Báo tin (notify type) theo người ---
-      if (t.classList.contains('fms-crew-notify-select')) {
+      if (isNotifySel) {
         const select = t;
         const personName = select.getAttribute('data-person') || select.getAttribute('data-crew');
         const date = select.getAttribute('data-date');
@@ -2377,11 +2410,12 @@ async function loadFmsSchedules(isSilent = false) {
     // Render bảng tải dầu FMS chi tiết sau lọc
     renderFmsTable();
 
-    // Khởi động vòng lặp tự động cập nhật số liệu tải dầu mỗi 10 giây khi đang ở tab FMS
+    // Auto-refresh bảng FMS mỗi 10s — tạm dừng khi đang mapping / focus form
     if (!fmsInterval) {
       fmsInterval = setInterval(() => {
         const activeTabBtn = document.querySelector('.admin-tab-btn.active');
         if (activeTabBtn && activeTabBtn.getAttribute('data-tab') === 'tab-fms') {
+          if (isFmsUiBusy()) return;
           loadFmsSchedules(true);
         }
       }, 10000);
@@ -2900,56 +2934,128 @@ function getRefuelStatusMeta(r) {
   };
 }
 
+/** Panel Map Zalo trên tab Cấu hình — giữ lựa chọn khi re-render */
+function renderSettingsZaloMappingPanel() {
+  const panel = document.getElementById('settings-zalo-mapping-panel');
+  const body = document.getElementById('settings-zalo-mapping-body');
+  if (!panel || !body) return;
+
+  const people = collectPeopleFromRows(cachedFmsRows || []);
+  if ((!state.zaloMembers || state.zaloMembers.length === 0) && state.token && !window.__zaloLoadInflight) {
+    window.__zaloLoadInflight = true;
+    loadZaloMembersAndMappings().finally(() => {
+      window.__zaloLoadInflight = false;
+      renderSettingsZaloMappingPanel();
+    });
+  }
+
+  // Giữ lựa chọn đang chọn trên form
+  const currentSelections = {};
+  body.querySelectorAll('.zalo-person-row, .zalo-mapping-row').forEach(row => {
+    const name = (row.getAttribute('data-name') || row.getAttribute('data-person') || '').toUpperCase();
+    const mapSel = row.querySelector('.zalo-member-select, .fms-zalo-map-select');
+    const notifySel = row.querySelector('.fms-crew-notify-select');
+    if (name && mapSel) currentSelections[name] = mapSel.value;
+    if (name && notifySel) currentSelections[`notify::${name}`] = notifySel.value;
+  });
+
+  const mapDb = getZaloMapDb();
+  if (people.length === 0) {
+    body.innerHTML = `<p style="margin:0;font-size:0.82rem;color:var(--text-muted);">Chưa có lịch tra nạp trong ngày (mở tab Kế hoạch FMS để tải dữ liệu, rồi quay lại đây).</p>`;
+    panel.style.display = 'block';
+    return;
+  }
+
+  const mappedCount = people.filter(p => resolveZaloUidForPerson(p.name, mapDb)).length;
+  body.innerHTML = `
+    <div class="zalo-person-dense-head">
+      <span class="zalo-person-dense-title">
+        <i class="fa-solid fa-user-tag"></i> Map Zalo từng người
+        <span style="font-weight:500;color:var(--text-muted);font-size:0.68rem;">(${mappedCount}/${people.length})</span>
+      </span>
+      <span class="zalo-person-dense-hint">Auto-refresh FMS không ghi đè form này</span>
+    </div>
+    <div class="zalo-person-dense-scroll" style="max-height:280px;">
+      <table class="zalo-person-dense-table">
+        <thead>
+          <tr>
+            <th style="width:48px;">Vai</th>
+            <th>Họ tên</th>
+            <th style="width:38%;">Tài khoản Zalo</th>
+            <th style="width:96px;">Báo tin</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${people.map(p => buildPersonZaloRowHtml(p, { mapDb, currentSelections })).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  panel.style.display = 'block';
+  panel.classList.add('zalo-person-dense-wrap');
+
+  // Pause refresh while interacting here
+  if (!panel.dataset.boundBusy) {
+    panel.dataset.boundBusy = '1';
+    panel.addEventListener('focusin', () => { window.__fmsMappingPaused = true; });
+    panel.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (!panel.contains(document.activeElement)) window.__fmsMappingPaused = false;
+      }, 100);
+    });
+    // Reuse same change handler as FMS mapping (event delegation on container)
+    panel.addEventListener('change', async (e) => {
+      const notifyContainer = document.getElementById('fms-crew-notify-settings-container');
+      if (notifyContainer && notifyContainer._mappingChangeHandler) {
+        notifyContainer._mappingChangeHandler(e);
+      }
+    });
+  }
+}
+
 // Thực hiện lọc và vẽ lại bảng FMS
 function renderFmsTable() {
   const tbody = document.getElementById('fms-table-body');
   if (!tbody) return;
 
-  // Zalo: 1 dòng / 1 người — map Zalo + báo tin (Lái và NV tách, không card)
+  // Mapping Zalo chuyển sang tab Cấu hình — trên FMS chỉ banner gọn (tránh mất chọn khi auto-refresh 10s)
   const crewContainer = document.getElementById('fms-crew-notify-settings-container');
   if (crewContainer) {
     const people = collectPeopleFromRows(cachedFmsRows);
+    const mapDb = getZaloMapDb();
+    const mappedCount = people.filter(p => resolveZaloUidForPerson(p.name, mapDb)).length;
     if (people.length > 0) {
-      // Lazy load members/mappings nếu chưa có (không chặn render lần đầu)
-      if ((!state.zaloMembers || state.zaloMembers.length === 0) && state.token && !window.__zaloLoadInflight) {
-        window.__zaloLoadInflight = true;
-        loadZaloMembersAndMappings().finally(() => {
-          window.__zaloLoadInflight = false;
-          renderFmsTable();
-        });
-      }
-      const mapDb = getZaloMapDb();
-      const mappedCount = people.filter(p => resolveZaloUidForPerson(p.name, mapDb)).length;
+      crewContainer.classList.add('zalo-person-dense-wrap');
+      crewContainer.style.display = 'block';
       crewContainer.innerHTML = `
-        <div class="zalo-person-dense-head">
+        <div class="zalo-person-dense-head" style="margin:0;">
           <span class="zalo-person-dense-title">
-            <i class="fa-solid fa-user-tag"></i> Map Zalo từng người
+            <i class="fa-solid fa-user-tag"></i> Map Zalo
             <span style="font-weight:500;color:var(--text-muted);font-size:0.68rem;">(${mappedCount}/${people.length} đã map)</span>
           </span>
-          <span class="zalo-person-dense-hint">Lái xe · NV tra nạp tách dòng · gọn</span>
+          <button type="button" id="btn-open-settings-mapping" class="btn-secondary"
+            style="margin:0;padding:4px 10px;font-size:0.72rem;width:auto;">
+            <i class="fa-solid fa-sliders"></i> Cấu hình mapping
+          </button>
         </div>
-        <div class="zalo-person-dense-scroll">
-          <table class="zalo-person-dense-table">
-            <thead>
-              <tr>
-                <th style="width:48px;">Vai</th>
-                <th>Họ tên</th>
-                <th style="width:38%;">Tài khoản Zalo</th>
-                <th style="width:96px;">Báo tin</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${people.map(p => buildPersonZaloRowHtml(p, { mapDb })).join('')}
-            </tbody>
-          </table>
-        </div>
-      `;
-      crewContainer.style.display = 'block';
-      crewContainer.classList.add('zalo-person-dense-wrap');
+        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;line-height:1.35;">
+          Mapping nằm ở <strong>Cấu hình &amp; Kết nối</strong> — tránh bị reset khi bảng tự làm mới mỗi 10 giây.
+        </div>`;
+      const btn = document.getElementById('btn-open-settings-mapping');
+      if (btn) {
+        btn.onclick = () => {
+          const tab = document.getElementById('tab-btn-settings');
+          if (tab) tab.click();
+          setTimeout(() => {
+            document.getElementById('settings-zalo-mapping-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 80);
+        };
+      }
     } else {
       crewContainer.innerHTML = '';
       crewContainer.style.display = 'none';
     }
+    // Đồng bộ panel mapping trên tab Cấu hình (nếu đang mở)
+    renderSettingsZaloMappingPanel();
   }
 
   const searchInput = document.getElementById('fms-search-input');

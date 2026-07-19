@@ -683,12 +683,19 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 
   <!-- ================= TAB CONTENT 3: CẤU HÌNH & KẾT NỐI ================= -->
   <div id="tab-settings" class="admin-tab-content" style="display: none; padding: 15px 0;">
-    <div class="container">
+    <div class="container settings-page">
+      <div class="settings-page-head">
+        <h3 style="margin:0;font-size:1.15rem;color:var(--text);display:flex;align-items:center;gap:8px;">
+          <i class="fa-solid fa-screwdriver-wrench" style="color:var(--primary);"></i> Cấu hình &amp; Kết nối
+        </h3>
+        <p style="margin:4px 0 0;font-size:0.78rem;color:var(--text-muted);">Bot Zalo · Mapping nhân sự · Test cảnh báo — bố cục 2 cột</p>
+      </div>
       <div class="settings-layout">
       
-      <!-- Cột 1: Cấu hình Zalo Bot -->
-      <div id="card-zalo-settings" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
-        <h4 style="margin: 0; font-size: 1.1rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
+      <!-- Cột trái: Bot + Mapping -->
+      <div class="settings-col settings-col-main">
+      <div id="card-zalo-settings" class="glass-panel settings-card" style="padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+        <h4 style="margin: 0; font-size: 1.05rem; color: #38bdf8; display: flex; align-items: center; gap: 10px;">
           <i class="fa-solid fa-robot"></i> Trợ Lý Zalo Bot SkyEyes
         </h4>
         
@@ -853,69 +860,70 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
               <i class="fa-solid fa-power-off"></i> Đăng Xuất Tài Khoản Bot
             </button>
             <button id="btn-skyeyes-manage-mappings" class="btn-glow" style="margin-top: 5px; width: 100%; font-size: 0.9rem; padding: 10px 15px; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); border: none;">
-              <i class="fa-solid fa-user-tag"></i> Quản Lý Liên Kết Zalo Mappings (Tập trung)
+              <i class="fa-solid fa-user-tag"></i> Quản Lý Liên Kết Zalo Mappings (Modal)
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Cột 2: Thử nghiệm kịch bản cảnh báo (Test Bot Zalo) -->
-      <div id="card-test-settings" class="glass-panel" style="padding: 20px; display: flex; flex-direction: column; gap: 15px;">
-        <h4 style="margin: 0; font-size: 1.1rem; color: #a855f7; display: flex; align-items: center; gap: 10px;">
-          <i class="fa-solid fa-flask"></i> Thử Nghiệm Kịch Bản Cảnh Báo (Test Zalo)
+      <!-- Mapping Zalo (chuyển từ Kế hoạch FMS — không bị auto-refresh) -->
+      <div id="settings-zalo-mapping-panel" class="glass-panel settings-card" style="padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+        <h4 style="margin: 0; font-size: 1.02rem; color: #fb923c; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-link"></i> Liên kết Zalo nhân sự (trực ca)
         </h4>
-        <p style="margin: 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
-          Bấm các nút dưới đây để giả lập sự kiện thay đổi dữ liệu FMS. Hệ thống sẽ tự động soạn tin nhắn và bắn trực tiếp về nhóm Zalo đã cấu hình để kiểm tra kết nối Bot.
+        <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted); line-height: 1.4;">
+          Map từng người (Lái / NV) và hình thức báo tin. Form này <strong>không bị reset</strong> khi bảng FMS tự làm mới.
         </p>
-        
-        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 5px;">
-          <button id="btn-test-zalo-new-fuel" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(16, 185, 129, 0.25); color: #10b981;">
-            <span><i class="fa-solid fa-gas-pump"></i> 1. Giả lập Báo Tải Dầu Mới</span>
-            <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
-          </button>
-          <button id="btn-test-zalo-update-fuel" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(245, 158, 11, 0.25); color: #f59e0b;">
-            <span><i class="fa-solid fa-rotate"></i> 2. Giả lập Đổi Số Lượng Tải Dầu</span>
-            <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
-          </button>
-          <button id="btn-test-zalo-change-ac" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(239, 68, 68, 0.25); color: #ef4444;">
-            <span><i class="fa-solid fa-plane"></i> 3. Giả lập Thay Đổi Tàu Bay (Acreg)</span>
-            <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
-          </button>
-          <button id="btn-test-zalo-change-gate" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(96, 165, 250, 0.25); color: #60a5fa;">
-            <span><i class="fa-solid fa-location-dot"></i> 4. Giả lập Thay Đổi Bến Đỗ (Vị trí đỗ)</span>
-            <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
-          </button>
-          <button id="btn-test-zalo-change-etd" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(168, 85, 247, 0.25); color: #c084fc;">
-            <span><i class="fa-solid fa-clock"></i> 5. Giả lập Thay Đổi Giờ Bay (ETD)</span>
-            <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
-          </button>
-          <button id="btn-test-zalo-remind-schedule" class="btn-secondary" style="margin-top: 0; width: 100%; text-align: left; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(236, 72, 153, 0.25); color: #ec4899;">
-            <span><i class="fa-solid fa-bell"></i> 6. Giả lập Nhắc Nhở Import Lịch Trực</span>
-            <i class="fa-solid fa-paper-plane" style="font-size: 0.8rem;"></i>
-          </button>
-        </div>
+        <div id="settings-unmapped-crews" style="display:none;font-size:0.78rem;padding:8px;border-radius:6px;border:1px dashed rgba(239,68,68,0.35);background:rgba(239,68,68,0.04);color:#b91c1c;"></div>
+        <div id="settings-zalo-mapping-body"></div>
       </div>
+      </div><!-- /settings-col-main -->
 
-      <!-- Cột 3: Cấu hình Gemini -->
-      <div id="card-gemini-settings" class="glass-panel" style="display: none !important; padding: 20px; flex-direction: column; gap: 12px; height: fit-content;">
-        <h4 style="margin: 0; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; gap: 10px;">
-          <i class="fa-solid fa-key"></i> API Key Gemini (Xoay Vòng)
+      <!-- Cột phải: Test -->
+      <div class="settings-col settings-col-side">
+      <div id="card-test-settings" class="glass-panel settings-card" style="padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+        <h4 style="margin: 0; font-size: 1.05rem; color: #a855f7; display: flex; align-items: center; gap: 10px;">
+          <i class="fa-solid fa-flask"></i> Test kịch bản Zalo
         </h4>
-        <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
-          Nhập danh sách các API Keys Gemini (mỗi dòng một key). Khi quét FMS hoặc thực hiện tác vụ, hệ thống sẽ tự động xoay vòng hoặc đổi key dự phòng nếu key hiện tại hết hạn mức/lỗi.
+        <p style="margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+          Giả lập sự kiện FMS và gửi tin vào nhóm đã cấu hình.
         </p>
-        <textarea id="gemini-keys-input" placeholder="Nhập các API Keys Gemini tại đây, mỗi dòng một key..." style="width: 100%; height: 120px; padding: 10px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-family: monospace; font-size: 0.88rem; line-height: 1.5; resize: none; outline: none;"></textarea>
         
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 5px;">
-          <button id="btn-save-gemini-keys" class="btn-glow" style="margin-top: 0; width: 100%; font-size: 0.88rem; padding: 10px 15px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
-            <i class="fa-solid fa-floppy-disk"></i> Lưu Cấu Hình Keys
+        <div class="settings-test-btns" style="display: flex; flex-direction: column; gap: 6px;">
+          <button id="btn-test-zalo-new-fuel" class="btn-secondary settings-test-btn" style="margin-top: 0; width: 100%; text-align: left; padding: 9px 12px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(16, 185, 129, 0.25); color: #10b981;">
+            <span><i class="fa-solid fa-gas-pump"></i> Tải dầu mới</span>
+            <i class="fa-solid fa-paper-plane" style="font-size: 0.75rem;"></i>
           </button>
-          <button id="btn-test-gemini-keys" class="btn-secondary" style="margin-top: 0; width: 100%; font-size: 0.88rem; padding: 10px 15px; border-color: rgba(0, 114, 151, 0.22); color: var(--primary);">
-            <i class="fa-solid fa-vial"></i> Kiểm Tra Trạng Thái Keys
+          <button id="btn-test-zalo-update-fuel" class="btn-secondary settings-test-btn" style="margin-top: 0; width: 100%; text-align: left; padding: 9px 12px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(245, 158, 11, 0.25); color: #f59e0b;">
+            <span><i class="fa-solid fa-rotate"></i> Đổi lượng tải</span>
+            <i class="fa-solid fa-paper-plane" style="font-size: 0.75rem;"></i>
+          </button>
+          <button id="btn-test-zalo-change-ac" class="btn-secondary settings-test-btn" style="margin-top: 0; width: 100%; text-align: left; padding: 9px 12px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(239, 68, 68, 0.25); color: #ef4444;">
+            <span><i class="fa-solid fa-plane"></i> Đổi tàu (Acreg)</span>
+            <i class="fa-solid fa-paper-plane" style="font-size: 0.75rem;"></i>
+          </button>
+          <button id="btn-test-zalo-change-gate" class="btn-secondary settings-test-btn" style="margin-top: 0; width: 100%; text-align: left; padding: 9px 12px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(96, 165, 250, 0.25); color: #60a5fa;">
+            <span><i class="fa-solid fa-location-dot"></i> Đổi bến đỗ</span>
+            <i class="fa-solid fa-paper-plane" style="font-size: 0.75rem;"></i>
+          </button>
+          <button id="btn-test-zalo-change-etd" class="btn-secondary settings-test-btn" style="margin-top: 0; width: 100%; text-align: left; padding: 9px 12px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(168, 85, 247, 0.25); color: #c084fc;">
+            <span><i class="fa-solid fa-clock"></i> Đổi giờ bay (ETD)</span>
+            <i class="fa-solid fa-paper-plane" style="font-size: 0.75rem;"></i>
+          </button>
+          <button id="btn-test-zalo-remind-schedule" class="btn-secondary settings-test-btn" style="margin-top: 0; width: 100%; text-align: left; padding: 9px 12px; display: flex; justify-content: space-between; align-items: center; border-color: rgba(236, 72, 153, 0.25); color: #ec4899;">
+            <span><i class="fa-solid fa-bell"></i> Nhắc import lịch</span>
+            <i class="fa-solid fa-paper-plane" style="font-size: 0.75rem;"></i>
           </button>
         </div>
-        <div id="gemini-keys-test-results" style="margin-top: 10px; font-size: 0.85rem; max-height: 200px; overflow-y: auto; display: none; flex-direction: column; gap: 6px; padding: 10px; border-radius: 6px; background: rgba(0, 114, 151, 0.03); border: 1px solid rgba(0, 114, 151, 0.12); color: var(--text);"></div>
       </div>
+      </div><!-- /settings-col-side -->
+
+      <!-- Gemini ẩn -->
+      <div id="card-gemini-settings" class="glass-panel" style="display: none !important;"></div>
+      <textarea id="gemini-keys-input" style="display:none;"></textarea>
+      <button id="btn-save-gemini-keys" style="display:none;"></button>
+      <button id="btn-test-gemini-keys" style="display:none;"></button>
+      <div id="gemini-keys-test-results" style="display:none;"></div>
     </div>
   </div>
 </div>
