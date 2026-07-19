@@ -4503,6 +4503,7 @@ async function fetchSkyEyesState() {
 // Cập nhật giao diện Trợ lý SkyEyes dựa trên trạng thái hiện tại
 async function updateSkyEyesUI(botState) {
   const statusEl = document.getElementById('skyeyes-bot-status');
+  const statusChip = document.getElementById('settings-status-chip');
   const qrContainer = document.getElementById('skyeyes-qr-container');
   const qrImg = document.getElementById('skyeyes-qr-img');
   const btnConnect = document.getElementById('btn-skyeyes-connect');
@@ -4514,56 +4515,81 @@ async function updateSkyEyesUI(botState) {
     lastSkyEyesStatus = botState.status;
   }
 
+  const setChipOnline = (on) => {
+    if (statusChip) statusChip.classList.toggle('is-online', !!on);
+  };
+
   switch (botState.status) {
     case 'disconnected':
-      statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> Chưa kết nối';
-      statusEl.style.color = '#ef4444';
-      qrContainer.style.display = 'none';
-      btnConnect.style.display = 'block';
-      btnConnect.innerHTML = '<i class="fa-solid fa-qrcode"></i> Kết Nối SkyEyes (Quét QR)';
-      btnConnect.disabled = false;
-      btnLogout.style.display = 'none';
+      if (statusEl) {
+        statusEl.textContent = 'Chưa kết nối';
+        statusEl.style.color = '#ef4444';
+      }
+      setChipOnline(false);
+      if (qrContainer) qrContainer.style.display = 'none';
+      if (btnConnect) {
+        btnConnect.style.display = 'inline-flex';
+        btnConnect.innerHTML = '<i class="fa-solid fa-qrcode"></i> Kết nối QR';
+        btnConnect.disabled = false;
+      }
+      if (btnLogout) btnLogout.style.display = 'none';
       break;
 
     case 'generating':
-      statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang tạo QR Code...';
-      statusEl.style.color = '#fb923c';
-      qrContainer.style.display = 'none';
-      btnConnect.style.display = 'block';
-      btnConnect.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang tạo QR...';
-      btnConnect.disabled = true;
-      btnLogout.style.display = 'none';
+      if (statusEl) {
+        statusEl.textContent = 'Đang tạo QR...';
+        statusEl.style.color = '#fb923c';
+      }
+      setChipOnline(false);
+      if (qrContainer) qrContainer.style.display = 'none';
+      if (btnConnect) {
+        btnConnect.style.display = 'inline-flex';
+        btnConnect.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang tạo QR...';
+        btnConnect.disabled = true;
+      }
+      if (btnLogout) btnLogout.style.display = 'none';
       break;
 
     case 'qr_ready':
-      statusEl.innerHTML = '<i class="fa-solid fa-qrcode"></i> Đang chờ quét QR...';
-      statusEl.style.color = '#38bdf8';
-      if (botState.qrUrl) {
-        qrImg.src = botState.qrUrl;
+      if (statusEl) {
+        statusEl.textContent = 'Đang chờ quét QR...';
+        statusEl.style.color = '#38bdf8';
       }
-      qrContainer.style.display = 'flex';
-      btnConnect.style.display = 'block';
-      btnConnect.innerHTML = '<i class="fa-solid fa-xmark"></i> Hủy / Đóng QR';
-      btnConnect.disabled = false;
-      btnLogout.style.display = 'none';
+      setChipOnline(false);
+      if (botState.qrUrl && qrImg) qrImg.src = botState.qrUrl;
+      if (qrContainer) qrContainer.style.display = 'flex';
+      if (btnConnect) {
+        btnConnect.style.display = 'inline-flex';
+        btnConnect.innerHTML = '<i class="fa-solid fa-xmark"></i> Đóng QR';
+        btnConnect.disabled = false;
+      }
+      if (btnLogout) btnLogout.style.display = 'none';
       break;
 
     case 'scanned':
-      statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> Đã quét QR. Chờ xác nhận...';
-      statusEl.style.color = '#60a5fa';
-      qrContainer.style.display = 'flex';
-      btnConnect.style.display = 'block';
-      btnConnect.innerHTML = '<i class="fa-solid fa-xmark"></i> Hủy Đăng Nhập';
-      btnConnect.disabled = false;
-      btnLogout.style.display = 'none';
+      if (statusEl) {
+        statusEl.textContent = 'Đã quét QR · chờ xác nhận...';
+        statusEl.style.color = '#60a5fa';
+      }
+      setChipOnline(false);
+      if (qrContainer) qrContainer.style.display = 'flex';
+      if (btnConnect) {
+        btnConnect.style.display = 'inline-flex';
+        btnConnect.innerHTML = '<i class="fa-solid fa-xmark"></i> Hủy đăng nhập';
+        btnConnect.disabled = false;
+      }
+      if (btnLogout) btnLogout.style.display = 'none';
       break;
 
     case 'connected':
-      statusEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> Đang hoạt động (${botState.botName || 'SkyEyes'})`;
-      statusEl.style.color = '#10b981';
-      qrContainer.style.display = 'none';
-      btnConnect.style.display = 'none';
-      btnLogout.style.display = 'block';
+      if (statusEl) {
+        statusEl.textContent = `Đang hoạt động (${botState.botName || 'SkyEyes'})`;
+        statusEl.style.color = '#10b981';
+      }
+      setChipOnline(true);
+      if (qrContainer) qrContainer.style.display = 'none';
+      if (btnConnect) btnConnect.style.display = 'none';
+      if (btnLogout) btnLogout.style.display = 'inline-flex';
 
       // Tự động load danh sách nhóm nếu chưa được load
       const hasGroupsLoaded = groupsListDiv && groupsListDiv.querySelectorAll('.skyeyes-group-checkbox').length > 0;
