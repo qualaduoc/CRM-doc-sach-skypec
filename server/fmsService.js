@@ -2947,6 +2947,8 @@ module.exports = {
   checkAirlineNameMismatchAlerts,
   listAirlineMappings,
   detectCancelledFueledFlights,
+  checkTempImportExportAlerts,
+  decideMonitorAction,
   MONITOR_EPOCH_DATE,
   isMonitorEpochDate,
   canCreateMonitorForDate
