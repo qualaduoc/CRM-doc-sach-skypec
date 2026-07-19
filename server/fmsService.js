@@ -1149,10 +1149,56 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
       let newRoute = '';
 
       // Mọi loại giám sát: cùng rule next — chỉ HAN-đi, bỏ chặng về
+      // TECHNICAL_HAN cũng yêu cầu sau giờ nạp NKT (tránh gán nhầm chuyến cùng ngày khác tàu)
       const next = findNextMonitorFlight(fmsFlights, track, targetDate, {
-        requireAfterOldTime: track.monitor_type === 'CANCELLED_FUELED'
+        requireAfterOldTime:
+          track.monitor_type === 'CANCELLED_FUELED' || track.monitor_type === 'TECHNICAL_HAN'
       });
       if (!next) continue;
+
+      // Xác minh lại với Skypec live: cùng ngày (hoặc ngày scan), flight_no + ac_reg phải khớp
+      // (tránh FMS VNA gán nhầm tàu → hiện VN7051/VNA358 thành “chặng mới” của VNA613)
+      try {
+        const verifyDates = [targetDate, track.date].filter(Boolean);
+        let acOk = false;
+        for (const vd of verifyDates) {
+          const liveCheck = await db.get(
+            `SELECT ac_reg, route FROM fms_flights_live
+             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ?
+             LIMIT 1`,
+            vd,
+            String(next.fltNo).replace(/[\s\-_.]/g, '')
+          );
+          if (liveCheck && liveCheck.ac_reg) {
+            const liveAc = String(liveCheck.ac_reg).trim().toUpperCase().replace(/\s+/g, '');
+            const trackAc = String(trackAcReg).replace(/\s+/g, '');
+            if (liveAc === trackAc || liveAc.endsWith(trackAc.replace(/^VNA/, '')) || trackAc.endsWith(liveAc.replace(/^VNA/, ''))) {
+              acOk = true;
+              if (liveCheck.route) next.route = String(liveCheck.route).toUpperCase().replace(/\s+/g, '');
+              break;
+            }
+            // Skypec có chuyến nhưng KHÁC tàu → không nhận
+            log(`[Giám sát] Bỏ next ${next.fltNo}: Skypec tàu ${liveAc} ≠ monitor ${trackAcReg}`);
+            acOk = false;
+            break;
+          }
+        }
+        // Không có trên Skypec: vẫn tin VNA (ACREG đã khớp trong findNext) — nhưng TECHNICAL chỉ nhận nếu có live khớp
+        if (!acOk && track.monitor_type === 'TECHNICAL_HAN') {
+          // Nếu Skypec có bản ghi khác tàu → đã log; nếu không có live → vẫn cho qua VNA
+          const anyLive = await db.get(
+            `SELECT ac_reg FROM fms_flights_live
+             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
+            track.date || targetDate,
+            String(next.fltNo).replace(/[\s\-_.]/g, '')
+          );
+          if (anyLive && anyLive.ac_reg) {
+            continue; // có live nhưng khác tàu → skip
+          }
+        }
+      } catch (verErr) {
+        console.error('[Giám sát] Lỗi verify next vs Skypec:', verErr.message);
+      }
 
       newFltNo = next.fltNo;
       newRoute = next.route;
