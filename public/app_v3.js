@@ -1144,10 +1144,10 @@ function setupEventListeners() {
       notifyContainer.addEventListener('change', async (e) => {
         if (e.target.classList.contains('fms-crew-notify-select')) {
           const select = e.target;
-          const crewInfo = select.getAttribute('data-crew');
+          const personName = select.getAttribute('data-person') || select.getAttribute('data-crew');
           const date = select.getAttribute('data-date');
           const notifyType = parseInt(select.value);
-          const originalVal = parseInt(select.getAttribute('data-original-val') || "1");
+          const originalVal = parseInt(select.getAttribute('data-original-val') || '1');
 
           try {
             const res = await fetch('/api/fms/schedule/update-notify-type', {
@@ -1156,29 +1156,28 @@ function setupEventListeners() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${state.token}`
               },
-              body: JSON.stringify({ crewInfo, date, notifyType })
+              body: JSON.stringify({ personName, date, notifyType })
             });
             const data = await res.json();
             if (data.success) {
-              showToast(`Đã chuyển cài đặt Cặp ${crewInfo} sang: ${select.options[select.selectedIndex].text}`, 'success', 'Cập nhật thành công');
-              select.setAttribute('data-original-val', notifyType);
-              
-              // Cập nhật cache cục bộ cho tất cả các chuyến bay thuộc cặp trực này
+              showToast(data.message || `Đã cập nhật ${personName}`, 'success', 'Zalo');
+              select.setAttribute('data-original-val', String(notifyType));
+              const pNorm = normalizePersonName(personName);
               cachedFmsRows.forEach(r => {
-                if (r.crew_info && r.crew_info.toUpperCase().trim() === crewInfo.toUpperCase().trim() && r.date === date) {
+                if (r.date !== date) return;
+                const { driver, operator } = parseCrewRoles(r);
+                if (normalizePersonName(driver) === pNorm || normalizePersonName(operator) === pNorm) {
                   r.notify_type = notifyType;
                 }
               });
-              
-              // Vẽ lại bảng
               renderFmsTable();
             } else {
-              showToast(data.error || 'Lỗi cập nhật hình thức thông báo', 'error', 'Cập nhật thất bại');
-              select.value = originalVal; // Rollback
+              showToast(data.error || 'Lỗi cập nhật', 'error', 'Thất bại');
+              select.value = originalVal;
             }
           } catch (err) {
-            showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi cập nhật');
-            select.value = originalVal; // Rollback
+            showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi');
+            select.value = originalVal;
           }
         }
       });
@@ -2579,51 +2578,79 @@ function renderFmsTable() {
   const tbody = document.getElementById('fms-table-body');
   if (!tbody) return;
 
-  // Vẽ cấu hình thông báo Zalo — gộp theo cặp Lái+NV (tên đầy đủ), hiển thị tách role
+  // Zalo notify: 1 dòng / 1 người (Lái hoặc NV) — gọn, map đúng từng người
   const crewContainer = document.getElementById('fms-crew-notify-settings-container');
   if (crewContainer) {
-    const crewMap = {};
+    const peopleMap = {};
     cachedFmsRows.forEach(r => {
       const { driver, operator } = parseCrewRoles(r);
-      if (!driver && !operator) return;
-      // Gộp theo người (không gộp theo chuỗi Excel ngắn lẫn FMS dài)
-      const key = `${normalizePersonName(driver)}|${normalizePersonName(operator)}`;
-      if (!crewMap[key]) {
-        const crewName = [driver, operator].filter(Boolean).join(' - ') || r.crew_info;
-        crewMap[key] = {
-          crewName,
-          driver,
-          operator,
-          truckNo: r.truck_no || '-',
-          notifyType: r.notify_type || 1,
-          date: r.date
-        };
-      } else if (r.truck_no && (!crewMap[key].truckNo || crewMap[key].truckNo === '-')) {
-        crewMap[key].truckNo = r.truck_no;
-      }
+      const date = r.date || '';
+      const nType = r.notify_type || 1;
+      const addPerson = (name, role) => {
+        if (!name) return;
+        const key = normalizePersonName(name);
+        if (!key) return;
+        if (!peopleMap[key]) {
+          peopleMap[key] = {
+            name,
+            roles: new Set(),
+            notifyType: nType,
+            date
+          };
+        }
+        peopleMap[key].roles.add(role);
+        // ưu tiên notifyType mới hơn nếu khác
+        if (nType) peopleMap[key].notifyType = nType;
+      };
+      addPerson(driver, 'Lái');
+      addPerson(operator, 'NV');
     });
 
-    const crews = Object.values(crewMap);
-    if (crews.length > 0) {
+    const people = Object.values(peopleMap).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    if (people.length > 0) {
       crewContainer.innerHTML = `
-        <div style="width: 100%; font-size: 0.85rem; font-weight: bold; color: #fb923c; margin-bottom: 5px; display: flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-comments"></i> Hình thức báo Zalo theo cặp (Lái xe / NV tra nạp):
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+          <div style="font-size:0.8rem;font-weight:700;color:#fb923c;display:flex;align-items:center;gap:6px;">
+            <i class="fa-solid fa-comments"></i> Báo Zalo theo từng người
+            <span style="font-weight:500;color:var(--text-muted);font-size:0.72rem;">(${people.length} NV)</span>
+          </div>
         </div>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
-          ${crews.map(c => `
-            <div class="crew-notify-badge" style="background: rgba(0, 114, 151, 0.08); border: 1px solid rgba(0, 114, 151, 0.18); padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 10px; font-size: 0.8rem;">
-              <div style="line-height:1.35; min-width: 140px;">
-                ${c.driver ? `<div><span style="color:var(--text-muted);font-size:0.68rem;">Lái xe</span><br><strong style="color:#c2410c;">${escapeHtml(c.driver)}</strong></div>` : ''}
-                ${c.operator ? `<div style="margin-top:2px;"><span style="color:var(--text-muted);font-size:0.68rem;">NV tra nạp</span><br><strong style="color:#0369a1;">${escapeHtml(c.operator)}</strong></div>` : ''}
-                ${c.truckNo && c.truckNo !== '-' ? `<div style="margin-top:3px;color:var(--primary);font-weight:700;font-size:0.75rem;"><i class="fa-solid fa-truck-field"></i> ${escapeHtml(c.truckNo)}</div>` : ''}
-              </div>
-              <select class="fms-crew-notify-select" data-crew="${escapeHtml(c.crewName)}" data-date="${c.date || ''}" data-original-val="${c.notifyType}" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); cursor: pointer; outline: none;">
-                <option value="1" ${c.notifyType == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
-                <option value="2" ${c.notifyType == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
-                <option value="3" ${c.notifyType == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
-              </select>
-            </div>
-          `).join('')}
+        <div class="zalo-person-notify-table" style="max-height:168px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--panel-elevated, rgba(0,0,0,0.12));">
+          <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+            <thead>
+              <tr style="position:sticky;top:0;background:var(--panel-bg,#0f172a);color:var(--text-muted);text-align:left;">
+                <th style="padding:5px 8px;font-weight:600;border-bottom:1px solid var(--border);width:52px;">Vai</th>
+                <th style="padding:5px 8px;font-weight:600;border-bottom:1px solid var(--border);">Họ và tên</th>
+                <th style="padding:5px 8px;font-weight:600;border-bottom:1px solid var(--border);width:118px;">Báo tin</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${people.map(p => {
+                const roles = [...p.roles];
+                const roleLabel = roles.includes('Lái') && roles.includes('NV')
+                  ? 'Lái+NV'
+                  : (roles.includes('Lái') ? 'Lái' : 'NV');
+                const roleColor = roles.includes('Lái') && !roles.includes('NV')
+                  ? '#c2410c'
+                  : (roles.includes('NV') && !roles.includes('Lái') ? '#0369a1' : '#7c3aed');
+                return `
+                <tr style="border-bottom:1px solid rgba(148,163,184,0.12);">
+                  <td style="padding:4px 8px;white-space:nowrap;">
+                    <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;color:${roleColor};background:rgba(148,163,184,0.12);">${roleLabel}</span>
+                  </td>
+                  <td style="padding:4px 8px;font-weight:600;color:var(--text);">${escapeHtml(p.name)}</td>
+                  <td style="padding:3px 6px;">
+                    <select class="fms-crew-notify-select" data-person="${escapeHtml(p.name)}" data-date="${p.date || ''}" data-original-val="${p.notifyType}"
+                      style="width:100%;font-size:0.72rem;padding:2px 4px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text);cursor:pointer;outline:none;">
+                      <option value="1" ${p.notifyType == 1 ? 'selected' : ''}>Tag nhóm</option>
+                      <option value="2" ${p.notifyType == 2 ? 'selected' : ''}>Inbox</option>
+                      <option value="3" ${p.notifyType == 3 ? 'selected' : ''}>Cả hai</option>
+                    </select>
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
         </div>
       `;
       crewContainer.style.display = 'block';

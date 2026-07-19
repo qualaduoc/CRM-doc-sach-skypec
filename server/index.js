@@ -2677,8 +2677,9 @@ app.post('/api/fms/schedule/update-notify-type', authenticateToken, async (req, 
     return res.status(403).json({ success: false, error: 'Không có quyền thay đổi cài đặt thông báo Zalo!' });
   }
 
-  const { crewInfo, date, notifyType } = req.body;
-  if (!crewInfo || !date || notifyType === undefined) {
+  // personName: map theo TỪNG người (Lái hoặc NV) — ưu tiên hơn crewInfo (cặp cũ)
+  const { crewInfo, personName, date, notifyType } = req.body;
+  if ((!personName && !crewInfo) || !date || notifyType === undefined) {
     return res.status(400).json({ success: false, error: 'Thiếu thông số cần thiết!' });
   }
 
@@ -2689,20 +2690,43 @@ app.post('/api/fms/schedule/update-notify-type', authenticateToken, async (req, 
 
   try {
     const db = await getDb();
-    
-    // Cập nhật tất cả bản ghi khớp Cặp trực ban và ngày bay
-    const result = await db.run(
+    let result;
+
+    if (personName && String(personName).trim()) {
+      const p = String(personName).trim();
+      // Cập nhật mọi chuyến trong ngày mà người này là Lái HOẶC NV tra nạp
+      result = await db.run(
+        `UPDATE fms_schedules SET notify_type = ?
+         WHERE date = ?
+           AND (
+             UPPER(TRIM(COALESCE(driver_name,''))) = UPPER(?)
+             OR UPPER(TRIM(COALESCE(operator_name,''))) = UPPER(?)
+             OR UPPER(TRIM(COALESCE(crew_info,''))) LIKE '%' || UPPER(?) || '%'
+           )`,
+        nType, date, p, p, p
+      );
+      if (result.changes === 0) {
+        return res.status(404).json({ success: false, error: `Không tìm thấy lịch có NV "${p}" trong ngày đã chọn.` });
+      }
+      return res.json({
+        success: true,
+        message: `Đã cập nhật hình thức báo Zalo cho ${p} (${result.changes} chuyến).`
+      });
+    }
+
+    // Legacy: theo chuỗi cặp crew_info
+    result = await db.run(
       'UPDATE fms_schedules SET notify_type = ? WHERE UPPER(crew_info) = UPPER(?) AND date = ?',
       nType,
-      crewInfo.trim(),
+      String(crewInfo).trim(),
       date
     );
 
     if (result.changes === 0) {
-      return res.status(404).json({ success: false, error: 'Không tìm thấy Cặp trực ban tương ứng trong lịch trực!' });
+      return res.status(404).json({ success: false, error: 'Không tìm thấy cặp trực ban tương ứng trong lịch trực!' });
     }
 
-    res.json({ success: true, message: `Đã cập nhật hình thức báo Zalo cho cặp ${crewInfo.trim()} thành công!` });
+    res.json({ success: true, message: `Đã cập nhật hình thức báo Zalo cho cặp ${String(crewInfo).trim()} thành công!` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
