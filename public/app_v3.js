@@ -836,7 +836,30 @@ function setupEventListeners() {
 
   // Sự kiện thay đổi ngày lọc lịch bay FMS
   const fmsFilterDateEl = document.getElementById('fms-filter-date');
-  if (fmsFilterDateEl) fmsFilterDateEl.addEventListener('change', () => loadFmsSchedules(false));
+  if (fmsFilterDateEl) {
+    fmsFilterDateEl.addEventListener('change', () => {
+      try { sessionStorage.setItem(FMS_SHIFT_STORAGE.dateManual('admin'), '1'); } catch (e) { /* ignore */ }
+      loadFmsSchedules(false);
+    });
+  }
+
+  // Select ca xem bảng (admin) — auto / day / evening / all
+  const fmsViewShiftEl = document.getElementById('fms-view-shift');
+  if (fmsViewShiftEl) {
+    fmsViewShiftEl.addEventListener('change', () => {
+      fmsViewShiftEl.dataset.userTouched = '1';
+      try {
+        sessionStorage.setItem(FMS_SHIFT_STORAGE.view('admin'), fmsViewShiftEl.value);
+        if (fmsViewShiftEl.value === 'auto') {
+          sessionStorage.removeItem(FMS_SHIFT_STORAGE.dateManual('admin'));
+          applySmartFmsDefaults('admin');
+          loadFmsSchedules(false);
+          return;
+        }
+      } catch (e) { /* ignore */ }
+      renderFmsTable();
+    });
+  }
 
   // Sự kiện thay đổi ngày trực ca FMS (cột bên trái - Nhập lịch trực)
   const fmsScheduleDateEl = document.getElementById('fms-schedule-date');
@@ -845,6 +868,7 @@ function setupEventListeners() {
       const val = e.target.value;
       const filterInput = document.getElementById('fms-filter-date');
       if (filterInput) filterInput.value = val;
+      try { sessionStorage.setItem(FMS_SHIFT_STORAGE.dateManual('admin'), '1'); } catch (err) { /* ignore */ }
       loadFmsSchedules(false);
     });
   }
@@ -852,7 +876,26 @@ function setupEventListeners() {
   // Sự kiện cho bảng FMS ở màn hình nhân viên (chỉ xem)
   const userFmsDate = document.getElementById('user-fms-filter-date');
   if (userFmsDate) {
-    userFmsDate.addEventListener('change', () => loadUserFmsSchedules(false));
+    userFmsDate.addEventListener('change', () => {
+      try { sessionStorage.setItem(FMS_SHIFT_STORAGE.dateManual('user'), '1'); } catch (e) { /* ignore */ }
+      loadUserFmsSchedules(false);
+    });
+  }
+  const userFmsViewShift = document.getElementById('user-fms-view-shift');
+  if (userFmsViewShift) {
+    userFmsViewShift.addEventListener('change', () => {
+      userFmsViewShift.dataset.userTouched = '1';
+      try {
+        sessionStorage.setItem(FMS_SHIFT_STORAGE.view('user'), userFmsViewShift.value);
+        if (userFmsViewShift.value === 'auto') {
+          sessionStorage.removeItem(FMS_SHIFT_STORAGE.dateManual('user'));
+          applySmartFmsDefaults('user');
+          loadUserFmsSchedules(false);
+          return;
+        }
+      } catch (e) { /* ignore */ }
+      renderUserFmsTable();
+    });
   }
   const userFmsSearch = document.getElementById('user-fms-search-input');
   if (userFmsSearch) {
@@ -861,6 +904,20 @@ function setupEventListeners() {
   const userFmsCrewFilter = document.getElementById('user-fms-crew-filter');
   if (userFmsCrewFilter) {
     userFmsCrewFilter.addEventListener('change', () => renderUserFmsTable());
+  }
+
+  // Toggle xổ/gập ngoài ca (admin + user) — event delegation
+  if (!document.body.dataset.fmsOutShiftBound) {
+    document.body.dataset.fmsOutShiftBound = '1';
+    document.body.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-fms-out-toggle]');
+      if (!row) return;
+      const scope = row.getAttribute('data-fms-out-toggle') || 'admin';
+      const next = !isOutShiftExpanded(scope);
+      setOutShiftExpanded(scope, next);
+      if (scope === 'user') renderUserFmsTable();
+      else renderFmsTable();
+    });
   }
   document.querySelectorAll('.user-fms-unit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2267,16 +2324,12 @@ async function loadFmsSchedules(isSilent = false) {
   try {
     const filterInput = document.getElementById('fms-filter-date');
     const scheduleDateInput = document.getElementById('fms-schedule-date');
-    const vnDate = new Date();
-    const utc = vnDate.getTime() + (vnDate.getTimezoneOffset() * 60000);
-    const vnTime = new Date(utc + (3600000 * 7));
-    const todayStr = vnTime.toISOString().split('T')[0];
 
-    if (filterInput && !filterInput.value) {
-      filterInput.value = todayStr;
-    }
-    if (scheduleDateInput && !scheduleDateInput.value) {
-      scheduleDateInput.value = todayStr;
+    // Smart A+B: ca auto + ngày duty theo giờ VN (nếu user chưa chọn tay)
+    applySmartFmsDefaults('admin');
+
+    if (scheduleDateInput && !scheduleDateInput.value && filterInput && filterInput.value) {
+      scheduleDateInput.value = filterInput.value;
     }
     const selectedDate = filterInput ? filterInput.value : '';
     const unit = window.fmsUnitFilter || 'SKYPEC';
@@ -2300,13 +2353,14 @@ async function loadFmsSchedules(isSilent = false) {
             <div style="font-weight: 600; margin-bottom: 6px;">Chưa có lịch bay phân công cho ngày ${selectedDate ? formatDateVN(selectedDate) : 'được chọn'}.</div>
             <div style="font-size: 0.85rem;">
               Lịch được lưu theo <strong>ngày bắt đầu ca trực</strong> (ô lọc ngày phía trên).<br>
-              Ví dụ ca đêm 18/07 (23:59 → 07:30 sáng 19/07) phải chọn bộ lọc <strong>18/07</strong>, không phải 19/07.
+              Ví dụ ca tối 18/07 (19:30 → 07:30 sáng 19/07) phải chọn bộ lọc <strong>18/07</strong>, không phải 19/07.<br>
+              Đang chọn <strong>Ca tự động</strong> sẽ gợi ý đúng ngày ca theo giờ VN.
             </div>
           </td>
         </tr>
       `;
-      // Xoá danh sách cặp tra nạp nếu không có dữ liệu
       updateFmsCrewFilter([]);
+      updateFmsShiftBadge('admin', 0, 0);
       return;
     }
 
@@ -2855,7 +2909,7 @@ function renderFmsTable() {
   const selectedPerson = crewSelect ? crewSelect.value : '';
   const selectedNorm = selectedPerson ? normalizePersonName(selectedPerson) : '';
 
-  // Lọc dữ liệu
+  // Lọc dữ liệu (search + crew) — ca tách sau
   const filteredRows = cachedFmsRows.filter(r => {
     // 1. Lọc theo 1 người (Lái hoặc NV)
     if (selectedNorm) {
@@ -2879,8 +2933,10 @@ function renderFmsTable() {
     return true;
   });
 
+  const { inShift, outShift, view: shiftView } = splitRowsByViewShift(filteredRows, 'admin');
+  updateFmsShiftBadge('admin', inShift.length, outShift.length);
+
   if (filteredRows.length === 0) {
-    // Đảm bảo số cột colSpan khớp với bảng
     tbody.innerHTML = `
       <tr>
         <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
@@ -2891,8 +2947,22 @@ function renderFmsTable() {
     return;
   }
 
-  // Vẽ bảng
-  tbody.innerHTML = filteredRows.map(r => {
+  if (shiftView.effective !== 'all' && inShift.length === 0 && outShift.length > 0) {
+    // Chỉ có ngoài ca — vẫn hiện toggle + gợi ý
+  } else if (inShift.length === 0 && outShift.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">
+          Không có chuyến trong bộ lọc hiện tại.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  const outOpen = isOutShiftExpanded('admin');
+  const otherLabel = shiftView.effective === 'day' ? 'Ca tối (19:30–07:29)' : 'Ca ngày (07:30–19:29)';
+  const mapRow = (r, isOut) => {
     const refuelMeta = getRefuelStatusMeta(r);
     const refueled = refuelMeta.done;
     const statusClass = refuelMeta.statusClass;
@@ -3011,8 +3081,9 @@ function renderFmsTable() {
       ? `<span class="editable-gate" data-flight="${r.flight_no}" data-date="${r.date || ''}" title="Click để sửa vị trí đỗ" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px dashed rgba(0, 114, 151, 0.4); background: rgba(0, 114, 151, 0.03); border-radius: 4px; min-width: 35px; transition: all 0.2s;">${r.gate || '-'}</span>`
       : `${r.gate || '-'}`;
 
+    const rowCls = [refueled ? 'row-refueled' : '', isOut ? 'fms-out-shift-row' : ''].filter(Boolean).join(' ');
     return `
-      <tr class="${refueled ? 'row-refueled' : ''}">
+      <tr class="${rowCls}">
         <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
         <td>${crewHtml}</td>
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
@@ -3028,20 +3099,39 @@ function renderFmsTable() {
         </td>
       </tr>
     `;
-  }).join('');
+  };
+
+  let html = '';
+  if (shiftView.effective === 'all') {
+    html = inShift.map(r => mapRow(r, false)).join('');
+  } else {
+    if (inShift.length > 0) {
+      html += buildInShiftSectionRow(shiftView.label, inShift.length, shiftView.window);
+      html += inShift.map(r => mapRow(r, false)).join('');
+    } else {
+      html += `
+        <tr>
+          <td colspan="9" style="text-align:center;color:var(--text-muted);padding:16px;font-size:0.85rem;">
+            Không có chuyến trong <strong>${escapeHtml(shiftView.label)}</strong> (${escapeHtml(shiftView.window)}).
+          </td>
+        </tr>`;
+    }
+    if (outShift.length > 0) {
+      html += buildOutShiftToggleRow('admin', outShift.length, otherLabel, outOpen);
+      if (outOpen) {
+        html += outShift.map(r => mapRow(r, true)).join('');
+      }
+    }
+  }
+  tbody.innerHTML = html;
 }
 
 // Lọc và vẽ bảng FMS ở màn hình nhân viên (chỉ xem)
 let cachedUserFmsRows = [];
 async function loadUserFmsSchedules(isSilent = false) {
   try {
+    applySmartFmsDefaults('user');
     const filterInput = document.getElementById('user-fms-filter-date');
-    if (filterInput && !filterInput.value) {
-      const vnDate = new Date();
-      const utc = vnDate.getTime() + (vnDate.getTimezoneOffset() * 60000);
-      const vnTime = new Date(utc + (3600000 * 7));
-      filterInput.value = vnTime.toISOString().split('T')[0];
-    }
     const selectedDate = filterInput ? filterInput.value : '';
     const unit = window.userFmsUnitFilter || 'SKYPEC';
 
@@ -3134,6 +3224,9 @@ function renderUserFmsTable() {
     return true;
   });
 
+  const { inShift, outShift, view: shiftView } = splitRowsByViewShift(filteredRows, 'user');
+  updateFmsShiftBadge('user', inShift.length, outShift.length);
+
   if (filteredRows.length === 0) {
     tbody.innerHTML = `
       <tr>
@@ -3145,12 +3238,16 @@ function renderUserFmsTable() {
     return;
   }
 
-  tbody.innerHTML = filteredRows.map(r => {
+  const outOpen = isOutShiftExpanded('user');
+  const otherLabel = shiftView.effective === 'day' ? 'Ca tối (19:30–07:29)' : 'Ca ngày (07:30–19:29)';
+
+  const mapRow = (r, isOut) => {
     const refuelMeta = getRefuelStatusMeta(r);
     const refueled = refuelMeta.done;
+    const rowCls = [refueled ? 'row-refueled' : '', isOut ? 'fms-out-shift-row' : ''].filter(Boolean).join(' ');
 
     return `
-      <tr class="${refueled ? 'row-refueled' : ''}">
+      <tr class="${rowCls}">
         <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
         <td>${formatCrewCellHtml(r)}</td>
         <td style="text-align: center;">
@@ -3177,7 +3274,31 @@ function renderUserFmsTable() {
         </td>
       </tr>
     `;
-  }).join('');
+  };
+
+  let html = '';
+  if (shiftView.effective === 'all') {
+    html = inShift.map(r => mapRow(r, false)).join('');
+  } else {
+    if (inShift.length > 0) {
+      html += buildInShiftSectionRow(shiftView.label, inShift.length, shiftView.window);
+      html += inShift.map(r => mapRow(r, false)).join('');
+    } else {
+      html += `
+        <tr>
+          <td colspan="9" style="text-align:center;color:var(--text-muted);padding:16px;font-size:0.85rem;">
+            Không có chuyến trong <strong>${escapeHtml(shiftView.label)}</strong> (${escapeHtml(shiftView.window)}).
+          </td>
+        </tr>`;
+    }
+    if (outShift.length > 0) {
+      html += buildOutShiftToggleRow('user', outShift.length, otherLabel, outOpen);
+      if (outOpen) {
+        html += outShift.map(r => mapRow(r, true)).join('');
+      }
+    }
+  }
+  tbody.innerHTML = html;
 }
 
 async function handleSaveFmsSchedule() {
@@ -3305,42 +3426,315 @@ function formatExcelTime(val) {
   return strVal;
 }
 
-// Lọc chuyến theo ca trực (khớp nghiệp vụ Skypec / FMS)
-// - day:     07:30 – 19:30 cùng ngày
-// - evening: ca tối full = 19:30 – 23:59  +  00:00 – 07:30 (sáng hôm sau)
-// - night:   alias của evening (tương thích cũ)
+// ─── Ca trực FMS: day 07:30–19:29 · evening 19:30–07:29 ─────────────
+const FMS_SHIFT_STORAGE = {
+  view: (scope) => `skyeyes_fms_view_shift_${scope || 'admin'}`,
+  dateManual: (scope) => `skyeyes_fms_date_manual_${scope || 'admin'}`,
+  outOpen: (scope) => `skyeyes_fms_out_open_${scope || 'admin'}`
+};
+const FMS_M_0730 = 7 * 60 + 30;
+const FMS_M_1930 = 19 * 60 + 30;
+
+/** Giờ VN hiện tại (Asia/Ho_Chi_Minh) */
+function getVietnamNow() {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    });
+    const parts = {};
+    fmt.formatToParts(new Date()).forEach(p => {
+      if (p.type !== 'literal') parts[p.type] = p.value;
+    });
+    const hour = parseInt(parts.hour, 10) || 0;
+    const minute = parseInt(parts.minute, 10) || 0;
+    return {
+      ymd: `${parts.year}-${parts.month}-${parts.day}`,
+      hour,
+      minute,
+      minutes: hour * 60 + minute
+    };
+  } catch (e) {
+    const d = new Date();
+    const utc = d.getTime() + d.getTimezoneOffset() * 60000;
+    const vn = new Date(utc + 3600000 * 7);
+    return {
+      ymd: vn.toISOString().slice(0, 10),
+      hour: vn.getUTCHours(),
+      minute: vn.getUTCMinutes(),
+      minutes: vn.getUTCHours() * 60 + vn.getUTCMinutes()
+    };
+  }
+}
+
+function addDaysYmdClient(ymd, days) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  const dt = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const y = dt.getUTCFullYear();
+  const mo = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(dt.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${da}`;
+}
+
+/**
+ * Smart A: ca + ngày bắt đầu ca theo giờ VN
+ * - 07:30–19:29 → ca ngày, dutyDate = hôm nay
+ * - 19:30–23:59 → ca tối, dutyDate = hôm nay
+ * - 00:00–07:29 → ca tối, dutyDate = hôm qua
+ */
+function detectCurrentShiftContext() {
+  const now = getVietnamNow();
+  if (now.minutes >= FMS_M_0730 && now.minutes < FMS_M_1930) {
+    return {
+      shift: 'day',
+      dutyDate: now.ymd,
+      label: 'Ca ngày',
+      window: '07:30–19:29',
+      icon: 'fa-sun',
+      now
+    };
+  }
+  if (now.minutes >= FMS_M_1930) {
+    return {
+      shift: 'evening',
+      dutyDate: now.ymd,
+      label: 'Ca tối',
+      window: '19:30–07:29',
+      icon: 'fa-moon',
+      now
+    };
+  }
+  return {
+    shift: 'evening',
+    dutyDate: addDaysYmdClient(now.ymd, -1),
+    label: 'Ca tối',
+    window: '19:30–07:29',
+    icon: 'fa-moon',
+    now
+  };
+}
+
+/** Phút trong ngày từ time_fuel / dep / arr; null nếu không parse được */
+function getFlightMinutes(f) {
+  const timeStr = (f && (f.time_fuel || f.time_dep || f.time_arr)) || '';
+  if (!timeStr || timeStr === '-') return null;
+  const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+/** Bucket ca của 1 chuyến: day | evening */
+function getFlightShiftBucket(f) {
+  const minutes = getFlightMinutes(f);
+  if (minutes === null) return 'evening';
+  if (minutes >= FMS_M_0730 && minutes < FMS_M_1930) return 'day';
+  return 'evening';
+}
+
+function sortFlightsByTime(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const ma = getFlightMinutes(a);
+    const mb = getFlightMinutes(b);
+    if (ma === null && mb === null) return 0;
+    if (ma === null) return 1;
+    if (mb === null) return -1;
+    // Ca tối: 19:30… rồi 00:00… → phút < 07:30 cộng 24h để sort
+    const na = ma < FMS_M_0730 ? ma + 24 * 60 : ma;
+    const nb = mb < FMS_M_0730 ? mb + 24 * 60 : mb;
+    return na - nb;
+  });
+}
+
+// Lọc chuyến theo ca (import Excel / view)
+// - day:     07:30 – 19:29
+// - evening: 19:30 – 23:59 + 00:00 – 07:29
+// - night:   alias evening
 function filterFlightsByShift(flights, shift) {
   if (!shift || shift === 'all') return flights;
+  const s = shift === 'night' ? 'evening' : shift;
+  return (flights || []).filter(f => {
+    const bucket = getFlightShiftBucket(f);
+    if (s === 'day') return bucket === 'day';
+    if (s === 'evening') return bucket === 'evening';
+    return true;
+  });
+}
 
-  return flights.filter(f => {
-    const timeStr = f.time_fuel || f.time_dep || f.time_arr || '';
-    if (!timeStr || timeStr === '-') {
-      return shift === 'evening' || shift === 'night' || shift === 'all';
-    }
-
-    try {
-      const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
-      if (!match) return shift === 'evening' || shift === 'night';
-
-      const hour = parseInt(match[1], 10);
-      const minute = parseInt(match[2], 10);
-      const minutes = hour * 60 + minute;
-
-      const m_0730 = 7 * 60 + 30;
-      const m_1930 = 19 * 60 + 30;
-
-      if (shift === 'day') {
-        return minutes >= m_0730 && minutes < m_1930;
+/** mode select: auto|day|evening|all → ca hiệu lực */
+function resolveViewShift(scope = 'admin') {
+  const selectId = scope === 'user' ? 'user-fms-view-shift' : 'fms-view-shift';
+  const el = document.getElementById(selectId);
+  let mode = el && el.value ? el.value : 'auto';
+  try {
+    const saved = sessionStorage.getItem(FMS_SHIFT_STORAGE.view(scope));
+    if (el && saved && ['auto', 'day', 'evening', 'all'].includes(saved) && !el.dataset.userTouched) {
+      // lần đầu hydrate từ session
+      if (!el.dataset.hydrated) {
+        el.value = saved;
+        mode = saved;
+        el.dataset.hydrated = '1';
       }
-      if (shift === 'evening' || shift === 'night') {
-        // Ca tối: đoạn tối + đoạn sáng sớm
-        return minutes >= m_1930 || minutes < m_0730;
+    }
+  } catch (e) { /* ignore */ }
+
+  mode = el && el.value ? el.value : mode;
+  const ctx = detectCurrentShiftContext();
+  const effective = mode === 'auto' ? ctx.shift : mode;
+  return {
+    mode,
+    effective,
+    live: ctx,
+    isAuto: mode === 'auto',
+    label: effective === 'all'
+      ? 'Tất cả ca'
+      : (effective === 'day' ? 'Ca ngày' : 'Ca tối'),
+    window: effective === 'all'
+      ? 'cả ngày'
+      : (effective === 'day' ? '07:30–19:29' : '19:30–07:29')
+  };
+}
+
+function isOutShiftExpanded(scope) {
+  try {
+    return sessionStorage.getItem(FMS_SHIFT_STORAGE.outOpen(scope)) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+function setOutShiftExpanded(scope, open) {
+  try {
+    sessionStorage.setItem(FMS_SHIFT_STORAGE.outOpen(scope), open ? '1' : '0');
+  } catch (e) { /* ignore */ }
+}
+
+/**
+ * Smart default ngày + ca khi mở bảng FMS.
+ * - Ca: session hoặc auto
+ * - Ngày: nếu user chưa chọn tay → dutyDate theo ca hiện tại
+ */
+function applySmartFmsDefaults(scope = 'admin') {
+  const dateId = scope === 'user' ? 'user-fms-filter-date' : 'fms-filter-date';
+  const shiftId = scope === 'user' ? 'user-fms-view-shift' : 'fms-view-shift';
+  const dateEl = document.getElementById(dateId);
+  const shiftEl = document.getElementById(shiftId);
+  const ctx = detectCurrentShiftContext();
+
+  if (shiftEl) {
+    try {
+      const saved = sessionStorage.getItem(FMS_SHIFT_STORAGE.view(scope));
+      if (saved && ['auto', 'day', 'evening', 'all'].includes(saved)) {
+        shiftEl.value = saved;
+      } else if (!shiftEl.value) {
+        shiftEl.value = 'auto';
       }
     } catch (e) {
-      console.error('[Shift Filter Error]', e.message);
+      if (!shiftEl.value) shiftEl.value = 'auto';
     }
-    return false;
+    shiftEl.dataset.hydrated = '1';
+  }
+
+  let dateManual = false;
+  try {
+    dateManual = sessionStorage.getItem(FMS_SHIFT_STORAGE.dateManual(scope)) === '1';
+  } catch (e) { /* ignore */ }
+
+  const mode = shiftEl ? shiftEl.value : 'auto';
+  if (dateEl && (!dateEl.value || (!dateManual && mode === 'auto'))) {
+    dateEl.value = ctx.dutyDate;
+  }
+
+  // Soft-sync select import khi đang auto theo giờ (không đụng khi user chọn "Tất cả" để import)
+  if (scope === 'admin') {
+    const importShift = document.getElementById('fms-filter-shift');
+    if (importShift && mode === 'auto') {
+      importShift.value = ctx.shift === 'evening' ? 'evening' : 'day';
+    }
+  }
+
+  return ctx;
+}
+
+function updateFmsShiftBadge(scope, inCount, outCount) {
+  const badgeId = scope === 'user' ? 'user-fms-shift-badge' : 'fms-shift-badge';
+  const hintId = scope === 'user' ? 'user-fms-shift-hint' : 'fms-shift-hint';
+  const badge = document.getElementById(badgeId);
+  const hint = document.getElementById(hintId);
+  const vs = resolveViewShift(scope);
+  const icon = vs.effective === 'day' ? 'fa-sun' : (vs.effective === 'evening' ? 'fa-moon' : 'fa-calendar-day');
+  const cls = vs.effective === 'day' ? 'is-day' : (vs.effective === 'evening' ? 'is-evening' : 'is-all');
+
+  if (badge) {
+    badge.className = `fms-shift-badge ${cls}`;
+    badge.style.display = 'inline-flex';
+    const autoTag = vs.isAuto ? ' · auto' : '';
+    badge.innerHTML = `<i class="fa-solid ${icon}"></i> ${escapeHtml(vs.label)} · ${escapeHtml(vs.window)}${autoTag}`;
+    badge.title = vs.isAuto
+      ? `Theo giờ VN: đang ${vs.live.label} (${vs.live.window}). Ngày ca gợi ý: ${vs.live.dutyDate}`
+      : `Đang lọc: ${vs.label} (${vs.window})`;
+  }
+  if (hint) {
+    if (vs.effective === 'all') {
+      hint.style.display = 'block';
+      hint.textContent = `Hiển thị cả ngày · ${inCount + outCount} chuyến (không gập ngoài ca).`;
+    } else {
+      hint.style.display = 'block';
+      const other = vs.effective === 'day' ? 'Ca tối' : 'Ca ngày';
+      hint.innerHTML = `<strong>${escapeHtml(vs.label)}</strong> đang xổ · <strong>${inCount}</strong> chuyến`
+        + (outCount > 0
+          ? ` · <span style="color:var(--text-muted);">${escapeHtml(other)} gập lại (${outCount} chuyến — bấm để xổ)</span>`
+          : '');
+    }
+  }
+}
+
+/**
+ * Tách rows sau search/crew filter → trong ca / ngoài ca
+ */
+function splitRowsByViewShift(rows, scope = 'admin') {
+  const vs = resolveViewShift(scope);
+  const sorted = sortFlightsByTime(rows);
+  if (vs.effective === 'all') {
+    return { inShift: sorted, outShift: [], view: vs };
+  }
+  const inShift = [];
+  const outShift = [];
+  sorted.forEach(r => {
+    const bucket = getFlightShiftBucket(r);
+    if (bucket === vs.effective) inShift.push(r);
+    else outShift.push(r);
   });
+  return { inShift, outShift, view: vs };
+}
+
+function buildOutShiftToggleRow(scope, outCount, otherLabel, open) {
+  if (outCount <= 0) return '';
+  return `
+    <tr class="fms-out-shift-toggle ${open ? 'is-open' : ''}" data-fms-out-toggle="${scope}" title="Bấm để ${open ? 'thu gọn' : 'xem'} chuyến ngoài ca">
+      <td colspan="9">
+        <span class="chev">▸</span>
+        Ngoài ca · ${escapeHtml(otherLabel)}
+        <span style="font-weight:500;opacity:0.85;">(${outCount} chuyến)</span>
+        <span style="font-weight:500;margin-left:6px;opacity:0.7;">${open ? '— bấm để thu' : '— bấm để xổ'}</span>
+      </td>
+    </tr>`;
+}
+
+function buildInShiftSectionRow(label, count, windowLabel) {
+  return `
+    <tr class="fms-shift-section-row is-in">
+      <td colspan="9">
+        <i class="fa-solid fa-circle-check" style="margin-right:4px;"></i>
+        Trong ca · ${escapeHtml(label)} (${escapeHtml(windowLabel)}) · ${count} chuyến
+      </td>
+    </tr>`;
 }
 
 // Phân tích và bóc tách các dòng từ file Excel lịch trực (13 cột)

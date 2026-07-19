@@ -277,6 +277,13 @@
             </div>
             <div class="fms-toolbar-actions" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <input type="date" id="fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
+              <select id="fms-view-shift" title="Lọc theo ca trực trên bảng" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(180, 83, 9, 0.35); background: #ffffff; color: var(--text); font-size: 0.82rem; font-weight: 700; cursor: pointer; outline: none;">
+                <option value="auto">Ca tự động (theo giờ)</option>
+                <option value="day">Ca ngày (07:30–19:29)</option>
+                <option value="evening">Ca tối (19:30–07:29)</option>
+                <option value="all">Tất cả ca</option>
+              </select>
+              <span id="fms-shift-badge" class="fms-shift-badge" style="display:none;"></span>
               <button id="btn-fms-sync-now" class="btn-secondary" style="border-color: rgba(16, 185, 129, 0.3); color: var(--success); padding: 6px 12px; font-size: 0.85rem; margin-top: 0;">
                 <i class="fa-solid fa-rotate"></i> Quét FMS Ngay
               </button>
@@ -294,10 +301,11 @@
             </div>
             <div class="fms-crew-filter-wrap" style="width: 220px; min-width: 160px; flex: 1 1 160px;">
               <select id="fms-crew-filter" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; cursor: pointer; outline: none; box-sizing: border-box;">
-                <option value="">-- Tất cả Cặp tra nạp --</option>
+                <option value="">-- Tất cả Lái xe / NV tra nạp --</option>
               </select>
             </div>
           </div>
+          <div id="fms-shift-hint" class="fms-shift-hint" style="display:none;"></div>
           
           <!-- Zalo: 1 dòng / 1 người (Lái | NV) — map + báo tin, siêu gọn -->
           <div id="fms-crew-notify-settings-container" class="zalo-person-dense-wrap" style="display: none;"></div>
@@ -1078,10 +1086,17 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             </div>
           </div>
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-            <select id="user-fms-crew-filter" title="Lọc theo cặp tra nạp" style="min-width: 180px; max-width: 260px; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: 600; cursor: pointer; outline: none;">
-              <option value="">-- Tất cả Cặp tra nạp --</option>
+            <select id="user-fms-crew-filter" title="Lọc theo Lái / NV" style="min-width: 180px; max-width: 260px; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: 600; cursor: pointer; outline: none;">
+              <option value="">-- Tất cả Lái xe / NV tra nạp --</option>
             </select>
             <input type="date" id="user-fms-filter-date" style="padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.85rem; font-weight: bold; cursor: pointer;">
+            <select id="user-fms-view-shift" title="Lọc theo ca trực" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(180, 83, 9, 0.35); background: #ffffff; color: var(--text); font-size: 0.82rem; font-weight: 700; cursor: pointer; outline: none;">
+              <option value="auto">Ca tự động</option>
+              <option value="day">Ca ngày</option>
+              <option value="evening">Ca tối</option>
+              <option value="all">Tất cả ca</option>
+            </select>
+            <span id="user-fms-shift-badge" class="fms-shift-badge" style="display:none;"></span>
           </div>
         </div>
 
@@ -1092,6 +1107,7 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             <input type="text" id="user-fms-search-input" placeholder="Tìm kiếm nhanh chuyến bay, tàu bay, nhân viên..." style="width: 100%; padding: 8px 12px 8px 35px; border-radius: 6px; border: 1px solid rgba(0, 114, 151, 0.22); background: #ffffff; color: var(--text); font-size: 0.88rem; outline: none; transition: all 0.3s; box-sizing: border-box;">
           </div>
         </div>
+        <div id="user-fms-shift-hint" class="fms-shift-hint" style="display:none;"></div>
         
         <div class="table-container" style="margin-top: 5px;">
           <table class="crm-table">
