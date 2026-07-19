@@ -500,6 +500,117 @@ function isCancelScopeFlight(flightNo, routeStr) {
   return true;
 }
 
+function parseRouteEndpoints(routeStr) {
+  const clean = String(routeStr || '').toUpperCase().replace(/\s+/g, '');
+  const parts = clean.split('-').filter(Boolean);
+  if (parts.length < 2) return { origin: '', dest: '' };
+  return { origin: parts[0], dest: parts[parts.length - 1] };
+}
+
+/** Chặng về (về HAN): DAD-HAN, SGN-HAN, SIN-HAN, … — bỏ qua khi tìm chuyến tiếp sau Cancel */
+function isReturnLegToHan(routeStr) {
+  const { dest } = parseRouteEndpoints(routeStr);
+  return dest === 'HAN';
+}
+
+/** Chặng đi từ HAN: HAN-DIN, HAN-SIN, … */
+function isOutboundFromHan(routeStr) {
+  const { origin } = parseRouteEndpoints(routeStr);
+  return origin === 'HAN';
+}
+
+function parseHhMmToMinutes(timeStr) {
+  const m = String(timeStr || '').match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+/** Giờ kế hoạch/ước lượng từ object FMS VNA (nhiều field có thể có) */
+function extractFmsFlightTimeMinutes(f) {
+  if (!f) return null;
+  const keys = [
+    'STD', 'ETD', 'ATD', 'DEP_TIME', 'SCHED_DEP', 'DEP_SCHED',
+    'time_dep', 'TIME_DEP', 'ETD_SCHED', 'DEP'
+  ];
+  for (const k of keys) {
+    const mins = parseHhMmToMinutes(f[k]);
+    if (mins != null) return mins;
+  }
+  // đôi khi giờ nằm trong chuỗi
+  for (const k of Object.keys(f)) {
+    if (/time|etd|std|dep/i.test(k)) {
+      const mins = parseHhMmToMinutes(f[k]);
+      if (mins != null) return mins;
+    }
+  }
+  return null;
+}
+
+/**
+ * Chuyến tiếp hợp lệ sau Cancel:
+ * - Cùng tàu, khác chuyến đã hủy
+ * - Bỏ chặng về (*-HAN)
+ * - Ưu tiên chặng đi từ HAN / QT
+ * - Cùng ngày Cancel: giờ bay ≥ giờ nạp/hủy (tránh nhặt VN7158 sáng khi Cancel 19:30)
+ * - Ngày sau Cancel: mọi chặng đi/QT đều xét
+ * Trả về { flight, route, fltNo } hoặc null
+ */
+function findNextFlightAfterCancel(fmsFlights, track, scanDate) {
+  const trackAc = String(track.ac_reg || '').trim().toUpperCase();
+  const oldFlt = String(track.old_flight_no || '').toUpperCase().replace(/\s+/g, '');
+  const oldMins = parseHhMmToMinutes(track.old_time);
+  const trackDate = String(track.date || '').trim();
+  const scan = String(scanDate || '').trim();
+
+  const scored = [];
+  for (const f of fmsFlights || []) {
+    if (!f || !f.ACREG || !f.FLIGHTNO) continue;
+    const ac = String(f.ACREG).trim().toUpperCase();
+    if (ac !== trackAc) continue;
+
+    const fltNo = String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
+    if (fltNo === oldFlt) continue;
+
+    const route = `${f.DEP_AP_SCHED || f.DEP || ''}-${f.ARR_AP_SCHED || f.ARR || ''}`.toUpperCase().replace(/\s+/g, '');
+    if (!route || route === '-') continue;
+
+    // Bỏ chặng về (DAD-HAN, SIN-HAN, …)
+    if (isReturnLegToHan(route)) continue;
+
+    // Chỉ nhận chặng đi từ HAN hoặc QT đi (HAN-xxx / đi nước ngoài)
+    const outbound = isOutboundFromHan(route);
+    const intl = isDepartingIntlRoute(route);
+    if (!outbound && !intl) continue;
+
+    // Cùng ngày Cancel: không lấy chuyến giờ sớm hơn giờ nạp
+    if (trackDate && scan && scan === trackDate) {
+      const ft = extractFmsFlightTimeMinutes(f);
+      if (oldMins != null && ft != null && ft < oldMins) continue;
+    }
+    // Ngày scan < ngày Cancel: bỏ
+    if (trackDate && scan && scan < trackDate) continue;
+
+    const ft = extractFmsFlightTimeMinutes(f);
+    let score = 0;
+    if (intl) score += 1000; // ưu tiên QT
+    if (outbound) score += 100;
+    if (ft != null) score += Math.max(0, 200 - (ft % 200)); // tie-break nhẹ
+    scored.push({ f, route, fltNo, ft, score, intl });
+  }
+
+  if (!scored.length) return null;
+  // Ưu tiên QT, rồi giờ sớm nhất sau cancel
+  scored.sort((a, b) => {
+    if (b.intl !== a.intl) return a.intl ? -1 : 1;
+    if (a.ft != null && b.ft != null) return a.ft - b.ft;
+    if (a.ft != null) return -1;
+    if (b.ft != null) return 1;
+    return b.score - a.score;
+  });
+  const best = scored[0];
+  return { flight: best.f, route: best.route, fltNo: best.fltNo, isIntl: best.intl };
+}
+
 /**
  * Cảnh báo SAI TÊN HÃNG HÀNG KHÔNG:
  * - Lấy ký hiệu từ số chuyến (CA6116 → CA; CA 3 số / 4 số → tên khác nhau)
@@ -921,6 +1032,32 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
     const durationSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_duration'");
     const durationVal = durationSetting ? durationSetting.value : '24h';
 
+    // 0. Mở lại Cancel đóng nhầm bằng chặng về (*-HAN) hoặc next không hợp lệ
+    try {
+      const closedCancels = await db.all(
+        `SELECT id, new_route, new_flight_no FROM fms_temp_import_exports
+         WHERE monitor_type = 'CANCELLED_FUELED' AND is_warned = 2`
+      );
+      let reopened = 0;
+      for (const r of closedCancels || []) {
+        const nr = String(r.new_route || '').toUpperCase();
+        if (!nr || isReturnLegToHan(nr) || !isOutboundFromHan(nr)) {
+          await db.run(
+            `UPDATE fms_temp_import_exports
+             SET is_warned = 0, new_flight_no = NULL, new_route = NULL, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            r.id
+          );
+          reopened++;
+        }
+      }
+      if (reopened > 0) {
+        log(`[Cancel] Đã mở lại ${reopened} monitor đóng nhầm (chặng về / next không hợp lệ).`);
+      }
+    } catch (reErr) {
+      console.error('[Cancel] Lỗi reopen:', reErr.message);
+    }
+
     // 1. Auto-đóng monitor cũ theo cấu hình 24h / Luôn luôn
     // - always: không auto-đóng theo ngày (giữ đến nội địa / user xác nhận)
     // - 24h: đóng các monitor thương mại cũ; giữ TECHNICAL_HAN + CANCELLED_FUELED mở
@@ -934,6 +1071,7 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
     }
 
     // 2. Bản ghi đang bám: always = mọi is_warned=0; 24h = từ hôm nay + type dài hạn còn mở
+    //    CANCELLED đã is_warned=1 (đã báo QT) không lặp; is_warned=0 = đang bám
     const trackingRows = durationVal === 'always'
       ? await db.all("SELECT * FROM fms_temp_import_exports WHERE is_warned = 0")
       : await db.all(
@@ -950,28 +1088,52 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
       const trackAcReg = String(track.ac_reg).trim().toUpperCase();
       const oldFlt = String(track.old_flight_no || '').toUpperCase().replace(/\s+/g, '');
 
-      // Tìm chuyến tiếp theo của cùng tàu (khác chuyến đã cancel/cũ nếu có)
-      const nextFlight = fmsFlights.find(f => {
-        if (!f.ACREG) return false;
-        const cleanAcReg = String(f.ACREG).trim().toUpperCase();
-        if (cleanAcReg !== trackAcReg) return false;
-        if (track.monitor_type === 'CANCELLED_FUELED' && f.FLIGHTNO) {
-          const fn = String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
-          // Không coi "chuyến cũ đã hủy" (nếu tái xuất hiện) là next
-          if (fn === oldFlt) return false;
-        }
-        return true;
-      });
+      let shouldWarn = false;
+      let closeOnly = false;
+      let warningMsg = '';
+      let newFltNo = '';
+      let newRoute = '';
 
-      if (nextFlight) {
-        const newFltNo = nextFlight.FLIGHTNO ? nextFlight.FLIGHTNO.toUpperCase().replace(/\s+/g, '') : '';
-        const newRoute = `${nextFlight.DEP_AP_SCHED || ''}-${nextFlight.ARR_AP_SCHED || ''}`;
+      if (track.monitor_type === 'CANCELLED_FUELED') {
+        // Next thông minh: bỏ chặng về, sau giờ nạp, ưu tiên QT
+        const next = findNextFlightAfterCancel(fmsFlights, track, targetDate);
+        if (!next) continue;
+
+        newFltNo = next.fltNo;
+        newRoute = next.route;
+        const isNextIntl = next.isIntl || isDepartingIntlRoute(newRoute);
+        const isNextDomesticOut =
+          isDomesticRoute(newRoute) && isOutboundFromHan(newRoute) && !isReturnLegToHan(newRoute);
+
+        if (isNextIntl) {
+          shouldWarn = true;
+          warningMsg = `⚠️ [CẢNH BÁO TÁI XUẤT – SAU CANCEL]
+Tàu ${trackAcReg} đã nạp ${parseInt(track.fuel_order).toLocaleString()} kg cho chuyến ${track.old_flight_no} (${track.old_route} lúc ${track.old_time}) — chuyến đã Cancel trên FMS VNA.
+🔄 Hiện được phân công bay Quốc tế: ${newFltNo} (${newRoute})
+Yêu cầu Điều hành & thống kê kiểm tra ngay!
+📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
+        } else if (isNextDomesticOut) {
+          // Chỉ đóng khi chặng ĐI nội địa (HAN-xxx), không phải chặng về
+          closeOnly = true;
+          log(`[Cancel/Tái xuất] Tàu ${trackAcReg} chặng đi nội địa ${newFltNo} (${newRoute}) → đóng bám.`);
+        }
+      } else {
+        // Các type khác: next cùng tàu, vẫn bỏ chặng về cho đỡ nhiễu
+        const nextFlight = fmsFlights.find(f => {
+          if (!f.ACREG || !f.FLIGHTNO) return false;
+          if (String(f.ACREG).trim().toUpperCase() !== trackAcReg) return false;
+          const fn = String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
+          if (fn === oldFlt) return false;
+          const route = `${f.DEP_AP_SCHED || ''}-${f.ARR_AP_SCHED || ''}`.toUpperCase();
+          if (isReturnLegToHan(route)) return false;
+          return true;
+        });
+        if (!nextFlight) continue;
+
+        newFltNo = nextFlight.FLIGHTNO ? nextFlight.FLIGHTNO.toUpperCase().replace(/\s+/g, '') : '';
+        newRoute = `${nextFlight.DEP_AP_SCHED || ''}-${nextFlight.ARR_AP_SCHED || ''}`;
         const isNextIntl = isDepartingIntlRoute(newRoute);
         const isNextDomestic = isDomesticRoute(newRoute);
-
-        let shouldWarn = false;
-        let closeOnly = false; // đóng bám không spam Zalo
-        let warningMsg = '';
 
         if (track.monitor_type === 'TECHNICAL_HAN') {
           if (isNextIntl) {
@@ -982,7 +1144,7 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
 ⛽ Đã nạp kỹ thuật chặng HAN-HAN: ${parseInt(track.fuel_order).toLocaleString()} kg (Chuyến cũ: ${track.old_flight_no} lúc ${track.old_time})
 🔄 Hiện được phân công bay chuyến Quốc tế: ${newFltNo} (${newRoute})
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-          } else if (isNextDomestic) {
+          } else if (isNextDomestic && isOutboundFromHan(newRoute)) {
             shouldWarn = true;
             warningMsg = `⚠️ [CẢNH BÁO SỬ DỤNG DẦU NẠP KỸ THUẬT]
 Điều hành chú ý: Sử dụng tàu đã nạp kỹ thuật cho chuyến bay nội địa.
@@ -990,19 +1152,6 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
 ⛽ Đã nạp kỹ thuật chặng HAN-HAN: ${parseInt(track.fuel_order).toLocaleString()} kg (Chuyến cũ: ${track.old_flight_no} lúc ${track.old_time})
 🔄 Hiện được phân công bay chuyến Nội địa: ${newFltNo} (${newRoute})
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-          }
-        } else if (track.monitor_type === 'CANCELLED_FUELED') {
-          // Sau Cancel: bám tái xuất — QT → cảnh báo; nội địa khác → đóng bám
-          if (isNextIntl) {
-            shouldWarn = true;
-            warningMsg = `⚠️ [CẢNH BÁO TÁI XUẤT – SAU CANCEL]
-Tàu ${trackAcReg} đã nạp ${parseInt(track.fuel_order).toLocaleString()} kg cho chuyến ${track.old_flight_no} (${track.old_route} lúc ${track.old_time}) — chuyến đã Cancel trên FMS VNA.
-🔄 Hiện được phân công bay Quốc tế: ${newFltNo} (${newRoute})
-Yêu cầu Điều hành & thống kê kiểm tra ngay!
-📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
-          } else if (isNextDomestic) {
-            closeOnly = true;
-            log(`[Cancel/Tái xuất] Tàu ${trackAcReg} bay nội địa ${newFltNo} (${newRoute}) → đóng bám.`);
           }
         } else if (track.monitor_type === 'DOMESTIC_TO_INTL') {
           if (isNextIntl) {
@@ -1014,7 +1163,7 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
           }
         } else if (track.monitor_type === 'INTL_TO_DOMESTIC') {
-          if (isNextDomestic) {
+          if (isNextDomestic && isOutboundFromHan(newRoute)) {
             shouldWarn = true;
             warningMsg = `⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
 Điều hành chú ý: Sử dụng tàu đã nạp Quốc tế cho chuyến bay Nội địa.
@@ -1024,20 +1173,20 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
           }
         }
+      }
 
-        if (closeOnly) {
-          await db.run(
-            "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            newFltNo, newRoute, track.id
-          );
-        } else if (shouldWarn && warningMsg) {
-          log(`[Cảnh báo Giám sát tàu] Tàu ${trackAcReg} (${track.monitor_type}) → ${newFltNo} (${newRoute})`);
-          await db.run(
-            "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            newFltNo, newRoute, track.id
-          );
-          sendImportExportZalo(targetGroupId, isSkyOneEnabled, warningMsg, `Giám sát ${trackAcReg}`);
-        }
+      if (closeOnly) {
+        await db.run(
+          "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          newFltNo, newRoute, track.id
+        );
+      } else if (shouldWarn && warningMsg) {
+        log(`[Cảnh báo Giám sát tàu] Tàu ${trackAcReg} (${track.monitor_type}) → ${newFltNo} (${newRoute})`);
+        await db.run(
+          "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          newFltNo, newRoute, track.id
+        );
+        sendImportExportZalo(targetGroupId, isSkyOneEnabled, warningMsg, `Giám sát ${trackAcReg}`);
       }
     }
   } catch (err) {
