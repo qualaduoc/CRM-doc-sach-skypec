@@ -536,60 +536,196 @@ async function checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, sc
   }
 }
 
+/** Nhóm Zalo nhận cảnh báo Tạm nhập / Tái xuất / Cancel */
+async function getImportExportNotifyTargets(db) {
+  const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+  const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
+  const ieGroupSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_id'");
+  let targetGroupId = ieGroupSetting ? ieGroupSetting.value : '';
+  if (!targetGroupId) {
+    const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+    targetGroupId = groupSetting ? groupSetting.value : '';
+  }
+  return { isSkyOneEnabled, targetGroupId };
+}
+
+function sendImportExportZalo(targetGroupId, isSkyOneEnabled, message, logTag) {
+  if (!isSkyOneEnabled || !targetGroupId) return;
+  const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+  groupIds.forEach(id => {
+    sendSkyEyesMessage(id, message, [])
+      .then(() => log(`[SkyOne] ${logTag} → nhóm ${id} OK`))
+      .catch(err => console.error(`[SkyOne] ${logTag} → nhóm ${id} lỗi:`, err.message));
+  });
+}
+
+/**
+ * CANCEL đã nạp (Skypec kg>0) + biến mất trên FMS VNA (đúng flight_no + đã biết ac_reg).
+ * Báo Zalo đúng 1 lần → đưa tàu vào theo dõi Tái xuất (monitor_type = CANCELLED_FUELED).
+ * An toàn: bỏ qua nếu VNA trả 0 chuyến (cookie/lỗi) để tránh false-positive hàng loạt.
+ */
+async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
+  try {
+    if (!vnaFmsFlights || vnaFmsFlights.length === 0) {
+      log(`[Cancel] Bỏ qua detect ngày ${targetDate}: FMS VNA 0 chuyến (tránh cảnh báo nhầm).`);
+      return { checked: 0, cancelled: 0 };
+    }
+
+    const vnaSet = new Set();
+    vnaFmsFlights.forEach(f => {
+      if (!f || !f.FLIGHTNO) return;
+      vnaSet.add(String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, ''));
+    });
+
+    const skypecRows = await db.all(
+      'SELECT flight_no, ac_reg, route, fuel_order, time_fuel, driver_name, operator_name, truck_no FROM fms_flights_live WHERE date = ?',
+      targetDate
+    );
+
+    let cancelled = 0;
+    let checked = 0;
+    const { isSkyOneEnabled, targetGroupId } = await getImportExportNotifyTargets(db);
+
+    for (const row of skypecRows || []) {
+      const fltNo = String(row.flight_no || '').toUpperCase().replace(/\s+/g, '');
+      const acReg = String(row.ac_reg || '').trim().toUpperCase();
+      const kg = parseInt(String(row.fuel_order || '0').replace(/[^\d]/g, ''), 10) || 0;
+      if (!fltNo || !acReg || acReg === '-' || kg <= 0) continue;
+      checked++;
+
+      // Còn trên VNA → không Cancel
+      if (vnaSet.has(fltNo)) continue;
+
+      // Đã báo Cancel / đã vào list (1 lần)
+      const exists = await db.get(
+        `SELECT id FROM fms_temp_import_exports
+         WHERE UPPER(TRIM(ac_reg)) = ? AND UPPER(REPLACE(old_flight_no,' ','')) = ?
+           AND date = ? AND monitor_type = 'CANCELLED_FUELED'`,
+        acReg, fltNo, targetDate
+      );
+      if (exists) continue;
+
+      const route = String(row.route || '').trim().toUpperCase() || '-';
+      let timeFuel = row.time_fuel && row.time_fuel !== '-' ? String(row.time_fuel).trim() : '-';
+
+      // Cặp tra nạp: ưu tiên Skypec live, fallback lịch SkyEyes
+      let driver = String(row.driver_name || '').split(',')[0].trim();
+      let operator = String(row.operator_name || '').split(',')[0].trim();
+      if (/^NAFSC$/i.test(driver)) driver = '';
+      if (/^NAFSC$/i.test(operator)) operator = '';
+
+      if (!driver && !operator) {
+        const sched = await db.get(
+          `SELECT driver_name, operator_name, crew_info, time_fuel FROM fms_schedules
+           WHERE (date = ? OR fms_date = ?)
+             AND REPLACE(REPLACE(UPPER(flight_no),' ',''),'-','') = ?
+           LIMIT 1`,
+          targetDate, targetDate, fltNo.replace(/-/g, '')
+        );
+        if (sched) {
+          driver = String(sched.driver_name || '').trim();
+          operator = String(sched.operator_name || '').trim();
+          if ((!driver || !operator) && sched.crew_info) {
+            const parts = String(sched.crew_info).split(/\s+-\s+/).map(p => p.trim());
+            if (!driver && parts[0]) driver = parts[0];
+            if (!operator && parts[1]) operator = parts[1];
+          }
+          if (timeFuel === '-' && sched.time_fuel) timeFuel = String(sched.time_fuel).trim();
+        }
+      }
+
+      const crewPair = [driver, operator].filter(Boolean).join(' - ') || '-';
+
+      await db.run(
+        `INSERT INTO fms_temp_import_exports
+          (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time, is_warned)
+         VALUES (?, ?, ?, ?, ?, 'CANCELLED_FUELED', ?, 0)`,
+        acReg, fltNo, route, kg, targetDate, timeFuel
+      );
+
+      const msg = `⚠️ [CẢNH BÁO CANCEL CHUYẾN BAY]
+Chuyến ${fltNo} (${route}) đã nạp ${kg.toLocaleString('vi-VN')} kg trên tàu ${acReg}
+Cặp tra nạp: ${crewPair} vào lúc: ${timeFuel}
+→ Phát hiện không tồn tại trên hệ thống FMS VNA
+→ Khả năng cao đã hủy chuyến. Đề nghị Điều hành theo dõi.
+Tàu ${acReg} đã được đưa vào theo dõi Tái xuất.
+📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
+
+      log(`[Cancel] ${fltNo} / ${acReg} / ${kg} kg — mất trên VNA → báo 1 lần + theo dõi Tái xuất.`);
+      sendImportExportZalo(targetGroupId, isSkyOneEnabled, msg, `Cancel ${fltNo}`);
+      cancelled++;
+    }
+
+    if (cancelled > 0) {
+      log(`[Cancel] Ngày ${targetDate}: đã báo ${cancelled}/${checked} chuyến Skypec đã nạp mất trên VNA.`);
+    }
+    return { checked, cancelled };
+  } catch (err) {
+    console.error('[Cancel] Lỗi detect:', err.message);
+    return { checked: 0, cancelled: 0, error: err.message };
+  }
+}
+
 // Kiểm tra cảnh báo Tạm nhập - Tái xuất tàu bay
 async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
   try {
     const todayDb = getVietnamDbDateStr();
-    
-    // 1. Tự động chuyển các bản ghi giám sát cũ (is_warned = 0) của ngày hôm qua trở về trước sang trạng thái đã xử lý (is_warned = 2)
-    await db.run(
-      "UPDATE fms_temp_import_exports SET is_warned = 2 WHERE is_warned = 0 AND date < ?",
-      todayDb
-    );
+    const durationSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_duration'");
+    const durationVal = durationSetting ? durationSetting.value : '24h';
 
-    // 2. Chỉ lấy các bản ghi đang giám sát từ ngày hiện tại trở đi
-    const trackingRows = await db.all(
-      "SELECT * FROM fms_temp_import_exports WHERE is_warned = 0 AND date >= ?",
-      todayDb
-    );
+    // 1. Auto-đóng monitor cũ theo cấu hình 24h / Luôn luôn
+    // - always: không auto-đóng theo ngày (giữ đến nội địa / user xác nhận)
+    // - 24h: đóng các monitor thương mại cũ; giữ TECHNICAL_HAN + CANCELLED_FUELED mở
+    if (durationVal !== 'always') {
+      await db.run(
+        `UPDATE fms_temp_import_exports SET is_warned = 2
+         WHERE is_warned = 0 AND date < ?
+           AND monitor_type NOT IN ('TECHNICAL_HAN', 'CANCELLED_FUELED')`,
+        todayDb
+      );
+    }
+
+    // 2. Bản ghi đang bám: always = mọi is_warned=0; 24h = từ hôm nay + type dài hạn còn mở
+    const trackingRows = durationVal === 'always'
+      ? await db.all("SELECT * FROM fms_temp_import_exports WHERE is_warned = 0")
+      : await db.all(
+          `SELECT * FROM fms_temp_import_exports WHERE is_warned = 0
+           AND (date >= ? OR monitor_type IN ('TECHNICAL_HAN','CANCELLED_FUELED'))`,
+          todayDb
+        );
     
     if (trackingRows.length === 0) return;
-    
-    // Đọc cấu hình Zalo để gửi tin nhắn
-    const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
-    const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
 
-    // Đọc nhóm riêng nhận cảnh báo chênh lệch tải dầu
-    const ieGroupSetting = await db.get("SELECT value FROM settings WHERE key = 'fms_import_export_group_id'");
-    let targetGroupId = ieGroupSetting ? ieGroupSetting.value : '';
-
-    if (!targetGroupId) {
-      // Fallback về nhóm Zalo FMS chung
-      const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
-      targetGroupId = groupSetting ? groupSetting.value : '';
-    }
+    const { isSkyOneEnabled, targetGroupId } = await getImportExportNotifyTargets(db);
 
     for (const track of trackingRows) {
       const trackAcReg = String(track.ac_reg).trim().toUpperCase();
-      
-      // 2. Tìm chuyến bay của tàu này trong fmsFlights của ngày hôm nay
+      const oldFlt = String(track.old_flight_no || '').toUpperCase().replace(/\s+/g, '');
+
+      // Tìm chuyến tiếp theo của cùng tàu (khác chuyến đã cancel/cũ nếu có)
       const nextFlight = fmsFlights.find(f => {
         if (!f.ACREG) return false;
         const cleanAcReg = String(f.ACREG).trim().toUpperCase();
-        return cleanAcReg === trackAcReg;
+        if (cleanAcReg !== trackAcReg) return false;
+        if (track.monitor_type === 'CANCELLED_FUELED' && f.FLIGHTNO) {
+          const fn = String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
+          // Không coi "chuyến cũ đã hủy" (nếu tái xuất hiện) là next
+          if (fn === oldFlt) return false;
+        }
+        return true;
       });
-      
+
       if (nextFlight) {
         const newFltNo = nextFlight.FLIGHTNO ? nextFlight.FLIGHTNO.toUpperCase().replace(/\s+/g, '') : '';
         const newRoute = `${nextFlight.DEP_AP_SCHED || ''}-${nextFlight.ARR_AP_SCHED || ''}`;
         const isNextIntl = isDepartingIntlRoute(newRoute);
         const isNextDomestic = isDomesticRoute(newRoute);
-        
+
         let shouldWarn = false;
+        let closeOnly = false; // đóng bám không spam Zalo
         let warningMsg = '';
-        
+
         if (track.monitor_type === 'TECHNICAL_HAN') {
-          // Tàu nạp kỹ thuật HAN-HAN
           if (isNextIntl) {
             shouldWarn = true;
             warningMsg = `⚠️ [CẢNH BÁO TẠM NHẬP - TÁI XUẤT]
@@ -607,8 +743,20 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
 🔄 Hiện được phân công bay chuyến Nội địa: ${newFltNo} (${newRoute})
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
           }
+        } else if (track.monitor_type === 'CANCELLED_FUELED') {
+          // Sau Cancel: bám tái xuất — QT → cảnh báo; nội địa khác → đóng bám
+          if (isNextIntl) {
+            shouldWarn = true;
+            warningMsg = `⚠️ [CẢNH BÁO TÁI XUẤT – SAU CANCEL]
+Tàu ${trackAcReg} đã nạp ${parseInt(track.fuel_order).toLocaleString()} kg cho chuyến ${track.old_flight_no} (${track.old_route} lúc ${track.old_time}) — chuyến đã Cancel trên FMS VNA.
+🔄 Hiện được phân công bay Quốc tế: ${newFltNo} (${newRoute})
+Yêu cầu Điều hành & thống kê kiểm tra ngay!
+📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
+          } else if (isNextDomestic) {
+            closeOnly = true;
+            log(`[Cancel/Tái xuất] Tàu ${trackAcReg} bay nội địa ${newFltNo} (${newRoute}) → đóng bám.`);
+          }
         } else if (track.monitor_type === 'DOMESTIC_TO_INTL') {
-          // Tàu nạp nội địa chuyển quốc tế (Tạm nhập - Tái xuất)
           if (isNextIntl) {
             shouldWarn = true;
             warningMsg = `⚠️ [CẢNH BÁO]
@@ -618,7 +766,6 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
           }
         } else if (track.monitor_type === 'INTL_TO_DOMESTIC') {
-          // Tàu nạp quốc tế chuyển nội địa (Truy thu thuế GTGT)
           if (isNextDomestic) {
             shouldWarn = true;
             warningMsg = `⚠️ [CẢNH BÁO SỬ DỤNG DẦU QUỐC TẾ CHO NỘI ĐỊA]
@@ -629,25 +776,19 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
           }
         }
-        
-        if (shouldWarn && warningMsg) {
-          log(`[Cảnh báo Giám sát tàu] Phát hiện tàu ${trackAcReg} (Loại: ${track.monitor_type}) bay chuyến tiếp theo ${newFltNo} (${newRoute})!`);
-          
-          // Cập nhật DB trạng thái đã phát hiện và cảnh báo (is_warned = 1)
+
+        if (closeOnly) {
+          await db.run(
+            "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            newFltNo, newRoute, track.id
+          );
+        } else if (shouldWarn && warningMsg) {
+          log(`[Cảnh báo Giám sát tàu] Tàu ${trackAcReg} (${track.monitor_type}) → ${newFltNo} (${newRoute})`);
           await db.run(
             "UPDATE fms_temp_import_exports SET new_flight_no = ?, new_route = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             newFltNo, newRoute, track.id
           );
-          
-          // Gửi tin nhắn Zalo cảnh báo
-          if (isSkyOneEnabled && targetGroupId) {
-            const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
-            groupIds.forEach(id => {
-              sendSkyEyesMessage(id, warningMsg, [])
-                .then(() => log(`[SkyOne] Đã gửi cảnh báo chéo cho tàu ${trackAcReg} tới nhóm ${id} thành công!`))
-                .catch(err => console.error(`[SkyOne] Gửi cảnh báo chéo tới nhóm ${id} thất bại:`, err.message));
-            });
-          }
+          sendImportExportZalo(targetGroupId, isSkyOneEnabled, warningMsg, `Giám sát ${trackAcReg}`);
         }
       }
     }
@@ -699,11 +840,20 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       
       let deletedTemp;
       if (durationVal === 'always') {
-        // Nếu chọn "Luôn luôn", ta chỉ xóa các bản ghi của ngày trước đã được xác nhận xử lý (is_warned = 2) để dọn dẹp DB
+        // Luôn luôn: chỉ xóa bản ghi đã đóng/xác nhận (is_warned = 2) của ngày trước
         deletedTemp = await db.run("DELETE FROM fms_temp_import_exports WHERE date < ? AND is_warned = 2", todayDb);
       } else {
-        // Nếu chọn "24h" (mặc định), ta xóa tất cả các bản ghi thương mại cũ của ngày trước, riêng chặng kỹ thuật (TECHNICAL_HAN) luôn giữ lại
-        deletedTemp = await db.run("DELETE FROM fms_temp_import_exports WHERE date < ? AND monitor_type != 'TECHNICAL_HAN'", todayDb);
+        // 24h: xóa monitor thương mại cũ; giữ TECHNICAL_HAN + CANCELLED_FUELED (đang bám) đến khi đóng
+        deletedTemp = await db.run(
+          `DELETE FROM fms_temp_import_exports WHERE date < ?
+             AND monitor_type NOT IN ('TECHNICAL_HAN', 'CANCELLED_FUELED')`,
+          todayDb
+        );
+        // CANCELLED_FUELED đã đóng (is_warned=2) thì dọn
+        await db.run(
+          `DELETE FROM fms_temp_import_exports WHERE date < ? AND monitor_type = 'CANCELLED_FUELED' AND is_warned = 2`,
+          todayDb
+        );
       }
       
       if (deletedTemp && deletedTemp.changes > 0) {
@@ -781,7 +931,44 @@ async function syncFMSData(forceDate = null, forceShift = null) {
     for (const targetDate of targetDates) {
       // Lấy danh sách các chuyến bay cần theo dõi của ngày đang xét theo ngày bay thực tế FMS (fms_date)
       const schedules = await db.all('SELECT DISTINCT flight_no, time_fuel, time_dep, time_arr FROM fms_schedules WHERE COALESCE(fms_date, date) = ?', targetDate);
-      if (schedules.length === 0) continue;
+
+      // Helper: tải FMS VNA cho ngày (dùng chung Cancel + quét fuel)
+      const loadVnaFlightsForDate = async () => {
+        const targetFmsDateStr = convertDbDateToFmsDate(targetDate);
+        let list = [];
+        try {
+          list = await fetchFMSData(targetFmsDateStr, activeCookie);
+          if (list.length === 0) {
+            log(`[Cảnh báo] Tải về 0 chuyến bay từ FMS cho ngày ${targetFmsDateStr}. Có khả năng cookie hết hạn âm thầm. Tiến hành đăng nhập lại để làm mới cookie...`);
+            await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
+            await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
+            cachedFmsCookie = null;
+            activeCookie = await loginFMS();
+            list = await fetchFMSData(targetFmsDateStr, activeCookie);
+          }
+        } catch (err) {
+          log(`Cookie FMS bị lỗi hoặc hết hạn. Đang tiến hành đăng nhập lại... Chi tiết lỗi: ${err.message || JSON.stringify(err)}`);
+          await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
+          await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
+          cachedFmsCookie = null;
+          activeCookie = await loginFMS();
+          list = await fetchFMSData(targetFmsDateStr, activeCookie);
+        }
+        return list;
+      };
+
+      // Không có lịch SkyEyes: vẫn quét Cancel (Skypec kg>0 vs VNA)
+      if (schedules.length === 0) {
+        try {
+          const vnaOnly = await loadVnaFlightsForDate();
+          log(`[Ngày ${targetDate}] Không có lịch SkyEyes — vẫn quét Cancel (VNA ${vnaOnly.length} chuyến).`);
+          await detectCancelledFueledFlights(db, targetDate, vnaOnly);
+          await checkTempImportExportAlerts(db, targetDate, vnaOnly);
+        } catch (e) {
+          console.error(`[Cancel] Ngày ${targetDate} (no schedule):`, e.message);
+        }
+        continue;
+      }
 
       // Lọc theo ca — khớp nguyên tắc nghiệp vụ
       // day: 07:30–19:30 | evening/night (ca tối): 19:30–23:59 HOẶC 00:00–07:30
@@ -826,37 +1013,17 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       const flightNumbers = filteredSchedules.map(s => s.flight_no.toUpperCase().replace(/\s+/g, ''));
       log(`[Ngày ${targetDate}] Danh sách chuyến bay cần theo dõi (${flightNumbers.length} chuyến): ${flightNumbers.join(', ')}`);
 
-      // Tải danh sách chuyến bay từ FMS cho ngày này
-      const targetFmsDateStr = convertDbDateToFmsDate(targetDate);
-      let fmsFlights = [];
-      try {
-        fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
-        
-        // Phát hiện cookie hết hạn âm thầm khi FMS trả về 0 chuyến bay
-        if (fmsFlights.length === 0) {
-          log(`[Cảnh báo] Tải về 0 chuyến bay từ FMS cho ngày ${targetFmsDateStr}. Có khả năng cookie hết hạn âm thầm. Tiến hành đăng nhập lại để làm mới cookie...`);
-          // Xóa cookie cũ khỏi DB và cache bộ nhớ để ép login mới
-          await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
-          await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
-          cachedFmsCookie = null;
-          
-          activeCookie = await loginFMS();
-          fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
-        }
-      } catch (err) {
-        log(`Cookie FMS bị lỗi hoặc hết hạn. Đang tiến hành đăng nhập lại... Chi tiết lỗi: ${err.message || JSON.stringify(err)}`);
-        // Xóa cookie cũ khỏi DB và cache bộ nhớ để ép login mới
-        await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
-        await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
-        cachedFmsCookie = null;
-        
-        activeCookie = await loginFMS();
-        fmsFlights = await fetchFMSData(targetFmsDateStr, activeCookie);
-      }
-      
+      const fmsFlights = await loadVnaFlightsForDate();
       log(`[Ngày ${targetDate}] Đã tải danh sách chuyến bay từ FMS, tổng cộng ${fmsFlights.length} chuyến.`);
 
-      // Kiểm tra và cảnh báo Tạm nhập - Tái xuất tàu bay
+      // Cancel: Skypec kg>0 + mất trên FMS VNA (đúng chuyến/tàu) → Zalo 1 lần + list Tái xuất
+      try {
+        await detectCancelledFueledFlights(db, targetDate, fmsFlights);
+      } catch (cancelErr) {
+        console.error('[Cancel] Lỗi khi quét:', cancelErr.message);
+      }
+
+      // Kiểm tra và cảnh báo Tạm nhập - Tái xuất tàu bay (gồm sau Cancel)
       await checkTempImportExportAlerts(db, targetDate, fmsFlights);
 
       // Lọc các chuyến bay khớp với lịch trực của ngày này
@@ -1993,5 +2160,6 @@ module.exports = {
   isDomesticRoute,
   isDepartingIntlRoute,
   checkAirlineNameMismatchAlerts,
-  listAirlineMappings
+  listAirlineMappings,
+  detectCancelledFueledFlights
 };

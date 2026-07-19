@@ -442,6 +442,21 @@
             </div>
             <div style="display: flex; flex-direction: column; gap: 8px; padding-right: 4px;">
               
+              <!-- Kịch bản 5: Cancel đã nạp -->
+              <div class="scenario-item">
+                <div style="display:flex; justify-content:space-between; align-items:center; width: 100%;">
+                  <span style="font-size:0.8rem; font-weight:bold; color:#b91c1c;">5. Cancel chuyến đã nạp (Skypec kg&gt;0 · mất FMS VNA)</span>
+                  <button onclick="runZaloIeTest(5)" class="btn-glow" style="margin-top:0; padding:4px 12px; font-size:0.75rem; background:#16a34a; border:none; width: auto !important; border-radius: 6px;">Gửi thử</button>
+                </div>
+                <pre style="margin:0; font-family:monospace; font-size:0.72rem; color:#334155; background:#f1f5f9; padding:6px 10px; border-radius:4px; white-space:pre-wrap; border:1px solid #cbd5e1;">⚠️ [CẢNH BÁO CANCEL CHUYẾN BAY]
+Chuyến VN1806 (HAN-DIN) đã nạp 8.500 kg trên tàu VNA326
+Cặp tra nạp: Nguyễn Văn A - Trần Văn B vào lúc: 14:30
+→ Phát hiện không tồn tại trên hệ thống FMS VNA
+→ Khả năng cao đã hủy chuyến. Đề nghị Điều hành theo dõi.
+Tàu VNA326 đã được đưa vào theo dõi Tái xuất.
+📢 Giờ cảnh báo: [Giờ hiện tại]</pre>
+              </div>
+
               <!-- Kịch bản 1 -->
               <div class="scenario-item">
                 <div style="display:flex; justify-content:space-between; align-items:center; width: 100%;">

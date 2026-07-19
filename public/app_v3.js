@@ -2474,6 +2474,8 @@ async function fetchTempImportExportData() {
         } else {
           alertMsg = `Điều hành chú ý: Sử dụng tàu ${activeAlert.ac_reg} đã nạp kỹ thuật cho chuyến bay nội địa ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
         }
+      } else if (activeAlert.monitor_type === 'CANCELLED_FUELED') {
+        alertMsg = `Sau Cancel: tàu ${activeAlert.ac_reg} (đã nạp ${Number(activeAlert.fuel_order || 0).toLocaleString()} kg · ${activeAlert.old_flight_no}) → Quốc tế ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
       } else if (activeAlert.monitor_type === 'INTL_TO_DOMESTIC') {
         alertMsg = `Điều hành chú ý: Sử dụng tàu ${activeAlert.ac_reg} đã nạp Quốc tế cho chuyến bay Nội địa ${activeAlert.new_flight_no} (${activeAlert.new_route})!`;
       } else {
@@ -2502,6 +2504,8 @@ async function fetchTempImportExportData() {
       let typeBadge = '';
       if (r.monitor_type === 'TECHNICAL_HAN') {
         typeBadge = `<span style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); color: #c084fc; font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; font-weight: 600; white-space: nowrap;">Kỹ thuật HAN</span>`;
+      } else if (r.monitor_type === 'CANCELLED_FUELED') {
+        typeBadge = `<span style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); color: #ef4444; font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; font-weight: 600; white-space: nowrap;">Cancel → Tái xuất</span>`;
       } else if (r.monitor_type === 'INTL_TO_DOMESTIC') {
         typeBadge = `<span style="background: rgba(251, 146, 60, 0.15); border: 1px solid rgba(251, 146, 60, 0.3); color: #fb923c; font-size: 0.72rem; padding: 2px 4px; border-radius: 4px; font-weight: 600; white-space: nowrap;">Q.tế ➔ N.địa</span>`;
       } else {

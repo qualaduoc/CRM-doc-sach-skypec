@@ -3004,7 +3004,7 @@ app.post('/api/fms/temp-import-exports/test', authenticateToken, async (req, res
     return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
   }
 
-  const { scenario } = req.body; // scenario: 1 (Nội địa -> Quốc tế), 2 (Quốc tế -> Nội địa), 3 (HAN-HAN -> Nội địa), 4 (HAN-HAN -> Quốc tế)
+  const { scenario } = req.body; // 1 NĐ→QT, 2 QT→NĐ, 3 HAN-HAN→NĐ, 4 HAN-HAN→QT, 5 Cancel đã nạp
   const scNum = parseInt(scenario) || 1;
 
   const todayDb = getVietnamDbDateStr();
@@ -3016,9 +3016,26 @@ app.post('/api/fms/temp-import-exports/test', authenticateToken, async (req, res
   let newRoute = 'HAN-ICN';
   let monitorType = 'DOMESTIC_TO_INTL';
   let oldTime = '10:30';
+  let isWarned = 1;
   let msg = '';
 
-  if (scNum === 2) {
+  if (scNum === 5) {
+    oldFlight = 'VN1806';
+    oldRoute = 'HAN-DIN';
+    fuelOrder = 8500;
+    newFlight = null;
+    newRoute = null;
+    monitorType = 'CANCELLED_FUELED';
+    oldTime = '14:30';
+    isWarned = 0; // đang bám tái xuất sau Cancel
+    msg = `⚠️ [CẢNH BÁO CANCEL CHUYẾN BAY]
+Chuyến ${oldFlight} (${oldRoute}) đã nạp ${fuelOrder.toLocaleString('vi-VN')} kg trên tàu ${testAcReg}
+Cặp tra nạp: Nguyễn Văn A - Trần Văn B vào lúc: ${oldTime}
+→ Phát hiện không tồn tại trên hệ thống FMS VNA
+→ Khả năng cao đã hủy chuyến. Đề nghị Điều hành theo dõi.
+Tàu ${testAcReg} đã được đưa vào theo dõi Tái xuất.
+📢 Giờ cảnh báo giả lập: ${getVietnamDateTimeStr()}`;
+  } else if (scNum === 2) {
     oldFlight = 'VN416';
     oldRoute = 'HAN-ICN';
     fuelOrder = 15000;
@@ -3075,11 +3092,11 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     // Xóa bản ghi test cũ của ngày hôm nay nếu có để tránh trùng lặp
     await db.run("DELETE FROM fms_temp_import_exports WHERE ac_reg = ?", testAcReg);
 
-    // 1. Thêm bản ghi mới ở trạng thái đã phát hiện và phát cảnh báo (is_warned = 1)
+    // 1. Thêm bản ghi giám sát (Cancel: is_warned=0 đang bám; các kịch bản khác = đã cảnh báo)
     await db.run(`
       INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, new_flight_no, new_route, is_warned, monitor_type, old_time)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `, testAcReg, oldFlight, oldRoute, fuelOrder, todayDb, newFlight, newRoute, monitorType, oldTime);
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, testAcReg, oldFlight, oldRoute, fuelOrder, todayDb, newFlight, newRoute, isWarned, monitorType, oldTime);
 
     // 2. Gửi tin nhắn Zalo cảnh báo
     const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
