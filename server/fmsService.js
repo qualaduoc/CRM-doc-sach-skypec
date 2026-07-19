@@ -1141,6 +1141,11 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
     for (const track of trackingRows) {
       const trackAcReg = String(track.ac_reg).trim().toUpperCase();
       const oldFlt = String(track.old_flight_no || '').toUpperCase().replace(/\s+/g, '');
+      // Chỉ bám chuyến VN — dọn luôn nếu lọt VU/9G/hãng QT
+      if (!isVnAirlineFlightNo(oldFlt)) {
+        await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', track.id);
+        continue;
+      }
 
       let shouldWarn = false;
       let closeOnly = false;
@@ -1348,6 +1353,21 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       }
       if (purgedDup > 0) {
         log(`[Dọn dẹp DB] Đã xóa ${purgedDup} monitor INTL_TO_DOMESTIC sai/trùng NKT.`);
+      }
+
+      // Chỉ giám sát tái xuất chuyến VN — xóa VU, 9G, hãng QT còn sót
+      const allMonRows = await db.all(
+        'SELECT id, old_flight_no FROM fms_temp_import_exports'
+      );
+      let purgedNonVn = 0;
+      for (const r of allMonRows || []) {
+        if (!isVnAirlineFlightNo(r.old_flight_no)) {
+          await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', r.id);
+          purgedNonVn++;
+        }
+      }
+      if (purgedNonVn > 0) {
+        log(`[Dọn dẹp DB] Đã xóa ${purgedNonVn} monitor không phải chuyến VN (VU/9G/hãng QT).`);
       }
 
       // Chỉ giữ cửa sổ ngày theo dõi (+ đã đóng gần đây); không ôm TECHNICAL vô hạn nhiều ngày
@@ -2440,13 +2460,20 @@ async function syncFmsSkypecLive(forceDate = null) {
               }
 
               const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
+              // Chỉ giám sát tái xuất chuyến VN (VNA) — bỏ VU, 9G, hãng QT
+              if (!isVnAirlineFlightNo(cleanFltNo)) {
+                log(`[FMS Skypec Live] Bỏ monitor đổi tàu ${oldAcReg}/${cleanFltNo}: không phải chuyến VN.`);
+                monitorType = null;
+              }
               // Đã có NKT cùng tàu/ngày/kg → không tạo thêm dòng Q.tế→N.địa trùng
-              const hasTechSame = await db.get(
-                `SELECT id FROM fms_temp_import_exports
-                 WHERE UPPER(TRIM(ac_reg)) = ? AND date = ? AND monitor_type = 'TECHNICAL_HAN'
-                   AND is_warned < 2 AND ABS(COALESCE(fuel_order,0) - ?) < 2`,
-                oldAcReg, flight.date, oldFuelOrder
-              );
+              const hasTechSame = monitorType
+                ? await db.get(
+                    `SELECT id FROM fms_temp_import_exports
+                     WHERE UPPER(TRIM(ac_reg)) = ? AND date = ? AND monitor_type = 'TECHNICAL_HAN'
+                       AND is_warned < 2 AND ABS(COALESCE(fuel_order,0) - ?) < 2`,
+                    oldAcReg, flight.date, oldFuelOrder
+                  )
+                : null;
               if (hasTechSame && monitorType !== 'TECHNICAL_HAN') {
                 log(`[FMS Skypec Live] Bỏ monitor ${monitorType} ${oldAcReg}: đã có TECHNICAL_HAN cùng ngày/kg.`);
                 monitorType = null;
@@ -2482,7 +2509,10 @@ async function syncFmsSkypecLive(forceDate = null) {
           if (currentRoute === 'HAN-HAN' && currentFuel > 0 && flight.ac_reg) {
             const currentAcReg = String(flight.ac_reg).trim().toUpperCase();
             const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
-            
+            // Chỉ NKT chuyến VN — bỏ VU, 9G, hãng QT
+            if (!isVnAirlineFlightNo(cleanFltNo)) {
+              // skip silently
+            } else {
             const exists = await db.get(
               "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ? AND monitor_type = 'TECHNICAL_HAN'",
               currentAcReg, flight.date, cleanFltNo
@@ -2493,6 +2523,7 @@ async function syncFmsSkypecLive(forceDate = null) {
                 INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
                 VALUES (?, ?, ?, ?, ?, 'TECHNICAL_HAN', ?)
               `, currentAcReg, cleanFltNo, currentRoute, currentFuel, flight.date, flight.time_fuel || '-');
+            }
             }
           }
         } catch (errDb) {

@@ -9,7 +9,7 @@ const querystring = require('querystring');
 const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
-const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute } = require('./fmsService');
+const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute, isVnAirlineFlightNo } = require('./fmsService');
 const { evaluateAirlineMismatch, listAirlineMappings } = require('./airlineCodes');
 const {
   buildScheduleCandidatesFromFlights,
@@ -2969,10 +2969,12 @@ app.get('/api/fms/temp-import-exports', authenticateToken, async (req, res) => {
       targetDate,
       MONITOR_EPOCH
     );
+    // Chỉ hiển thị giám sát chuyến VN — ẩn VU, 9G, hãng QT
+    const vnOnly = (rows || []).filter(r => isVnAirlineFlightNo(r.old_flight_no));
     res.json({
       success: true,
-      data: rows,
-      meta: { date: targetDate, epoch: MONITOR_EPOCH, count: rows.length }
+      data: vnOnly,
+      meta: { date: targetDate, epoch: MONITOR_EPOCH, count: vnOnly.length }
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
