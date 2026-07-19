@@ -1799,6 +1799,22 @@ async function syncFmsSkypecLive(forceDate = null) {
     }
     console.log(`[FMS Skypec Live] Đồng bộ thành công ${insertCount} chuyến bay của ngày: ${targetDate}`);
 
+    // 5b. Auto đồng bộ kế hoạch ca từ Flights (chỉ hôm nay / hôm qua — không chạy khi cào lịch sử)
+    try {
+      const todayDb = getVietnamDbDateStr();
+      const yest = (() => {
+        const vn = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        vn.setUTCDate(vn.getUTCDate() - 1);
+        return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, '0')}-${String(vn.getUTCDate()).padStart(2, '0')}`;
+      })();
+      if (targetDate === todayDb || targetDate === yest) {
+        const { autoSyncScheduleFromFlightsIfEnabled } = require('./scheduleFromFlights');
+        await autoSyncScheduleFromFlightsIfEnabled();
+      }
+    } catch (schedErr) {
+      console.error('[FMS Skypec Live] Lỗi auto schedule từ Flights:', schedErr.message);
+    }
+
     // 6. Giám sát SAI TÊN HÃNG theo field "Hãng bay" Skypec
     // Chỉ chạy cho hôm nay (+ hôm qua cho ca đêm) — không bắn khi cào lịch sử 40 ngày
     try {

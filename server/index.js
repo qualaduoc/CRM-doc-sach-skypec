@@ -11,7 +11,13 @@ const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
 const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute } = require('./fmsService');
 const { evaluateAirlineMismatch, listAirlineMappings } = require('./airlineCodes');
-const { performImageOCR, testSingleGeminiKey } = require('./ocrService');
+const {
+  buildScheduleCandidatesFromFlights,
+  applyScheduleFromFlights,
+  autoSyncScheduleFromFlightsIfEnabled,
+  unitFilterSql,
+  detectCurrentShift
+} = require('./scheduleFromFlights');
 const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyEyesMessage, sendSkyEyesPrivateMessage, getBotState } = require('./zaloService');
 
 
@@ -1584,10 +1590,13 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
 
 // Lấy danh sách lịch bay và dữ liệu tải dầu tương ứng (Cho phép tất cả người dùng đăng nhập xem)
 // Ghép thêm fms_flights_live (Skypec Flights) để đánh dấu "Đã tra nạp"
+// Query unit=SKYPEC|NAFC|ALL — BOTH hiện ở cả hai tab Skypec/NAFC
 app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
   try {
     const db = await getDb();
     const targetDate = req.query.date || getVietnamDbDateStr();
+    const unit = String(req.query.unit || 'SKYPEC').toUpperCase();
+    const uf = unitFilterSql(unit);
 
     const rows = await db.all(`
       SELECT 
@@ -1608,6 +1617,9 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         s.notify_type,
         s.date,
         s.fms_date,
+        COALESCE(s.unit_code, 'SKYPEC') as unit_code,
+        COALESCE(s.schedule_source, 'manual') as schedule_source,
+        s.updated_from_flights_at,
         fo.dep_arr,
         fo.standby_fuel,
         fo.fuel_order,
@@ -1633,7 +1645,6 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         fl.operator_name as skypec_operator_name,
         fl.truck_no as skypec_truck_no,
         fl.date as skypec_date,
-        -- Chỉ "Đã tra nạp" khi Skypec Flights có kg nạp thực tế > 0 (không dựa status text)
         CASE
           WHEN CAST(COALESCE(NULLIF(REPLACE(TRIM(fl.fuel_order), ',', ''), ''), '0') AS INTEGER) > 0 THEN 1
           ELSE 0
@@ -1644,17 +1655,61 @@ app.get('/api/fms/schedules', authenticateToken, async (req, res) => {
         SELECT fl2.id FROM fms_flights_live fl2
         WHERE REPLACE(REPLACE(UPPER(fl2.flight_no), ' ', ''), '-', '')
             = REPLACE(REPLACE(UPPER(s.flight_no), ' ', ''), '-', '')
-          -- Khớp đúng ngày FMS của chuyến (fms_date ca đêm, không gộp 2 ngày → tránh dính kg hôm khác)
           AND fl2.date = COALESCE(NULLIF(s.fms_date, ''), s.date)
           AND CAST(COALESCE(NULLIF(REPLACE(TRIM(fl2.fuel_order), ',', ''), ''), '0') AS INTEGER) > 0
         ORDER BY fl2.created_at DESC
         LIMIT 1
       )
-      WHERE s.date = ?
+      WHERE s.date = ? AND ${uf.clause}
       ORDER BY s.id ASC
-    `, targetDate);
+    `, targetDate, ...uf.params);
 
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data: rows, unit });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Preview lịch từ Skypec Flights theo ca
+app.post('/api/fms/schedule/from-flights/preview', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+  try {
+    const date = req.body.date || getVietnamDbDateStr();
+    const shift = req.body.shift || detectCurrentShift();
+    const candidates = await buildScheduleCandidatesFromFlights(date, shift);
+    res.json({
+      success: true,
+      date,
+      shift,
+      count: candidates.length,
+      data: candidates.slice(0, 80),
+      message: `Tìm thấy ${candidates.length} chuyến trong ca ${shift} ngày ${date} (unit BOTH → hiện Skypec & NAFC).`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Áp dụng lịch từ Flights (merge mặc định)
+app.post('/api/fms/schedule/from-flights/apply', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+  try {
+    const date = req.body.date || getVietnamDbDateStr();
+    const shift = req.body.shift || detectCurrentShift();
+    const mode = req.body.mode === 'replace' ? 'replace' : 'merge';
+    const result = await applyScheduleFromFlights(date, shift, mode);
+    res.json({
+      success: true,
+      message: `Đã ${mode === 'replace' ? 'thay thế' : 'merge'} lịch từ Flights: +${result.added} / cập nhật ${result.updated} (tổng ${result.total}).`,
+      ...result,
+      date,
+      shift,
+      mode
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -2638,104 +2693,24 @@ app.post('/api/fms/schedule/update-notify-type', authenticateToken, async (req, 
   }
 });
 
-// Nhận diện ảnh lịch bay trực ca qua Gemini Vision API (chỉ Admin hoặc người có quyền FMS)
+// OCR Gemini đã gỡ hoàn toàn (tiết kiệm chi phí). Endpoint cũ trả 410.
 app.post('/api/fms/ocr-image', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
-    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
-  }
-
-  const { mimeType, base64Data } = req.body;
-  if (!mimeType || !base64Data) {
-    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp đầy đủ dữ liệu ảnh và định dạng!' });
-  }
-
-  try {
-    // Làm sạch chuỗi Base64
-    const cleanBase64 = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
-    
-    // Gọi OCR xoay vòng key
-    const flights = await performImageOCR(mimeType, cleanBase64);
-    
-    res.json({ success: true, flights });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  return res.status(410).json({
+    success: false,
+    error: 'OCR ảnh lịch đã được gỡ. Vui lòng đồng bộ lịch từ Skypec Flights hoặc Excel dự phòng.'
+  });
 });
 
-// Lấy danh sách API Keys Gemini đã lưu (chỉ Admin hoặc người có quyền Gemini)
 app.get('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_gemini !== 1) {
-    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
-  }
-
-  try {
-    const db = await getDb();
-    const setting = await db.get("SELECT value FROM settings WHERE key = 'gemini_api_keys'");
-    res.json({ success: true, keys: setting ? setting.value : '' });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  return res.status(410).json({ success: false, error: 'Gemini OCR keys đã được gỡ khỏi hệ thống.' });
 });
 
-// Lưu danh sách API Keys Gemini (chỉ Admin hoặc người có quyền Gemini)
 app.post('/api/fms/settings/gemini-keys', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_gemini !== 1) {
-    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
-  }
-
-  const { keys } = req.body;
-  
-  try {
-    const db = await getDb();
-    await db.run(
-      "INSERT OR REPLACE INTO settings (key, value) VALUES ('gemini_api_keys', ?)",
-      keys ? keys.trim() : ''
-    );
-    res.json({ success: true, message: 'Đã lưu danh sách API Key Gemini thành công!' });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  return res.status(410).json({ success: false, error: 'Gemini OCR keys đã được gỡ khỏi hệ thống.' });
 });
 
-// Kiểm thử danh sách API Keys Gemini (chỉ Admin hoặc người có quyền Gemini)
 app.post('/api/fms/settings/test-keys', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_gemini !== 1) {
-    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
-  }
-
-  const { keys } = req.body;
-  if (!keys) {
-    return res.status(400).json({ success: false, error: 'Vui lòng cung cấp danh sách keys để test!' });
-  }
-
-  const apiKeys = keys
-    .split(/[\n,;]/)
-    .map(k => k.trim())
-    .filter(k => k.length > 0);
-
-  if (apiKeys.length === 0) {
-    return res.json({ success: true, results: [] });
-  }
-
-  try {
-    const promises = apiKeys.map(async (key) => {
-      const maskedKey = key.length > 10
-        ? key.substring(0, 6) + '...' + key.substring(key.length - 4)
-        : 'Key ngắn';
-      
-      const testResult = await testSingleGeminiKey(key);
-      return {
-        key: maskedKey,
-        success: testResult.success,
-        message: testResult.success ? 'Hoạt động tốt (OK)' : `Lỗi: ${testResult.error}`
-      };
-    });
-
-    const results = await Promise.all(promises);
-    res.json({ success: true, results });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  return res.status(410).json({ success: false, error: 'Gemini OCR keys đã được gỡ khỏi hệ thống.', results: [] });
 });
 
 // --- API QUẢN LÝ MAPPING THÀNH VIÊN VÀ TRẠNG THÁI ZALO MỚI ---

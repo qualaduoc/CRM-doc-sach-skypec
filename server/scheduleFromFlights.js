@@ -1,0 +1,528 @@
+/**
+ * Xây dựng / đồng bộ kế hoạch tra nạp từ FMS Skypec Flights.
+ * - Ca ngày: 07:30–19:29
+ * - Ca tối: 19:30–23:59 D + 00:00–07:30 D+1
+ * - unit_code BOTH: hiển thị cả view Skypec và NAFC (không cần roster NAFC)
+ */
+const https = require('https');
+const querystring = require('querystring');
+const { getDb } = require('./db');
+
+const HOST = 'fms.skypec.com.vn';
+
+function getVietnamDbDateStr() {
+  const vn = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const y = vn.getUTCFullYear();
+  const m = String(vn.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(vn.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getVietnamDateTimeStr() {
+  const vn = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const y = vn.getUTCFullYear();
+  const m = String(vn.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(vn.getUTCDate()).padStart(2, '0');
+  const hh = String(vn.getUTCHours()).padStart(2, '0');
+  const mm = String(vn.getUTCMinutes()).padStart(2, '0');
+  const ss = String(vn.getUTCSeconds()).padStart(2, '0');
+  return `${d}/${m}/${y} ${hh}:${mm}:${ss}`;
+}
+
+function normalizeFlightNo(fn) {
+  return String(fn || '').toUpperCase().replace(/[\s\-_.]/g, '');
+}
+
+function parseTimeToMinutes(timeStr) {
+  if (!timeStr) return null;
+  const m = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (Number.isNaN(h) || Number.isNaN(min)) return null;
+  return h * 60 + min;
+}
+
+function isOvernightShiftValue(shift) {
+  const s = String(shift || '').trim().toLowerCase();
+  return s === 'evening' || s === 'night';
+}
+
+/**
+ * @param {string} timeStr HH:mm
+ * @param {'day'|'evening'|'all'} shift
+ * @param {0|1} dayOffset 0 = calendar day D, 1 = D+1
+ */
+function inShiftWindow(timeStr, shift, dayOffset = 0) {
+  const t = parseTimeToMinutes(timeStr);
+  if (t == null) return false;
+  const s = String(shift || 'all').toLowerCase();
+  if (s === 'all') return true;
+
+  if (s === 'day') {
+    // 07:30–19:29 same calendar day only
+    if (dayOffset !== 0) return false;
+    return t >= 7 * 60 + 30 && t <= 19 * 60 + 29;
+  }
+
+  // evening: D >= 19:30 OR D+1 <= 07:30
+  if (dayOffset === 0) return t >= 19 * 60 + 30;
+  if (dayOffset === 1) return t <= 7 * 60 + 30;
+  return false;
+}
+
+function detectCurrentShift(now = new Date()) {
+  const vn = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  const mins = vn.getUTCHours() * 60 + vn.getUTCMinutes();
+  if (mins >= 7 * 60 + 30 && mins <= 19 * 60 + 29) return 'day';
+  return 'evening';
+}
+
+function addDaysYmd(ymd, days) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+function ymdToDmyRange(ymd) {
+  const [y, m, d] = ymd.split('-');
+  const dmy = `${d}/${m}/${y}`;
+  return `${dmy} 00:00-${dmy} 23:59`;
+}
+
+function decodeHtmlEntities(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, ' ');
+}
+
+function calculateFmsDate(dateStr, timeStr, isOvernightShift = false) {
+  if (!timeStr || timeStr === '-') return dateStr;
+  try {
+    const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return dateStr;
+    const hour = parseInt(match[1], 10);
+    const minute = parseInt(match[2], 10);
+    const early = hour < 7 || (hour === 7 && minute <= 30);
+    if (early && isOvernightShift) return addDaysYmd(dateStr, 1);
+    return dateStr;
+  } catch (_) {
+    return dateStr;
+  }
+}
+
+function mergeCookies(oldCookie, setCookieHeaders) {
+  const map = {};
+  String(oldCookie || '').split(';').map(s => s.trim()).filter(Boolean).forEach(pair => {
+    const i = pair.indexOf('=');
+    if (i > 0) map[pair.slice(0, i)] = pair.slice(i + 1);
+  });
+  (setCookieHeaders || []).forEach(c => {
+    const pair = c.split(';')[0];
+    const i = pair.indexOf('=');
+    if (i > 0) map[pair.slice(0, i)] = pair.slice(i + 1);
+  });
+  return Object.entries(map).map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+function httpsGet(path, cookie = '') {
+  return new Promise((resolve, reject) => {
+    https.get({
+      hostname: HOST, port: 443, path,
+      headers: { Cookie: cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    }, res => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
+    }).on('error', reject);
+  });
+}
+
+function httpsPost(path, data, cookie = '') {
+  return new Promise((resolve, reject) => {
+    const postData = querystring.stringify(data);
+    const req = https.request({
+      hostname: HOST, port: 443, path, method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData),
+        Cookie: cookie,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    }, res => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
+    });
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+async function loginSkypecFms() {
+  const page = await httpsGet('/Account/Login');
+  let cookie = mergeCookies('', page.headers['set-cookie']);
+  const tokenMatch = page.body.match(/name="__RequestVerificationToken"[^>]*value="([^"]+)"/i);
+  if (!tokenMatch) throw new Error('No CSRF token on FMS Skypec login');
+  const res = await httpsPost('/Account/Login', {
+    __RequestVerificationToken: tokenMatch[1],
+    UserName: 'noibai.han',
+    Password: '12345678',
+    RememberMe: 'false'
+  }, cookie);
+  cookie = mergeCookies(cookie, res.headers['set-cookie']);
+  return cookie;
+}
+
+/** Parse parent rows from Flights HTML tbody */
+function parseFlightsHtml(html) {
+  const tbodyStart = html.indexOf('<tbody');
+  const tbodyEnd = html.indexOf('</tbody>');
+  if (tbodyStart === -1 || tbodyEnd === -1) return [];
+
+  const tbodyHtml = html.substring(tbodyStart, tbodyEnd + 8);
+  const rows = [];
+  let pos = 0;
+  while (true) {
+    const trStart = tbodyHtml.indexOf('<tr', pos);
+    if (trStart === -1) break;
+    const trEnd = tbodyHtml.indexOf('</tr>', trStart);
+    if (trEnd === -1) break;
+    rows.push(tbodyHtml.substring(trStart, trEnd + 5));
+    pos = trEnd + 5;
+  }
+
+  const flights = [];
+  for (const rowHtml of rows) {
+    if (!rowHtml.includes('parent')) continue;
+
+    const codeMatch = rowHtml.match(/id="Code"[^>]*>([\s\S]*?)<\/span>/i);
+    const flightNoRaw = codeMatch ? codeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+    const flightNo = normalizeFlightNo(flightNoRaw);
+    if (!flightNo) continue;
+
+    const idMatch = rowHtml.match(/value="(\d+)"/);
+    const idFms = idMatch ? idMatch[1] : '';
+
+    const acTypeMatch = rowHtml.match(/id="AircraftType"[^>]*>([\s\S]*?)<\/span>/i);
+    let acType = acTypeMatch ? acTypeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    const acRegMatch = rowHtml.match(/id="AircraftCode"[^>]*>([\s\S]*?)<\/span>/i);
+    const acReg = acRegMatch ? acRegMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    const routeMatch = rowHtml.match(/id="RouteName"[^>]*>([\s\S]*?)<\/span>/i);
+    const route = routeMatch ? routeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    const depTimeMatch = rowHtml.match(/id="DepartureScheduledTime"[^>]*>([\s\S]*?)<\/span>/i);
+    const timeDep = depTimeMatch ? depTimeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+    const arrTimeMatch = rowHtml.match(/id="ArrivalScheduledTime"[^>]*>([\s\S]*?)<\/span>/i);
+    const timeArr = arrTimeMatch ? arrTimeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+    const refuelHoursMatch = rowHtml.match(/id="RefuelScheduledHours"[^>]*>([\s\S]*?)<\/span>/i);
+    const timeFuel = refuelHoursMatch ? refuelHoursMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    const parkingMatch = rowHtml.match(/id="Parking"[^>]*>([\s\S]*?)<\/span>/i);
+    const gate = parkingMatch ? parkingMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    let truckNo = '';
+    const truckSelect = rowHtml.match(/<select[^>]*class="[^"]*truckId[^"]*"[^>]*>([\s\S]*?)<\/select>/i)
+      || rowHtml.match(/HAN3-20-\d{4}/);
+    if (truckSelect && truckSelect[1]) {
+      const sel = truckSelect[1].match(/<option[^>]*selected[^>]*>([\s\S]*?)<\/option>/i);
+      truckNo = sel ? decodeHtmlEntities(sel[1].replace(/<[^>]+>/g, '').trim()) : '';
+    } else if (typeof truckSelect === 'object' && truckSelect[0] && !truckSelect[1]) {
+      truckNo = truckSelect[0];
+    }
+    // fallback: span or text HAN3-20-
+    if (!truckNo) {
+      const tm = rowHtml.match(/HAN3-20-\d{4}/);
+      if (tm) truckNo = tm[0];
+    }
+
+    let driverName = '';
+    const driverSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*driverId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
+    if (driverSelectMatch) {
+      const selectedOptionMatch = driverSelectMatch[1].match(/<option[^>]*selected[^>]*>([\s\S]*?)<\/option>/i);
+      if (selectedOptionMatch) driverName = decodeHtmlEntities(selectedOptionMatch[1].replace(/<[^>]+>/g, '').trim());
+    }
+
+    let operatorName = '';
+    const operatorSelectMatch = rowHtml.match(/<select[^>]*class="[^"]*operatorId[^"]*"[^>]*>([\s\S]*?)<\/select>/i);
+    if (operatorSelectMatch) {
+      const selectedOptionMatch = operatorSelectMatch[1].match(/<option[^>]*selected[^>]*>([\s\S]*?)<\/option>/i);
+      if (selectedOptionMatch) operatorName = decodeHtmlEntities(selectedOptionMatch[1].replace(/<[^>]+>/g, '').trim());
+    }
+
+    // Clean placeholders
+    const cleanName = (n) => {
+      const s = String(n || '').trim();
+      if (!s || s === '---' || s === '-' || s === '…') return '';
+      return s;
+    };
+    driverName = cleanName(driverName);
+    operatorName = cleanName(operatorName);
+
+    const crewParts = [driverName, operatorName].filter(Boolean);
+    const crewInfo = crewParts.length ? crewParts.join(' - ') : '-';
+
+    flights.push({
+      id_fms: idFms,
+      flight_no: flightNo,
+      flight_no_display: flightNoRaw.replace(/\s+/g, '').toUpperCase() || flightNo,
+      ac_type: acType,
+      ac_reg: acReg,
+      route,
+      time_arr: timeArr,
+      time_dep: timeDep,
+      time_fuel: timeFuel,
+      gate,
+      truck_no: truckNo,
+      driver_name: driverName,
+      operator_name: operatorName,
+      crew_info: crewInfo
+    });
+  }
+  return flights;
+}
+
+async function fetchFlightsForDate(cookie, ymd) {
+  const range = ymdToDmyRange(ymd);
+  const path = `/Flights?daterange=${encodeURIComponent(range)}`;
+  const page = await httpsGet(path, cookie);
+  if (page.status !== 200) throw new Error(`Flights HTTP ${page.status} for ${ymd}`);
+  return parseFlightsHtml(page.body);
+}
+
+/**
+ * Build schedule candidates for a duty date + shift.
+ * @param {string} dutyDate YYYY-MM-DD day ca starts
+ * @param {string} shift day|evening|all
+ */
+async function buildScheduleCandidatesFromFlights(dutyDate, shift = 'day') {
+  const cookie = await loginSkypecFms();
+  const isOvernight = isOvernightShiftValue(shift) || shift === 'all';
+  const calendarDays = [{ ymd: dutyDate, offset: 0 }];
+  if (shift === 'evening' || shift === 'night' || shift === 'all') {
+    calendarDays.push({ ymd: addDaysYmd(dutyDate, 1), offset: 1 });
+  }
+
+  const byFlight = new Map();
+  for (const { ymd, offset } of calendarDays) {
+    // For day shift only fetch D
+    if (shift === 'day' && offset === 1) continue;
+    // For evening, fetch both
+    const list = await fetchFlightsForDate(cookie, ymd);
+    for (const f of list) {
+      const timeKey = f.time_fuel || f.time_dep || f.time_arr;
+      if (shift !== 'all' && !inShiftWindow(timeKey, shift, offset)) continue;
+      // day shift: only offset 0 already
+      if (shift === 'day' && !inShiftWindow(timeKey, 'day', 0)) continue;
+
+      const fmsDate = calculateFmsDate(dutyDate, timeKey, isOvernightShiftValue(shift));
+      // For all shift, include if in day OR evening windows
+      if (shift === 'all') {
+        const inDay = offset === 0 && inShiftWindow(timeKey, 'day', 0);
+        const inEve = inShiftWindow(timeKey, 'evening', offset);
+        if (!inDay && !inEve) continue;
+      }
+
+      const key = normalizeFlightNo(f.flight_no);
+      // Prefer row with more complete crew/truck if duplicate
+      const prev = byFlight.get(key);
+      const score = (x) => (x.truck_no ? 2 : 0) + (x.driver_name && x.driver_name !== 'NAFSC' ? 2 : 0) + (x.operator_name && x.operator_name !== 'NAFSC' ? 2 : 0) + (x.gate ? 1 : 0);
+      const candidate = {
+        ...f,
+        date: dutyDate,
+        fms_date: fmsDate,
+        // BOTH: hiện ở tab Skypec và NAFC — không cần roster NAFC
+        unit_code: 'BOTH',
+        schedule_source: 'flights'
+      };
+      if (!prev || score(candidate) >= score(prev)) byFlight.set(key, candidate);
+    }
+  }
+
+  return Array.from(byFlight.values()).sort((a, b) => {
+    const ta = parseTimeToMinutes(a.time_fuel || a.time_dep || a.time_arr) ?? 9999;
+    const tb = parseTimeToMinutes(b.time_fuel || b.time_dep || b.time_arr) ?? 9999;
+    return ta - tb;
+  });
+}
+
+async function resolveZaloUids(db, driverName, operatorName) {
+  const uids = [];
+  for (const name of [driverName, operatorName]) {
+    if (!name || name === 'NAFSC') continue;
+    const row = await db.get(
+      'SELECT zalo_uid FROM zalo_user_mappings WHERE UPPER(schedule_name) = UPPER(?)',
+      name
+    ).catch(() => null);
+    if (row && row.zalo_uid) uids.push(row.zalo_uid);
+  }
+  return [...new Set(uids)].join(',');
+}
+
+/**
+ * Apply candidates to fms_schedules.
+ * @param {'merge'|'replace'} mode
+ */
+async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
+  const db = await getDb();
+  const candidates = await buildScheduleCandidatesFromFlights(dutyDate, shift);
+  const nowStr = getVietnamDateTimeStr();
+
+  if (mode === 'replace') {
+    await db.run('DELETE FROM fms_schedules WHERE date = ?', dutyDate);
+  }
+
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  for (const item of candidates) {
+    const flightNo = normalizeFlightNo(item.flight_no);
+    const existing = await db.get(
+      'SELECT id, schedule_source, notify_type, crew_zalo_uids FROM fms_schedules WHERE UPPER(REPLACE(REPLACE(flight_no,\' \',\'\'),\'-\',\'\')) = ? AND date = ?',
+      flightNo, dutyDate
+    );
+
+    const crewZalo = existing && existing.crew_zalo_uids
+      ? existing.crew_zalo_uids
+      : await resolveZaloUids(db, item.driver_name, item.operator_name);
+
+    const notifyType = existing ? (existing.notify_type || 1) : 1;
+
+    if (existing) {
+      // merge: update operational fields from Flights; keep notify_type
+      await db.run(
+        `UPDATE fms_schedules SET
+          flight_no = ?, ac_type = ?, ac_reg = ?, route = ?,
+          time_arr = ?, time_dep = ?, time_fuel = ?, gate = ?,
+          truck_no = ?, driver_name = ?, operator_name = ?, crew_info = ?,
+          crew_zalo_uids = COALESCE(NULLIF(?, ''), crew_zalo_uids),
+          fms_date = ?, unit_code = 'BOTH', schedule_source = 'flights',
+          id_fms = ?, updated_from_flights_at = ?
+         WHERE id = ?`,
+        item.flight_no_display || flightNo,
+        item.ac_type || '',
+        item.ac_reg || '',
+        item.route || '',
+        item.time_arr || '',
+        item.time_dep || '',
+        item.time_fuel || '',
+        item.gate || '',
+        item.truck_no || '',
+        item.driver_name || '',
+        item.operator_name || '',
+        item.crew_info || '-',
+        crewZalo,
+        item.fms_date || dutyDate,
+        item.id_fms || '',
+        nowStr,
+        existing.id
+      );
+      updated++;
+    } else {
+      await db.run(
+        `INSERT INTO fms_schedules (
+          flight_no, ac_type, ac_reg, route, time_arr, time_dep, time_fuel,
+          gate, truck_no, driver_name, operator_name, crew_info, crew_zalo_uids,
+          notify_type, date, fms_date, unit_code, schedule_source, id_fms, updated_from_flights_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOTH', 'flights', ?, ?)`,
+        item.flight_no_display || flightNo,
+        item.ac_type || '',
+        item.ac_reg || '',
+        item.route || '',
+        item.time_arr || '',
+        item.time_dep || '',
+        item.time_fuel || '',
+        item.gate || '',
+        item.truck_no || '',
+        item.driver_name || '',
+        item.operator_name || '',
+        item.crew_info || '-',
+        crewZalo,
+        notifyType,
+        dutyDate,
+        item.fms_date || dutyDate,
+        item.id_fms || '',
+        nowStr
+      );
+      added++;
+    }
+  }
+
+  console.log(`[ScheduleFlights] date=${dutyDate} shift=${shift} mode=${mode} added=${added} updated=${updated} candidates=${candidates.length}`);
+  return { added, updated, skipped, total: candidates.length, candidates };
+}
+
+/**
+ * Auto merge for current shift (called from worker). Only today duty context.
+ */
+async function autoSyncScheduleFromFlightsIfEnabled() {
+  try {
+    const db = await getDb();
+    const flag = await db.get("SELECT value FROM settings WHERE key = 'fms_schedule_from_flights'");
+    if (flag && flag.value === 'false') return null;
+
+    const shift = detectCurrentShift();
+    const today = getVietnamDbDateStr();
+    // Night segment after midnight: duty date is yesterday
+    let dutyDate = today;
+    if (shift === 'evening') {
+      const vn = new Date(Date.now() + 7 * 60 * 60 * 1000);
+      const mins = vn.getUTCHours() * 60 + vn.getUTCMinutes();
+      if (mins <= 7 * 60 + 30) {
+        dutyDate = addDaysYmd(today, -1);
+      }
+    }
+
+    const result = await applyScheduleFromFlights(dutyDate, shift, 'merge');
+    return { dutyDate, shift, ...result };
+  } catch (err) {
+    console.error('[ScheduleFlights] Auto sync error:', err.message);
+    return null;
+  }
+}
+
+/** unit filter for schedules API */
+function unitFilterSql(unit) {
+  const u = String(unit || 'SKYPEC').toUpperCase();
+  if (u === 'ALL') return { clause: '1=1', params: [] };
+  if (u === 'NAFC') {
+    return {
+      clause: `(UPPER(COALESCE(s.unit_code,'SKYPEC')) IN ('NAFC','BOTH'))`,
+      params: []
+    };
+  }
+  // SKYPEC default: SKYPEC, BOTH, empty, null
+  return {
+    clause: `(UPPER(COALESCE(NULLIF(s.unit_code,''),'SKYPEC')) IN ('SKYPEC','BOTH'))`,
+    params: []
+  };
+}
+
+module.exports = {
+  normalizeFlightNo,
+  parseTimeToMinutes,
+  inShiftWindow,
+  detectCurrentShift,
+  isOvernightShiftValue,
+  calculateFmsDate,
+  addDaysYmd,
+  buildScheduleCandidatesFromFlights,
+  applyScheduleFromFlights,
+  autoSyncScheduleFromFlightsIfEnabled,
+  unitFilterSql,
+  parseFlightsHtml
+};

@@ -85,6 +85,10 @@ async function getDb() {
       notify_type INTEGER DEFAULT 1,
       date TEXT NOT NULL,
       fms_date TEXT,
+      unit_code TEXT DEFAULT 'SKYPEC',
+      schedule_source TEXT DEFAULT 'manual',
+      id_fms TEXT,
+      updated_from_flights_at TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -139,6 +143,7 @@ async function getDb() {
       fuel_order TEXT,
       status TEXT,
       airline_name TEXT,
+      unit_code TEXT DEFAULT 'BOTH',
       date TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(flight_no, date)
@@ -183,6 +188,7 @@ async function getDb() {
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_notify_airline_mismatch', 'true');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_airline_alert_group_id', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_airline_alert_group_name', '');
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_schedule_from_flights', 'true');
   `);
 
   // Di chuyển tự động cấu hình cột mới cho database đã tồn tại
@@ -222,6 +228,14 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_etd INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN truck_no TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN airline_name TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN unit_code TEXT DEFAULT 'BOTH';`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN unit_code TEXT DEFAULT 'SKYPEC';`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN schedule_source TEXT DEFAULT 'manual';`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN id_fms TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_schedules ADD COLUMN updated_from_flights_at TEXT;`); } catch(e) {}
+  try {
+    await dbInstance.exec(`INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_schedule_from_flights', 'true');`);
+  } catch(e) {}
 
   // Thêm các cột cho fms_temp_import_exports của database cũ
   try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN monitor_type TEXT DEFAULT 'DOMESTIC_TO_INTL';`); } catch(e) {}

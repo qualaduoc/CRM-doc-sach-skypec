@@ -352,7 +352,7 @@ function applyPermissionsUI() {
   if (userRole === 'admin') {
     if (accountsTabBtn) accountsTabBtn.style.display = 'block';
     if (fmsTabBtn) fmsTabBtn.style.display = 'block';
-    if (geminiCard) geminiCard.style.display = 'flex';
+    if (geminiCard) geminiCard.style.display = 'none'; // OCR/Gemini đã gỡ
     if (zaloCard) zaloCard.style.display = 'flex';
     
     // Mặc định hiển thị tab-accounts cho Admin
@@ -818,33 +818,43 @@ function setupEventListeners() {
   // Đọc file Excel FMS
   document.getElementById('fms-file-input').addEventListener('change', handleExcelFileSelect);
 
-  // Trigger chọn ảnh FMS
-  document.getElementById('btn-fms-upload-image').addEventListener('click', () => {
-    document.getElementById('fms-image-input').value = ''; // Reset file input
-    document.getElementById('fms-image-input').click();
+  // OCR / Gemini đã gỡ hoàn toàn
+
+  // Đồng bộ lịch từ Skypec Flights
+  const btnFlightsPreview = document.getElementById('btn-fms-flights-preview');
+  if (btnFlightsPreview) btnFlightsPreview.addEventListener('click', () => handleFlightsScheduleSync('preview'));
+  const btnFlightsApply = document.getElementById('btn-fms-flights-apply');
+  if (btnFlightsApply) btnFlightsApply.addEventListener('click', () => handleFlightsScheduleSync('apply'));
+
+  // Toggle đơn vị Skypec | NAFC (admin)
+  document.querySelectorAll('.fms-unit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const unit = btn.getAttribute('data-unit') || 'SKYPEC';
+      window.fmsUnitFilter = unit;
+      document.querySelectorAll('.fms-unit-btn').forEach(b => {
+        const on = b.getAttribute('data-unit') === unit;
+        b.classList.toggle('active', on);
+        b.style.background = on ? 'var(--primary)' : 'var(--panel-elevated, #f1f5f9)';
+        b.style.color = on ? '#fff' : 'var(--text)';
+      });
+      loadFmsSchedules(false);
+    });
   });
-
-  // Đọc và OCR ảnh FMS
-  document.getElementById('fms-image-input').addEventListener('change', handleImageFileSelect);
-
-  // Lưu danh sách Gemini API Keys
-  document.getElementById('btn-save-gemini-keys').addEventListener('click', handleSaveGeminiKeys);
-
-  // Kiểm tra danh sách Gemini API Keys
-  document.getElementById('btn-test-gemini-keys').addEventListener('click', handleTestGeminiKeys);
 
   // Sự kiện thay đổi ngày lọc lịch bay FMS
-  document.getElementById('fms-filter-date').addEventListener('change', () => loadFmsSchedules(false));
+  const fmsFilterDateEl = document.getElementById('fms-filter-date');
+  if (fmsFilterDateEl) fmsFilterDateEl.addEventListener('change', () => loadFmsSchedules(false));
 
   // Sự kiện thay đổi ngày trực ca FMS (cột bên trái - Nhập lịch trực)
-  document.getElementById('fms-schedule-date').addEventListener('change', (e) => {
-    const val = e.target.value;
-    const filterInput = document.getElementById('fms-filter-date');
-    if (filterInput) {
-      filterInput.value = val;
-    }
-    loadFmsSchedules(false);
-  });
+  const fmsScheduleDateEl = document.getElementById('fms-schedule-date');
+  if (fmsScheduleDateEl) {
+    fmsScheduleDateEl.addEventListener('change', (e) => {
+      const val = e.target.value;
+      const filterInput = document.getElementById('fms-filter-date');
+      if (filterInput) filterInput.value = val;
+      loadFmsSchedules(false);
+    });
+  }
 
   // Sự kiện cho bảng FMS ở màn hình nhân viên (chỉ xem)
   const userFmsDate = document.getElementById('user-fms-filter-date');
@@ -859,6 +869,19 @@ function setupEventListeners() {
   if (userFmsCrewFilter) {
     userFmsCrewFilter.addEventListener('change', () => renderUserFmsTable());
   }
+  document.querySelectorAll('.user-fms-unit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const unit = btn.getAttribute('data-unit') || 'SKYPEC';
+      window.userFmsUnitFilter = unit;
+      document.querySelectorAll('.user-fms-unit-btn').forEach(b => {
+        const on = b.getAttribute('data-unit') === unit;
+        b.classList.toggle('active', on);
+        b.style.background = on ? 'var(--primary)' : 'var(--panel-elevated, #f1f5f9)';
+        b.style.color = on ? '#fff' : 'var(--text)';
+      });
+      loadUserFmsSchedules(false);
+    });
+  });
 
   // Đóng Modal Preview FMS
   document.getElementById('btn-close-fms-preview-modal').addEventListener('click', () => {
@@ -2109,6 +2132,9 @@ function formatDateVN(dateStr) {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+window.fmsUnitFilter = window.fmsUnitFilter || 'SKYPEC';
+window.userFmsUnitFilter = window.userFmsUnitFilter || 'SKYPEC';
+
 async function loadFmsSchedules(isSilent = false) {
   try {
     const filterInput = document.getElementById('fms-filter-date');
@@ -2125,8 +2151,9 @@ async function loadFmsSchedules(isSilent = false) {
       scheduleDateInput.value = todayStr;
     }
     const selectedDate = filterInput ? filterInput.value : '';
+    const unit = window.fmsUnitFilter || 'SKYPEC';
 
-    const res = await fetch(`/api/fms/schedules?date=${selectedDate}`, {
+    const res = await fetch(`/api/fms/schedules?date=${encodeURIComponent(selectedDate)}&unit=${encodeURIComponent(unit)}`, {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
     const data = await res.json();
@@ -2683,8 +2710,9 @@ async function loadUserFmsSchedules(isSilent = false) {
       filterInput.value = vnTime.toISOString().split('T')[0];
     }
     const selectedDate = filterInput ? filterInput.value : '';
+    const unit = window.userFmsUnitFilter || 'SKYPEC';
 
-    const res = await fetch(`/api/fms/schedules?date=${selectedDate}`, {
+    const res = await fetch(`/api/fms/schedules?date=${encodeURIComponent(selectedDate)}&unit=${encodeURIComponent(unit)}`, {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
     const data = await res.json();
@@ -2698,6 +2726,45 @@ async function loadUserFmsSchedules(isSilent = false) {
     renderUserFmsTable();
   } catch (err) {
     console.error('Lỗi tải danh sách FMS nhân viên:', err.message);
+  }
+}
+
+async function handleFlightsScheduleSync(action) {
+  const logEl = document.getElementById('fms-flights-sync-log');
+  const dateEl = document.getElementById('fms-schedule-date') || document.getElementById('fms-filter-date');
+  const shiftEl = document.getElementById('fms-filter-shift');
+  const date = dateEl && dateEl.value ? dateEl.value : '';
+  const shiftRaw = shiftEl && shiftEl.value ? shiftEl.value : 'day';
+  const shift = (shiftRaw === 'evening' || shiftRaw === 'night')
+    ? 'evening'
+    : (shiftRaw === 'all' ? 'all' : 'day');
+  if (!date) {
+    showToast('Chọn ngày trực trước', 'error', 'Thiếu ngày');
+    return;
+  }
+  if (logEl) logEl.textContent = action === 'preview' ? 'Đang xem trước từ Flights...' : 'Đang đồng bộ merge từ Flights...';
+  try {
+    const url = action === 'preview'
+      ? '/api/fms/schedule/from-flights/preview'
+      : '/api/fms/schedule/from-flights/apply';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+      body: JSON.stringify({ date, shift, mode: 'merge' })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Thất bại');
+    if (logEl) {
+      const sample = (data.data || data.candidates || []).slice(0, 8).map(f =>
+        `${f.flight_no} ${f.time_fuel || f.time_dep || ''} ${f.crew_info || ''}`
+      ).join('\n');
+      logEl.textContent = `${data.message || 'OK'}\n${sample}${sample ? '\n…' : ''}`;
+    }
+    showToast(data.message || 'OK', 'success', action === 'preview' ? 'Preview' : 'Đồng bộ lịch');
+    if (action === 'apply') loadFmsSchedules(false);
+  } catch (err) {
+    if (logEl) logEl.textContent = 'Lỗi: ' + err.message;
+    showToast(err.message, 'error', 'Flights sync');
   }
 }
 
