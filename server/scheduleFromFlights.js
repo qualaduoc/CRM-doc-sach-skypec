@@ -444,6 +444,30 @@ async function enrichCrewFromLive(db, item, dutyDate) {
 }
 
 /**
+ * Phân loại đơn vị — không cần roster NV NAFC.
+ * Heuristic (theo thực tế FMS Nội Bài / ảnh vận hành):
+ * - Có tên lái/NV thật (không NAFSC) → SKYPEC
+ * - Không có tên thật + xe HAN3-20-74xx → NAFC (đội xe đối tác)
+ * - Còn lại → SKYPEC
+ */
+function classifyUnitCode(item) {
+  const clean = (n) => {
+    const s = String(n || '').trim();
+    if (!s || s === '-' || s === '---' || /^NAFSC$/i.test(s)) return '';
+    return s;
+  };
+  const hasCrew = !!(clean(item.driver_name) || clean(item.operator_name));
+  if (hasCrew) return 'SKYPEC';
+
+  const truck = String(item.truck_no || '').toUpperCase().replace(/\s+/g, '');
+  // Xe NAFC: HAN3-20-7400 … 7499 (hoặc chỉ 74xx)
+  if (/HAN3-20-74\d{2}/.test(truck) || /(?:^|[^0-9])74\d{2}(?:[^0-9]|$)/.test(truck)) {
+    return 'NAFC';
+  }
+  return 'SKYPEC';
+}
+
+/**
  * Upsert 1 dòng lịch cho đúng unit_code (SKYPEC | NAFC)
  */
 async function upsertOneUnitSchedule(db, item, dutyDate, unitCode, nowStr) {
@@ -544,7 +568,7 @@ async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
   const candidates = await buildScheduleCandidatesFromFlights(dutyDate, shift);
   const nowStr = getVietnamDateTimeStr();
 
-  // migrate legacy BOTH → SKYPEC (một lần nhẹ)
+  // Chuẩn hóa legacy BOTH → sẽ phân loại lại bên dưới
   try {
     await db.run(
       `UPDATE fms_schedules SET unit_code = 'SKYPEC'
@@ -554,7 +578,6 @@ async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
   } catch (_) { /* ignore */ }
 
   if (mode === 'replace') {
-    // Chỉ xóa lịch nguồn flights của cả 2 unit (giữ excel/manual nếu có)
     await db.run(
       `DELETE FROM fms_schedules WHERE date = ? AND COALESCE(schedule_source,'manual') = 'flights'`,
       dutyDate
@@ -565,24 +588,46 @@ async function applyScheduleFromFlights(dutyDate, shift, mode = 'merge') {
   let updated = 0;
   let skipped = 0;
   let named = 0;
-
-  // Import song song: mỗi chuyến → 2 bản SKYPEC + NAFC (chỉ ghi nhãn unit, không cần roster)
-  const UNITS = ['SKYPEC', 'NAFC'];
+  let nSkypec = 0;
+  let nNafc = 0;
 
   for (let item of candidates) {
     item = await enrichCrewFromLive(db, item, dutyDate);
     if (item.driver_name || item.operator_name) named++;
 
-    for (const unit of UNITS) {
-      const r = await upsertOneUnitSchedule(db, item, dutyDate, unit, nowStr);
-      if (r === 'added') added++;
-      else if (r === 'updated') updated++;
-      else skipped++;
-    }
+    // Mỗi chuyến CHỈ thuộc 1 unit — không còn nhân bản full sang cả 2 tab
+    const unit = classifyUnitCode(item);
+    if (unit === 'NAFC') nNafc++;
+    else nSkypec++;
+
+    const r = await upsertOneUnitSchedule(db, item, dutyDate, unit, nowStr);
+    if (r === 'added') added++;
+    else if (r === 'updated') updated++;
+    else skipped++;
+
+    // Dọn bản ghi trùng unit kia (lỗi dual-write trước đây)
+    const flightNo = normalizeFlightNo(item.flight_no);
+    const other = unit === 'NAFC' ? 'SKYPEC' : 'NAFC';
+    try {
+      await db.run(
+        `DELETE FROM fms_schedules
+         WHERE date = ?
+           AND REPLACE(REPLACE(UPPER(flight_no),' ',''),'-','') = ?
+           AND COALESCE(schedule_source,'manual') = 'flights'
+           AND UPPER(COALESCE(NULLIF(unit_code,''),'SKYPEC')) = ?`,
+        dutyDate, flightNo, other
+      );
+    } catch (_) { /* ignore */ }
   }
 
-  console.log(`[ScheduleFlights] date=${dutyDate} shift=${shift} mode=${mode} added=${added} updated=${updated} named=${named}/${candidates.length} units=${UNITS.join('+')}`);
-  return { added, updated, skipped, named, total: candidates.length, units: UNITS, candidates };
+  console.log(`[ScheduleFlights] date=${dutyDate} shift=${shift} mode=${mode} added=${added} updated=${updated} named=${named}/${candidates.length} skypec=${nSkypec} nafc=${nNafc}`);
+  return {
+    added, updated, skipped, named,
+    total: candidates.length,
+    skypec: nSkypec,
+    nafc: nNafc,
+    candidates
+  };
 }
 
 /**
@@ -624,9 +669,9 @@ function unitFilterSql(unit) {
       params: []
     };
   }
-  // SKYPEC: gồm legacy BOTH/null/empty coi là Skypec
+  // SKYPEC only (không lẫn NAFC)
   return {
-    clause: `UPPER(COALESCE(NULLIF(s.unit_code,''),'SKYPEC')) IN ('SKYPEC','BOTH')`,
+    clause: `UPPER(COALESCE(NULLIF(s.unit_code,''),'SKYPEC')) = 'SKYPEC'`,
     params: []
   };
 }
@@ -643,5 +688,6 @@ module.exports = {
   applyScheduleFromFlights,
   autoSyncScheduleFromFlightsIfEnabled,
   unitFilterSql,
+  classifyUnitCode,
   parseFlightsHtml
 };

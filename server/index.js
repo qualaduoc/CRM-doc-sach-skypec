@@ -1700,7 +1700,7 @@ app.post('/api/fms/schedule/from-flights/preview', authenticateToken, async (req
       shift,
       count: candidates.length,
       data: candidates.slice(0, 80),
-      message: `Tìm thấy ${candidates.length} chuyến trong ca ${shift} ngày ${date}. Áp dụng sẽ tạo/cập nhật 2 lịch: Skypec + NAFC.`
+      message: `Tìm thấy ${candidates.length} chuyến ca ${shift} ngày ${date}. Phân loại: Skypec (có NV) / NAFC (xe 74xx, không NV).`
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
