@@ -616,6 +616,31 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
     // Cập nhật snapshot trước khi so “biến mất”
     await upsertVnaPresence(db, targetDate, vnaFmsFlights);
 
+    // Bổ sung snapshot từ fms_fuel_orders (đã từng quét chi tiết trên VNA) — bắt case Cancel đã mất trước vòng hiện tại
+    try {
+      const orderRows = await db.all(
+        `SELECT flight_no, ac_reg FROM fms_fuel_orders
+         WHERE flight_no LIKE ?
+           AND ac_reg IS NOT NULL AND TRIM(ac_reg) != '' AND TRIM(ac_reg) != '-'`,
+        `%_${targetDate}`
+      );
+      for (const o of orderRows || []) {
+        const raw = String(o.flight_no || '');
+        const fltNo = raw.replace(new RegExp(`_${targetDate}$`), '').toUpperCase().replace(/\s+/g, '');
+        const acReg = String(o.ac_reg || '').trim().toUpperCase();
+        if (!fltNo || !acReg) continue;
+        await db.run(
+          `INSERT INTO fms_vna_presence (flight_no, date, ac_reg, route, last_seen_at)
+           VALUES (?, ?, ?, '-', CURRENT_TIMESTAMP)
+           ON CONFLICT(flight_no, date) DO UPDATE SET
+             ac_reg = CASE WHEN fms_vna_presence.ac_reg IS NULL OR fms_vna_presence.ac_reg = '-' THEN excluded.ac_reg ELSE fms_vna_presence.ac_reg END`,
+          fltNo, targetDate, acReg
+        );
+      }
+    } catch (seedErr) {
+      console.error('[Cancel] Seed presence từ fuel_orders:', seedErr.message);
+    }
+
     const vnaSet = new Set();
     vnaFmsFlights.forEach(f => {
       if (!f || !f.FLIGHTNO) return;
