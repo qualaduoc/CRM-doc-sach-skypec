@@ -560,16 +560,61 @@ function sendImportExportZalo(targetGroupId, isSkyOneEnabled, message, logTag) {
 }
 
 /**
- * CANCEL đã nạp (Skypec kg>0) + biến mất trên FMS VNA (đúng flight_no + đã biết ac_reg).
- * Báo Zalo đúng 1 lần → đưa tàu vào theo dõi Tái xuất (monitor_type = CANCELLED_FUELED).
- * An toàn: bỏ qua nếu VNA trả 0 chuyến (cookie/lỗi) để tránh false-positive hàng loạt.
+ * Ghi nhận chuyến đang có trên FMS VNA (snapshot).
+ * Cancel chỉ khi chuyến TỪNG có trong snapshot rồi biến mất — tránh nhầm hãng ngoài (chỉ có Skypec).
+ */
+async function upsertVnaPresence(db, targetDate, vnaFmsFlights) {
+  for (const f of vnaFmsFlights || []) {
+    if (!f || !f.FLIGHTNO) continue;
+    const fltNo = String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
+    const acReg = String(f.ACREG || f.ac_reg || '').trim().toUpperCase();
+    if (!fltNo || !acReg || acReg === '-') continue;
+    const route = `${f.DEP_AP_SCHED || ''}-${f.ARR_AP_SCHED || ''}`.toUpperCase() || '-';
+    await db.run(
+      `INSERT INTO fms_vna_presence (flight_no, date, ac_reg, route, last_seen_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(flight_no, date) DO UPDATE SET
+         ac_reg = excluded.ac_reg,
+         route = excluded.route,
+         last_seen_at = CURRENT_TIMESTAMP`,
+      fltNo, targetDate, acReg, route
+    );
+  }
+}
+
+/**
+ * CANCEL đã nạp:
+ * 1) Từng xuất hiện trên FMS VNA (fms_vna_presence) với đúng tàu
+ * 2) Skypec kg > 0 (cùng flight_no + date, tàu khớp nếu Skypec có ac_reg)
+ * 3) Hiện không còn trên list VNA lần quét này
+ * → Zalo 1 lần + monitor CANCELLED_FUELED
+ * An toàn: VNA 0 chuyến → bỏ qua (cookie/lỗi).
  */
 async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
   try {
+    // Dọn 1 lần bản ghi Cancel sai (hãng ngoài / chưa từng có snapshot VNA) — flag settings
+    try {
+      const purged = await db.get("SELECT value FROM settings WHERE key = 'cancel_false_positive_purged_v1'");
+      if (!purged || purged.value !== '1') {
+        const del = await db.run(
+          `DELETE FROM fms_temp_import_exports WHERE monitor_type = 'CANCELLED_FUELED' AND is_warned = 0`
+        );
+        await db.run(
+          "INSERT OR REPLACE INTO settings (key, value) VALUES ('cancel_false_positive_purged_v1', '1')"
+        );
+        log(`[Cancel] Đã dọn ${del && del.changes ? del.changes : 0} bản ghi Cancel nhầm (trước khi có snapshot VNA).`);
+      }
+    } catch (purgeErr) {
+      console.error('[Cancel] Lỗi dọn false-positive:', purgeErr.message);
+    }
+
     if (!vnaFmsFlights || vnaFmsFlights.length === 0) {
       log(`[Cancel] Bỏ qua detect ngày ${targetDate}: FMS VNA 0 chuyến (tránh cảnh báo nhầm).`);
       return { checked: 0, cancelled: 0 };
     }
+
+    // Cập nhật snapshot trước khi so “biến mất”
+    await upsertVnaPresence(db, targetDate, vnaFmsFlights);
 
     const vnaSet = new Set();
     vnaFmsFlights.forEach(f => {
@@ -577,8 +622,9 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
       vnaSet.add(String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, ''));
     });
 
-    const skypecRows = await db.all(
-      'SELECT flight_no, ac_reg, route, fuel_order, time_fuel, driver_name, operator_name, truck_no FROM fms_flights_live WHERE date = ?',
+    // Chỉ xét chuyến TỪNG thấy trên VNA, nay mất
+    const presenceRows = await db.all(
+      'SELECT flight_no, ac_reg, route FROM fms_vna_presence WHERE date = ?',
       targetDate
     );
 
@@ -586,17 +632,36 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
     let checked = 0;
     const { isSkyOneEnabled, targetGroupId } = await getImportExportNotifyTargets(db);
 
-    for (const row of skypecRows || []) {
-      const fltNo = String(row.flight_no || '').toUpperCase().replace(/\s+/g, '');
-      const acReg = String(row.ac_reg || '').trim().toUpperCase();
-      const kg = parseInt(String(row.fuel_order || '0').replace(/[^\d]/g, ''), 10) || 0;
-      if (!fltNo || !acReg || acReg === '-' || kg <= 0) continue;
-      checked++;
+    for (const prev of presenceRows || []) {
+      const fltNo = String(prev.flight_no || '').toUpperCase().replace(/\s+/g, '');
+      const snapAc = String(prev.ac_reg || '').trim().toUpperCase();
+      if (!fltNo || !snapAc || snapAc === '-') continue;
 
       // Còn trên VNA → không Cancel
       if (vnaSet.has(fltNo)) continue;
+      checked++;
 
-      // Đã báo Cancel / đã vào list (1 lần)
+      // Skypec: đã nạp kg > 0
+      const skypec = await db.get(
+        'SELECT flight_no, ac_reg, route, fuel_order, time_fuel, driver_name, operator_name FROM fms_flights_live WHERE date = ? AND UPPER(REPLACE(flight_no,\' \',\'\')) = ?',
+        targetDate, fltNo
+      );
+      const kg = skypec
+        ? (parseInt(String(skypec.fuel_order || '0').replace(/[^\d]/g, ''), 10) || 0)
+        : 0;
+      if (kg <= 0) continue;
+
+      // Khớp tàu: ưu tiên Skypec ac_reg nếu có; phải trùng snapshot VNA
+      const skypecAc = skypec && skypec.ac_reg
+        ? String(skypec.ac_reg).trim().toUpperCase()
+        : '';
+      if (skypecAc && skypecAc !== '-' && skypecAc !== snapAc) {
+        log(`[Cancel] Bỏ ${fltNo}: tàu Skypec ${skypecAc} ≠ VNA snapshot ${snapAc}`);
+        continue;
+      }
+      const acReg = snapAc;
+
+      // Đã báo 1 lần
       const exists = await db.get(
         `SELECT id FROM fms_temp_import_exports
          WHERE UPPER(TRIM(ac_reg)) = ? AND UPPER(REPLACE(old_flight_no,' ','')) = ?
@@ -605,12 +670,15 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
       );
       if (exists) continue;
 
-      const route = String(row.route || '').trim().toUpperCase() || '-';
-      let timeFuel = row.time_fuel && row.time_fuel !== '-' ? String(row.time_fuel).trim() : '-';
+      const route = (skypec && skypec.route
+        ? String(skypec.route).trim().toUpperCase()
+        : String(prev.route || '-').trim().toUpperCase()) || '-';
+      let timeFuel = skypec && skypec.time_fuel && skypec.time_fuel !== '-'
+        ? String(skypec.time_fuel).trim()
+        : '-';
 
-      // Cặp tra nạp: ưu tiên Skypec live, fallback lịch SkyEyes
-      let driver = String(row.driver_name || '').split(',')[0].trim();
-      let operator = String(row.operator_name || '').split(',')[0].trim();
+      let driver = skypec ? String(skypec.driver_name || '').split(',')[0].trim() : '';
+      let operator = skypec ? String(skypec.operator_name || '').split(',')[0].trim() : '';
       if (/^NAFSC$/i.test(driver)) driver = '';
       if (/^NAFSC$/i.test(operator)) operator = '';
 
@@ -651,13 +719,13 @@ Cặp tra nạp: ${crewPair} vào lúc: ${timeFuel}
 Tàu ${acReg} đã được đưa vào theo dõi Tái xuất.
 📢 Giờ cảnh báo: ${getVietnamDateTimeStr()}`;
 
-      log(`[Cancel] ${fltNo} / ${acReg} / ${kg} kg — mất trên VNA → báo 1 lần + theo dõi Tái xuất.`);
+      log(`[Cancel] ${fltNo} / ${acReg} / ${kg} kg — từng có VNA, nay mất + Skypec đã nạp → báo 1 lần.`);
       sendImportExportZalo(targetGroupId, isSkyOneEnabled, msg, `Cancel ${fltNo}`);
       cancelled++;
     }
 
-    if (cancelled > 0) {
-      log(`[Cancel] Ngày ${targetDate}: đã báo ${cancelled}/${checked} chuyến Skypec đã nạp mất trên VNA.`);
+    if (cancelled > 0 || checked > 0) {
+      log(`[Cancel] Ngày ${targetDate}: mất khỏi VNA (đã từng thấy)=${checked}, báo Cancel=${cancelled}.`);
     }
     return { checked, cancelled };
   } catch (err) {

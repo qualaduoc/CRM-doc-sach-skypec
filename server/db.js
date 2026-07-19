@@ -165,6 +165,16 @@ async function getDb() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Snapshot chuyến từng xuất hiện trên FMS VNA (để detect Cancel đúng, không nhầm hãng ngoài)
+    CREATE TABLE IF NOT EXISTS fms_vna_presence (
+      flight_no TEXT NOT NULL,
+      date TEXT NOT NULL,
+      ac_reg TEXT NOT NULL,
+      route TEXT DEFAULT '-',
+      last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (flight_no, date)
+    );
+
     CREATE TABLE IF NOT EXISTS fms_airline_alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       flight_no TEXT NOT NULL,
@@ -240,6 +250,20 @@ async function getDb() {
   // Thêm các cột cho fms_temp_import_exports của database cũ
   try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN monitor_type TEXT DEFAULT 'DOMESTIC_TO_INTL';`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN old_time TEXT DEFAULT '-';`); } catch(e) {}
+
+  // Snapshot FMS VNA cho detect Cancel (DB cũ)
+  try {
+    await dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS fms_vna_presence (
+        flight_no TEXT NOT NULL,
+        date TEXT NOT NULL,
+        ac_reg TEXT NOT NULL,
+        route TEXT DEFAULT '-',
+        last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (flight_no, date)
+      );
+    `);
+  } catch (e) {}
 
   // Thêm cột phân quyền cho accounts của database cũ
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_admin INTEGER DEFAULT 0;`); } catch(e) {}
