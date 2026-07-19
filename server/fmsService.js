@@ -1295,20 +1295,37 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
         if (!bad && r.monitor_type === 'DOMESTIC_TO_INTL' && isDomesticRoute(nr) && !isDepartingIntlRoute(nr)) {
           bad = true;
         }
-        // Cancel / N.địa→Q.tế: không gán chặng mới nếu thực ra là ND khi type đòi QT — đã cover ở decide
+        // Cancel chỉ được gán chặng QT (không để ND làm “tái xuất”)
+        if (!bad && r.monitor_type === 'CANCELLED_FUELED' && nr && isDomesticRoute(nr) && !isDepartingIntlRoute(nr)) {
+          bad = true;
+        }
+        // Kiểm tra Skypec: ngày monitor + ngày kế (tái xuất qua đêm)
         if (!bad && r.old_time && r.new_flight_no && r.date) {
           const oldM = parseHhMmToMinutes(r.old_time);
-          const live = await db.get(
-            `SELECT time_fuel, time_dep, ac_reg FROM fms_flights_live
-             WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
-            r.date,
-            String(r.new_flight_no).replace(/[\s\-_.]/g, '')
-          );
-          if (live) {
-            if (!acRegsMatch(live.ac_reg, r.ac_reg)) bad = true;
-            const liveMf = parseHhMmToMinutes(live.time_dep);
-            const liveM = liveMf != null ? liveMf : parseHhMmToMinutes(live.time_fuel);
-            if (oldM != null && liveM != null && liveM < oldM) bad = true;
+          const datesToCheck = [r.date, addDaysYmdStr(r.date, 1)];
+          for (const vd of datesToCheck) {
+            const live = await db.get(
+              `SELECT time_fuel, time_dep, ac_reg FROM fms_flights_live
+               WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,' ',''),'-','')) = ? LIMIT 1`,
+              vd,
+              String(r.new_flight_no).replace(/[\s\-_.]/g, '')
+            );
+            if (!live) continue;
+            const liveAc = normalizeAcRegKey(live.ac_reg);
+            // ac Skypec đầy đủ mà khác tàu → gán sai; ac mơ hồ ("622") bỏ qua
+            if (liveAc.length >= 5 && !acRegsMatch(live.ac_reg, r.ac_reg)) {
+              bad = true;
+              break;
+            }
+            // Chỉ so giờ ngược khi live cùng ngày monitor
+            if (String(vd) === String(r.date)) {
+              const liveMf = parseHhMmToMinutes(live.time_dep);
+              const liveM = liveMf != null ? liveMf : parseHhMmToMinutes(live.time_fuel);
+              if (oldM != null && liveM != null && liveM < oldM) {
+                bad = true;
+                break;
+              }
+            }
           }
         }
         if (bad) {
