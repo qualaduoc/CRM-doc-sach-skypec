@@ -2802,7 +2802,11 @@ function buildPersonZaloRowHtml(p, opts = {}) {
     </tr>`;
 }
 
-/** HTML cột nhân viên: Lái xe / NV tra nạp / Xe (tên đầy đủ) */
+/**
+ * Cột nhân viên gọn: "Lái - NV" một dòng, xe xuống dòng (bỏ nhãn chức danh).
+ * VD: Lê Văn Huỳnh - Nguyễn Chí Thành
+ *     HAN3-20-7006
+ */
 function formatCrewCellHtml(r) {
   const { driver, operator } = parseCrewRoles(r);
   const truck = r && r.truck_no && String(r.truck_no).trim() && r.truck_no !== '-'
@@ -2811,21 +2815,63 @@ function formatCrewCellHtml(r) {
   if (!driver && !operator && !truck) {
     return '<span style="color:var(--text-muted);">-</span>';
   }
-  let html = '<div style="line-height:1.45;font-size:0.84rem;text-align:left;">';
-  if (driver) {
-    html += `<div><span style="color:var(--text-muted);font-size:0.7rem;font-weight:600;">Lái xe</span><br><strong style="color:#c2410c;">${escapeHtml(driver)}</strong></div>`;
-  }
-  if (operator) {
-    html += `<div style="margin-top:3px;"><span style="color:var(--text-muted);font-size:0.7rem;font-weight:600;">NV tra nạp</span><br><strong style="color:#0369a1;">${escapeHtml(operator)}</strong></div>`;
-  }
-  if (!driver && !operator) {
-    html += `<div style="color:var(--text-muted);">Chưa gán NV</div>`;
+  const names = [driver, operator].filter(Boolean);
+  const title = names.length
+    ? (driver && operator
+      ? `Lái: ${driver} · NV: ${operator}`
+      : (driver ? `Lái: ${driver}` : `NV: ${operator}`))
+    : '';
+  let html = '<div class="fms-cell-crew" style="line-height:1.3;font-size:0.8rem;text-align:left;">';
+  if (names.length) {
+    html += `<div class="fms-crew-names" title="${escapeHtml(title)}" style="font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">`;
+    if (driver && operator) {
+      html += `<span style="color:#c2410c;">${escapeHtml(driver)}</span>`
+        + `<span style="color:var(--text-muted);font-weight:500;"> - </span>`
+        + `<span style="color:#0369a1;">${escapeHtml(operator)}</span>`;
+    } else if (driver) {
+      html += `<span style="color:#c2410c;">${escapeHtml(driver)}</span>`;
+    } else {
+      html += `<span style="color:#0369a1;">${escapeHtml(operator)}</span>`;
+    }
+    html += '</div>';
+  } else {
+    html += `<div style="color:var(--text-muted);font-size:0.75rem;">Chưa gán NV</div>`;
   }
   if (truck) {
-    html += `<div style="margin-top:4px;color:var(--primary);font-weight:700;font-size:0.8rem;"><i class="fa-solid fa-truck-field"></i> ${escapeHtml(truck)}</div>`;
+    html += `<div class="fms-crew-truck" title="Xe nạp" style="margin-top:1px;color:var(--primary);font-weight:700;font-size:0.74rem;white-space:nowrap;">`
+      + `<i class="fa-solid fa-truck-field" style="font-size:0.68rem;opacity:0.85;"></i> ${escapeHtml(truck)}</div>`;
   }
   html += '</div>';
   return html;
+}
+
+/**
+ * Cột tàu gọn: A321-VNA363 · HAN-SGN (1–2 dòng, không nhãn "Loại:")
+ */
+function formatPlaneCellHtml(r, opts = {}) {
+  const acType = r && r.ac_type ? String(r.ac_type).trim() : '';
+  const acReg = r && r.ac_reg ? String(r.ac_reg).trim() : '';
+  const route = r && r.route ? String(r.route).trim() : '';
+  const blinkClass = opts.acRegClass || '';
+  const oldReg = opts.blinkAcReg && r.old_ac_reg ? String(r.old_ac_reg).trim() : '';
+
+  if (oldReg && acReg) {
+    return `
+      <div class="fms-cell-plane" style="font-size:0.76rem;line-height:1.3;text-align:center;">
+        <div style="color:#64748b;text-decoration:line-through;">${escapeHtml(oldReg)}</div>
+        <div class="${blinkClass}" style="font-weight:700;color:#b91c1c;">
+          ${acType ? `${escapeHtml(acType)}-` : ''}${escapeHtml(acReg)}
+        </div>
+        ${route ? `<div style="color:var(--primary);font-weight:600;font-size:0.72rem;">${escapeHtml(route)}</div>` : ''}
+      </div>`;
+  }
+
+  const typeReg = [acType, acReg].filter(Boolean).join('-') || '-';
+  return `
+    <div class="fms-cell-plane" style="font-size:0.8rem;line-height:1.3;text-align:center;" title="${escapeHtml([acType && `Loại ${acType}`, acReg && `Tàu ${acReg}`, route].filter(Boolean).join(' · '))}">
+      <div class="${blinkClass}" style="font-weight:700;color:var(--text);">${escapeHtml(typeReg)}</div>
+      ${route ? `<div style="color:var(--primary);font-weight:600;font-size:0.74rem;margin-top:1px;">${escapeHtml(route)}</div>` : ''}
+    </div>`;
 }
 
 /** Nhãn ngắn cho badge Zalo / filter */
@@ -3009,24 +3055,11 @@ function renderFmsTable() {
     const fuelOrderTdClass = blinkFuelOrder ? 'blink-orange-bg' : '';
     const etdTdClass = blinkEtd ? 'blink-red-bg' : '';
 
-    // Trực quan hóa chi tiết thay đổi (Cũ và Mới) cho số hiệu máy bay
-    let planeInfo = '';
-    if (blinkAcReg && r.old_ac_reg) {
-      planeInfo = `
-        <div style="font-size: 0.78rem; text-align: left; line-height: 1.35; padding: 4px; border-radius: 4px; background: rgba(185, 28, 28, 0.08); border: 1px solid rgba(185, 28, 28, 0.22);">
-          <div style="color: #475569; font-weight: 500;">Cũ: <span style="text-decoration: line-through;">${r.old_ac_reg}</span></div>
-          <div style="color: #b91c1c; font-weight: bold; margin-top: 1px;" class="${acRegClass}">Mới: ${r.ac_reg || '-'}</div>
-          ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.72rem; display: block; margin-top: 2px;">Loại: ${r.ac_type}</span>` : ''}
-          ${r.route ? `<span style="color: var(--primary); font-size: 0.72rem; display: block; margin-top: 2px; font-weight: bold;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
-        </div>
-      `;
-    } else {
-      planeInfo = `
-        ${r.ac_reg ? `<span style="background: var(--chip-bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; font-weight: 600;" class="${acRegClass}">${r.ac_reg}</span>` : '-'}
-        ${r.ac_type ? `<span style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 3px;">Loại: ${r.ac_type}</span>` : ''}
-        ${r.route ? `<span style="color: var(--primary); font-size: 0.8rem; display: block; margin-top: 3px; font-weight: bold;"><i class="fa-solid fa-route"></i> ${r.route}</span>` : ''}
-      `;
-    }
+    // Tàu/loại/đường bay gọn: A321-VNA363 · HAN-SGN
+    const planeInfo = formatPlaneCellHtml(r, {
+      blinkAcReg,
+      acRegClass
+    });
 
     // Trực quan hóa chi tiết thay đổi (Cũ và Mới) cho standby fuel
     let standbyHtml = '';
@@ -3069,10 +3102,10 @@ function renderFmsTable() {
     }
 
     const timesHtml = `
-      <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
-        ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
-        <div>Cất: ${depTimeHtml}</div>
-        ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed var(--border); padding-top: 2px;">Nạp: <strong style="color: #c2410c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+      <div style="font-size: 0.76rem; text-align: left; line-height: 1.3;">
+        ${r.time_arr ? `<div><span style="color:var(--text-muted);">Hạ</span> ${r.time_arr}</div>` : ''}
+        <div><span style="color:var(--text-muted);">Cất</span> ${depTimeHtml}</div>
+        ${r.time_fuel ? `<div><span style="color:var(--text-muted);">Nạp</span> <strong style="color:#c2410c;">${r.time_fuel}</strong></div>` : ''}
       </div>
     `;
     
@@ -3250,18 +3283,13 @@ function renderUserFmsTable() {
       <tr class="${rowCls}">
         <td style="font-weight: 700; color: var(--primary); font-size: 1rem;">${r.flight_no}</td>
         <td>${formatCrewCellHtml(r)}</td>
-        <td style="text-align: center;">
-          <span style="font-weight: bold; color: var(--text);">${r.ac_reg || '-'}</span>
-          <span style="color: var(--text-muted); font-size: 0.8em;"> (${r.ac_type || '-'})</span>
-          <br>
-          <span style="color: #007297; font-size: 0.85em; font-weight: bold;">${r.route || '-'}</span>
-        </td>
-        <td style="text-align: center; font-weight: 700; color: #b45309; font-size: 1rem;">${r.gate || '-'}</td>
+        <td style="text-align: center;">${formatPlaneCellHtml(r)}</td>
+        <td style="text-align: center; font-weight: 700; color: #b45309; font-size: 0.95rem;">${r.gate || '-'}</td>
         <td>
-          <div style="font-size: 0.8rem; text-align: left; line-height: 1.4;">
-            ${r.time_arr ? `<div>Hạ: <span>${r.time_arr}</span></div>` : ''}
-            ${r.time_dep ? `<div>Cất: <span>${r.time_dep}</span></div>` : ''}
-            ${r.time_fuel ? `<div style="margin-top: 2px; border-top: 1px dashed var(--border); padding-top: 2px;">Nạp: <strong style="color: #c2410c; font-size: 0.88rem;">${r.time_fuel}</strong></div>` : ''}
+          <div style="font-size: 0.76rem; text-align: left; line-height: 1.3;">
+            ${r.time_arr ? `<div><span style="color:var(--text-muted);">Hạ</span> ${r.time_arr}</div>` : ''}
+            ${r.time_dep ? `<div><span style="color:var(--text-muted);">Cất</span> ${r.time_dep}</div>` : ''}
+            ${r.time_fuel ? `<div><span style="color:var(--text-muted);">Nạp</span> <strong style="color:#c2410c;">${r.time_fuel}</strong></div>` : ''}
           </div>
         </td>
         <td style="text-align: center; font-weight: 700; color: #15803d;">${r.standby_fuel ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</td>
