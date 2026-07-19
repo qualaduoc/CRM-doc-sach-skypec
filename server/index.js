@@ -2789,16 +2789,24 @@ app.get('/api/fms/zalo/unmapped-crews', authenticateToken, async (req, res) => {
     const mappings = await db.all("SELECT schedule_name FROM zalo_user_mappings");
     const mappedNames = new Set(mappings.map(m => m.schedule_name.toUpperCase().trim()));
 
+    // Trả name thuần (không gắn role vào chuỗi) để map Zalo đúng từng người
     const unmapped = [];
     activePeople.forEach((info, key) => {
       if (!mappedNames.has(key)) {
-        const roles = [...info.roles].join('/');
-        unmapped.push(`${info.name} (${roles})`);
+        unmapped.push({
+          name: info.name,
+          roles: [...info.roles]
+        });
       }
     });
 
-    unmapped.sort((a, b) => a.localeCompare(b, 'vi'));
-    res.json({ success: true, unmapped });
+    unmapped.sort((a, b) => String(a.name).localeCompare(String(b.name), 'vi'));
+    res.json({
+      success: true,
+      unmapped,
+      // tương thích client cũ (string)
+      unmappedNames: unmapped.map(u => u.name)
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

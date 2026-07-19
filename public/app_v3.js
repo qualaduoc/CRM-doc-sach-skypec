@@ -1136,52 +1136,153 @@ function setupEventListeners() {
 
   }
 
-  // Lắng nghe thay đổi dropdown hình thức thông báo Zalo theo Cặp trực ban trên bảng chính
+  // Map Zalo + báo tin theo từng người (Lái | NV) — bảng gọn trên trang chính
   const notifyContainer = document.getElementById('fms-crew-notify-settings-container');
-  if (notifyContainer) {
-    if (!notifyContainer.getAttribute('data-has-listener')) {
-      notifyContainer.setAttribute('data-has-listener', 'true');
-      notifyContainer.addEventListener('change', async (e) => {
-        if (e.target.classList.contains('fms-crew-notify-select')) {
-          const select = e.target;
-          const personName = select.getAttribute('data-person') || select.getAttribute('data-crew');
-          const date = select.getAttribute('data-date');
-          const notifyType = parseInt(select.value);
-          const originalVal = parseInt(select.getAttribute('data-original-val') || '1');
+  if (notifyContainer && !notifyContainer.getAttribute('data-has-listener')) {
+    notifyContainer.setAttribute('data-has-listener', 'true');
+    notifyContainer.addEventListener('change', async (e) => {
+      const t = e.target;
 
-          try {
-            const res = await fetch('/api/fms/schedule/update-notify-type', {
-              method: 'POST',
+      // --- Map tài khoản Zalo ---
+      if (t.classList.contains('fms-zalo-map-select') || t.classList.contains('zalo-member-select')) {
+        const select = t;
+        const personName = select.getAttribute('data-person')
+          || (select.closest('[data-person]') && select.closest('[data-person]').getAttribute('data-person'))
+          || (select.closest('[data-name]') && select.closest('[data-name]').getAttribute('data-name'));
+        const zaloUid = select.value;
+        const originalUid = select.getAttribute('data-original-uid') || '';
+        if (!personName) return;
+
+        try {
+          if (!zaloUid) {
+            // Bỏ map
+            const res = await fetch('/api/fms/zalo/mappings', {
+              method: 'DELETE',
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${state.token}`
               },
-              body: JSON.stringify({ personName, date, notifyType })
+              body: JSON.stringify({ scheduleName: personName })
             });
             const data = await res.json();
             if (data.success) {
-              showToast(data.message || `Đã cập nhật ${personName}`, 'success', 'Zalo');
-              select.setAttribute('data-original-val', String(notifyType));
-              const pNorm = normalizePersonName(personName);
-              cachedFmsRows.forEach(r => {
-                if (r.date !== date) return;
-                const { driver, operator } = parseCrewRoles(r);
-                if (normalizePersonName(driver) === pNorm || normalizePersonName(operator) === pNorm) {
-                  r.notify_type = notifyType;
-                }
-              });
+              state.zaloMappings = (state.zaloMappings || []).filter(
+                m => String(m.schedule_name).toUpperCase().trim() !== personName.toUpperCase().trim()
+              );
+              select.setAttribute('data-original-uid', '');
+              select.classList.remove('is-mapped');
+              select.classList.add('is-unmapped');
+              showToast(`Đã bỏ map: ${personName}`, 'success', 'Zalo');
               renderFmsTable();
             } else {
-              showToast(data.error || 'Lỗi cập nhật', 'error', 'Thất bại');
-              select.value = originalVal;
+              showToast(data.error || 'Lỗi bỏ map', 'error');
+              select.value = originalUid;
             }
-          } catch (err) {
-            showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi');
+            return;
+          }
+
+          const zaloName = select.options[select.selectedIndex]
+            ? select.options[select.selectedIndex].text
+            : '';
+          const res = await fetch('/api/fms/zalo/mappings', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({
+              scheduleName: personName,
+              zaloUid,
+              zaloName: /chưa map|chưa liên kết/i.test(zaloName) ? '' : zaloName
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            const key = personName.toUpperCase().trim();
+            const existing = (state.zaloMappings || []).find(
+              m => String(m.schedule_name).toUpperCase().trim() === key
+            );
+            if (existing) {
+              existing.zalo_uid = zaloUid;
+              existing.zalo_name = zaloName;
+            } else {
+              state.zaloMappings = state.zaloMappings || [];
+              state.zaloMappings.push({
+                schedule_name: key,
+                zalo_uid: zaloUid,
+                zalo_name: zaloName
+              });
+            }
+            select.setAttribute('data-original-uid', zaloUid);
+            select.classList.remove('is-unmapped');
+            select.classList.add('is-mapped');
+            showToast(`Đã map ${personName}`, 'success', 'Zalo');
+            // Cập nhật crew_zalo_uids trên cache cho chuyến có người này
+            const pNorm = normalizePersonName(personName);
+            cachedFmsRows.forEach(r => {
+              const { driver, operator } = parseCrewRoles(r);
+              const names = [driver, operator].filter(Boolean);
+              if (!names.some(n => normalizePersonName(n) === pNorm)) return;
+              const mapDb = getZaloMapDb();
+              mapDb[key] = zaloUid;
+              const uids = [];
+              names.forEach(n => {
+                const uid = resolveZaloUidForPerson(n, mapDb);
+                if (uid) uids.push(uid);
+              });
+              r.crew_zalo_uids = Array.from(new Set(uids)).join(',');
+            });
+            renderFmsTable();
+          } else {
+            showToast(data.error || 'Lỗi map Zalo', 'error');
+            select.value = originalUid;
+          }
+        } catch (err) {
+          showToast('Lỗi kết nối: ' + err.message, 'error');
+          select.value = originalUid;
+        }
+        return;
+      }
+
+      // --- Báo tin (notify type) theo người ---
+      if (t.classList.contains('fms-crew-notify-select')) {
+        const select = t;
+        const personName = select.getAttribute('data-person') || select.getAttribute('data-crew');
+        const date = select.getAttribute('data-date');
+        const notifyType = parseInt(select.value, 10);
+        const originalVal = parseInt(select.getAttribute('data-original-val') || '1', 10);
+
+        try {
+          const res = await fetch('/api/fms/schedule/update-notify-type', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({ personName, date, notifyType })
+          });
+          const data = await res.json();
+          if (data.success) {
+            showToast(data.message || `Đã cập nhật ${personName}`, 'success', 'Zalo');
+            select.setAttribute('data-original-val', String(notifyType));
+            const pNorm = normalizePersonName(personName);
+            cachedFmsRows.forEach(r => {
+              if (date && r.date !== date) return;
+              const { driver, operator } = parseCrewRoles(r);
+              if (normalizePersonName(driver) === pNorm || normalizePersonName(operator) === pNorm) {
+                r.notify_type = notifyType;
+              }
+            });
+          } else {
+            showToast(data.error || 'Lỗi cập nhật', 'error', 'Thất bại');
             select.value = originalVal;
           }
+        } catch (err) {
+          showToast('Lỗi kết nối: ' + err.message, 'error', 'Lỗi');
+          select.value = originalVal;
         }
-      });
-    }
+      }
+    });
   }
 }
 
@@ -2525,6 +2626,128 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Gom danh sách người từ lịch — 1 entry / 1 người (merge role Lái+NV nếu cùng tên).
+ * Không gộp Lái với NV khác người.
+ */
+function collectPeopleFromRows(rows) {
+  const peopleMap = {};
+  (rows || []).forEach(r => {
+    const { driver, operator } = parseCrewRoles(r);
+    const date = (r && r.date) || '';
+    const nType = (r && r.notify_type) || 1;
+    const addPerson = (name, role) => {
+      if (!name) return;
+      const key = normalizePersonName(name);
+      if (!key) return;
+      if (!peopleMap[key]) {
+        peopleMap[key] = {
+          key,
+          name,
+          roles: new Set(),
+          notifyType: nType,
+          date
+        };
+      }
+      peopleMap[key].roles.add(role);
+      if (nType) peopleMap[key].notifyType = nType;
+      if (date && !peopleMap[key].date) peopleMap[key].date = date;
+    };
+    addPerson(driver, 'Lái');
+    addPerson(operator, 'NV');
+  });
+  return Object.values(peopleMap).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
+
+function personRoleMeta(rolesSet) {
+  const roles = rolesSet instanceof Set ? [...rolesSet] : (rolesSet || []);
+  const hasLai = roles.includes('Lái');
+  const hasNv = roles.includes('NV');
+  if (hasLai && hasNv) return { label: 'Lái+NV', cls: 'is-both' };
+  if (hasLai) return { label: 'Lái', cls: 'is-lai' };
+  return { label: 'NV', cls: 'is-nv' };
+}
+
+/** Map schedule_name -> zalo_uid từ state */
+function getZaloMapDb() {
+  const mapDb = {};
+  (state.zaloMappings || []).forEach(m => {
+    if (m && m.schedule_name) {
+      mapDb[String(m.schedule_name).toUpperCase().trim()] = m.zalo_uid;
+    }
+  });
+  return mapDb;
+}
+
+/** Tìm zalo uid: DB mapping trước, rồi khớp displayName Zalo (soft) */
+function resolveZaloUidForPerson(personName, mapDb) {
+  const key = String(personName || '').toUpperCase().trim();
+  if (!key) return '';
+  if (mapDb && mapDb[key]) return mapDb[key];
+  const norm = normalizePersonName(personName);
+  const members = state.zaloMembers || [];
+  // khớp exact displayName
+  let hit = members.find(m => normalizePersonName(m.displayName) === norm);
+  if (hit) return hit.uid;
+  // khớp chứa (tên không dấu chứa nhau)
+  hit = members.find(m => {
+    const dn = normalizePersonName(m.displayName);
+    return dn && norm && (dn.includes(norm) || norm.includes(dn));
+  });
+  return hit ? hit.uid : '';
+}
+
+function buildZaloMemberOptionsHtml(selectedUid) {
+  let html = '<option value="">— Chưa map —</option>';
+  (state.zaloMembers || []).forEach(mem => {
+    const sel = mem.uid === selectedUid ? 'selected' : '';
+    html += `<option value="${escapeHtml(mem.uid)}" ${sel}>${escapeHtml(mem.displayName)}</option>`;
+  });
+  return html;
+}
+
+/**
+ * HTML 1 dòng người: Vai | Tên | Zalo | Báo tin
+ * rowClass: class trên <tr> (zalo-mapping-row / fms-person-row)
+ */
+function buildPersonZaloRowHtml(p, opts = {}) {
+  const mapDb = opts.mapDb || getZaloMapDb();
+  const currentSel = opts.currentSelections || {};
+  const role = personRoleMeta(p.roles);
+  const nameKey = (p.name || '').toUpperCase();
+  let savedUid = '';
+  if (currentSel[nameKey] !== undefined) {
+    savedUid = currentSel[nameKey];
+  } else {
+    savedUid = resolveZaloUidForPerson(p.name, mapDb);
+  }
+  const mapped = !!savedUid;
+  const notifyVal = currentSel[`notify::${nameKey}`] !== undefined
+    ? currentSel[`notify::${nameKey}`]
+    : (p.notifyType || 1);
+
+  return `
+    <tr class="zalo-person-row zalo-mapping-row" data-name="${escapeHtml(p.name)}" data-person="${escapeHtml(p.name)}" data-date="${escapeHtml(p.date || '')}" data-key="${escapeHtml(p.key || nameKey)}">
+      <td><span class="zalo-role-pill ${role.cls}">${role.label}</span></td>
+      <td class="zalo-name-cell" title="${escapeHtml(p.name)}">
+        <span class="zalo-map-dot ${mapped ? 'on' : 'off'}" title="${mapped ? 'Đã map' : 'Chưa map'}"></span>${escapeHtml(p.name)}
+      </td>
+      <td>
+        <select class="zalo-member-select fms-zalo-map-select ${mapped ? 'is-mapped' : 'is-unmapped'}"
+          data-person="${escapeHtml(p.name)}" data-original-uid="${escapeHtml(savedUid)}">
+          ${buildZaloMemberOptionsHtml(savedUid)}
+        </select>
+      </td>
+      <td>
+        <select class="fms-crew-notify-select crew-notify-select" data-person="${escapeHtml(p.name)}" data-date="${escapeHtml(p.date || '')}" data-original-val="${notifyVal}">
+          <option value="1" ${notifyVal == 1 ? 'selected' : ''}>Tag nhóm</option>
+          <option value="2" ${notifyVal == 2 ? 'selected' : ''}>Inbox</option>
+          <option value="3" ${notifyVal == 3 ? 'selected' : ''}>Cả hai</option>
+        </select>
+      </td>
+    </tr>`;
+}
+
 /** HTML cột nhân viên: Lái xe / NV tra nạp / Xe (tên đầy đủ) */
 function formatCrewCellHtml(r) {
   const { driver, operator } = parseCrewRoles(r);
@@ -2578,82 +2801,47 @@ function renderFmsTable() {
   const tbody = document.getElementById('fms-table-body');
   if (!tbody) return;
 
-  // Zalo notify: 1 dòng / 1 người (Lái hoặc NV) — gọn, map đúng từng người
+  // Zalo: 1 dòng / 1 người — map Zalo + báo tin (Lái và NV tách, không card)
   const crewContainer = document.getElementById('fms-crew-notify-settings-container');
   if (crewContainer) {
-    const peopleMap = {};
-    cachedFmsRows.forEach(r => {
-      const { driver, operator } = parseCrewRoles(r);
-      const date = r.date || '';
-      const nType = r.notify_type || 1;
-      const addPerson = (name, role) => {
-        if (!name) return;
-        const key = normalizePersonName(name);
-        if (!key) return;
-        if (!peopleMap[key]) {
-          peopleMap[key] = {
-            name,
-            roles: new Set(),
-            notifyType: nType,
-            date
-          };
-        }
-        peopleMap[key].roles.add(role);
-        // ưu tiên notifyType mới hơn nếu khác
-        if (nType) peopleMap[key].notifyType = nType;
-      };
-      addPerson(driver, 'Lái');
-      addPerson(operator, 'NV');
-    });
-
-    const people = Object.values(peopleMap).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    const people = collectPeopleFromRows(cachedFmsRows);
     if (people.length > 0) {
+      // Lazy load members/mappings nếu chưa có (không chặn render lần đầu)
+      if ((!state.zaloMembers || state.zaloMembers.length === 0) && state.token && !window.__zaloLoadInflight) {
+        window.__zaloLoadInflight = true;
+        loadZaloMembersAndMappings().finally(() => {
+          window.__zaloLoadInflight = false;
+          renderFmsTable();
+        });
+      }
+      const mapDb = getZaloMapDb();
+      const mappedCount = people.filter(p => resolveZaloUidForPerson(p.name, mapDb)).length;
       crewContainer.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-          <div style="font-size:0.8rem;font-weight:700;color:#fb923c;display:flex;align-items:center;gap:6px;">
-            <i class="fa-solid fa-comments"></i> Báo Zalo theo từng người
-            <span style="font-weight:500;color:var(--text-muted);font-size:0.72rem;">(${people.length} NV)</span>
-          </div>
+        <div class="zalo-person-dense-head">
+          <span class="zalo-person-dense-title">
+            <i class="fa-solid fa-user-tag"></i> Map Zalo từng người
+            <span style="font-weight:500;color:var(--text-muted);font-size:0.68rem;">(${mappedCount}/${people.length} đã map)</span>
+          </span>
+          <span class="zalo-person-dense-hint">Lái xe · NV tra nạp tách dòng · gọn</span>
         </div>
-        <div class="zalo-person-notify-table" style="max-height:168px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--panel-elevated, rgba(0,0,0,0.12));">
-          <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+        <div class="zalo-person-dense-scroll">
+          <table class="zalo-person-dense-table">
             <thead>
-              <tr style="position:sticky;top:0;background:var(--panel-bg,#0f172a);color:var(--text-muted);text-align:left;">
-                <th style="padding:5px 8px;font-weight:600;border-bottom:1px solid var(--border);width:52px;">Vai</th>
-                <th style="padding:5px 8px;font-weight:600;border-bottom:1px solid var(--border);">Họ và tên</th>
-                <th style="padding:5px 8px;font-weight:600;border-bottom:1px solid var(--border);width:118px;">Báo tin</th>
+              <tr>
+                <th style="width:48px;">Vai</th>
+                <th>Họ tên</th>
+                <th style="width:38%;">Tài khoản Zalo</th>
+                <th style="width:96px;">Báo tin</th>
               </tr>
             </thead>
             <tbody>
-              ${people.map(p => {
-                const roles = [...p.roles];
-                const roleLabel = roles.includes('Lái') && roles.includes('NV')
-                  ? 'Lái+NV'
-                  : (roles.includes('Lái') ? 'Lái' : 'NV');
-                const roleColor = roles.includes('Lái') && !roles.includes('NV')
-                  ? '#c2410c'
-                  : (roles.includes('NV') && !roles.includes('Lái') ? '#0369a1' : '#7c3aed');
-                return `
-                <tr style="border-bottom:1px solid rgba(148,163,184,0.12);">
-                  <td style="padding:4px 8px;white-space:nowrap;">
-                    <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;color:${roleColor};background:rgba(148,163,184,0.12);">${roleLabel}</span>
-                  </td>
-                  <td style="padding:4px 8px;font-weight:600;color:var(--text);">${escapeHtml(p.name)}</td>
-                  <td style="padding:3px 6px;">
-                    <select class="fms-crew-notify-select" data-person="${escapeHtml(p.name)}" data-date="${p.date || ''}" data-original-val="${p.notifyType}"
-                      style="width:100%;font-size:0.72rem;padding:2px 4px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text);cursor:pointer;outline:none;">
-                      <option value="1" ${p.notifyType == 1 ? 'selected' : ''}>Tag nhóm</option>
-                      <option value="2" ${p.notifyType == 2 ? 'selected' : ''}>Inbox</option>
-                      <option value="3" ${p.notifyType == 3 ? 'selected' : ''}>Cả hai</option>
-                    </select>
-                  </td>
-                </tr>`;
-              }).join('')}
+              ${people.map(p => buildPersonZaloRowHtml(p, { mapDb })).join('')}
             </tbody>
           </table>
         </div>
       `;
       crewContainer.style.display = 'block';
+      crewContainer.classList.add('zalo-person-dense-wrap');
     } else {
       crewContainer.innerHTML = '';
       crewContainer.style.display = 'none';
@@ -3212,128 +3400,89 @@ function parseFmsExcel(rows) {
   renderFmsPreviewContent(filteredFlights, true);
 }
 
-// Gửi xác nhận lưu lịch trực bay từ Modal Preview
-// Render dữ liệu nhận diện ảnh/Excel lên preview modal (kèm cấu hình Zalo Mapping)
-// Vẽ bảng Zalo Mapping (tự học hỏi) phía dưới bảng Preview
-function renderZaloMappingTable(flights) {
-  const uniqueNamesSet = new Set();
-  flights.forEach(f => {
-    if (f.driver_name && f.driver_name.trim()) {
-      uniqueNamesSet.add(f.driver_name.trim().toUpperCase());
-    }
-    if (f.operator_name && f.operator_name.trim()) {
-      uniqueNamesSet.add(f.operator_name.trim().toUpperCase());
-    }
+/**
+ * Preview modal: 1 bảng gọn — mỗi người (Lái / NV) 1 dòng: map Zalo + báo tin.
+ * Thay 2 panel card lớn "Theo cặp" + "Liên kết Zalo".
+ */
+function renderPersonZaloCompact(flights) {
+  const people = collectPeopleFromRows(flights || []);
+  const section = document.getElementById('fms-person-zalo-section');
+  const tbody = document.getElementById('fms-person-zalo-tbody');
+  const legacyMapBody = document.getElementById('fms-zalo-mapping-table-body');
+  const legacyNotifyBody = document.getElementById('fms-crew-notify-table-body');
+
+  // Giữ lựa chọn đang chọn khi re-render
+  const currentSelections = {};
+  document.querySelectorAll('.zalo-person-row, .zalo-mapping-row').forEach(row => {
+    const name = (row.getAttribute('data-name') || row.getAttribute('data-person') || '').toUpperCase();
+    const mapSel = row.querySelector('.zalo-member-select, .fms-zalo-map-select');
+    const notifySel = row.querySelector('.fms-crew-notify-select, .crew-notify-select');
+    if (name && mapSel) currentSelections[name] = mapSel.value;
+    if (name && notifySel) currentSelections[`notify::${name}`] = notifySel.value;
   });
-  
-  const uniqueNames = Array.from(uniqueNamesSet).sort();
-  const mappingTbody = document.getElementById('fms-zalo-mapping-table-body');
-  
-  if (uniqueNames.length > 0) {
-    // Tạo map danh sách mapping từ db để tra cứu nhanh: schedule_name -> zalo_uid
-    const mapDb = {};
-    state.zaloMappings.forEach(m => {
-      mapDb[m.schedule_name.toUpperCase()] = m.zalo_uid;
-    });
 
-    // Lấy trạng thái đã chọn trên các dropdown hiện tại để giữ lại lựa chọn tương tác
-    const currentSelections = {};
-    document.querySelectorAll('.zalo-mapping-row').forEach(row => {
-      const name = row.getAttribute('data-name');
-      const select = row.querySelector('.zalo-member-select');
-      if (name && select) {
-        currentSelections[name.toUpperCase()] = select.value;
-      }
-    });
+  if (!people.length) {
+    if (section) section.style.display = 'none';
+    if (tbody) tbody.innerHTML = '';
+    if (legacyMapBody) legacyMapBody.innerHTML = '';
+    if (legacyNotifyBody) legacyNotifyBody.innerHTML = '';
+    return;
+  }
 
-    mappingTbody.innerHTML = uniqueNames.map(name => {
-      // Ưu tiên lựa chọn hiện tại đang tương tác, nếu không có thì lấy từ DB học hỏi
-      const savedUid = currentSelections[name] !== undefined ? currentSelections[name] : (mapDb[name] || '');
-      
-      // Tạo danh sách option của thành viên Zalo
-      let optionsHtml = '<option value="">-- Chưa liên kết --</option>';
-      state.zaloMembers.forEach(mem => {
-        optionsHtml += `<option value="${mem.uid}" ${mem.uid === savedUid ? 'selected' : ''}>${mem.displayName}</option>`;
-      });
+  const mapDb = getZaloMapDb();
+  const rowsHtml = people.map(p => buildPersonZaloRowHtml(p, { mapDb, currentSelections })).join('');
+  if (tbody) tbody.innerHTML = rowsHtml;
+  if (section) section.style.display = 'block';
 
+  // Mirror vào tbody ẩn để handleConfirmFmsPreview (đọc .zalo-mapping-row) vẫn hoạt động
+  if (legacyMapBody) {
+    legacyMapBody.innerHTML = people.map(p => {
+      const nameKey = (p.name || '').toUpperCase();
+      let savedUid = currentSelections[nameKey] !== undefined
+        ? currentSelections[nameKey]
+        : resolveZaloUidForPerson(p.name, mapDb);
       return `
-        <tr class="zalo-mapping-row" data-name="${name}">
-          <td style="font-weight: 700; color: #fb923c;">${name}</td>
+        <tr class="zalo-mapping-row" data-name="${escapeHtml(p.name)}">
+          <td>${escapeHtml(p.name)}</td>
           <td>
-            <select class="zalo-member-select" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
-              ${optionsHtml}
+            <select class="zalo-member-select">
+              ${buildZaloMemberOptionsHtml(savedUid)}
             </select>
           </td>
-        </tr>
-      `;
+        </tr>`;
     }).join('');
-
-    document.getElementById('fms-zalo-mapping-section').style.display = 'block';
-  } else {
-    mappingTbody.innerHTML = '';
-    document.getElementById('fms-zalo-mapping-section').style.display = 'none';
+  }
+  if (legacyNotifyBody) {
+    legacyNotifyBody.innerHTML = people.map(p => {
+      const nameKey = (p.name || '').toUpperCase();
+      const notifyVal = currentSelections[`notify::${nameKey}`] !== undefined
+        ? currentSelections[`notify::${nameKey}`]
+        : (p.notifyType || 1);
+      return `
+        <tr class="crew-notify-row" data-key="${escapeHtml(p.key || nameKey)}" data-crew="${escapeHtml(p.name)}" data-person="${escapeHtml(p.name)}" data-truck="-">
+          <td>${escapeHtml(p.name)}</td>
+          <td>-</td>
+          <td>
+            <select class="crew-notify-select">
+              <option value="1" ${notifyVal == 1 ? 'selected' : ''}>Tag nhóm</option>
+              <option value="2" ${notifyVal == 2 ? 'selected' : ''}>Inbox</option>
+              <option value="3" ${notifyVal == 3 ? 'selected' : ''}>Cả hai</option>
+            </select>
+          </td>
+        </tr>`;
+    }).join('');
   }
 }
 
-// Vẽ bảng cấu hình thông báo Zalo theo Cặp trực ban trong Modal Preview
+// Tương thích lời gọi cũ
+function renderZaloMappingTable(flights) {
+  renderPersonZaloCompact(flights);
+}
 function renderCrewNotifyTable(flights) {
-  const crewMap = {};
-  flights.forEach(f => {
-    const driver = (f.driver_name || '').trim().toUpperCase();
-    const operator = (f.operator_name || '').trim().toUpperCase();
-    
-    if (!driver && !operator) return;
-    
-    const crewName = `${driver || '?'}-${operator || '?'}`;
-    const truckNo = f.truck_no || '-';
-    
-    const key = `${crewName}::${truckNo}`;
-    if (!crewMap[key]) {
-      crewMap[key] = {
-        crewName,
-        truckNo,
-        notifyType: f.notify_type || 1
-      };
-    }
-  });
-
-  const crews = Object.values(crewMap);
-  const notifyTbody = document.getElementById('fms-crew-notify-table-body');
-  const section = document.getElementById('fms-crew-notify-section');
-
-  if (crews.length > 0) {
-    const currentSelections = {};
-    document.querySelectorAll('.crew-notify-row').forEach(row => {
-      const key = row.getAttribute('data-key');
-      const select = row.querySelector('.crew-notify-select');
-      if (key && select) {
-        currentSelections[key] = select.value;
-      }
-    });
-
-    notifyTbody.innerHTML = crews.map(c => {
-      const key = `${c.crewName}::${c.truckNo}`;
-      const savedNotifyType = currentSelections[key] !== undefined ? currentSelections[key] : c.notifyType;
-
-      return `
-        <tr class="crew-notify-row" data-key="${key}" data-crew="${c.crewName}" data-truck="${c.truckNo}">
-          <td style="font-weight: 700; color: #fb923c;">${c.crewName}</td>
-          <td style="font-weight: bold; color: var(--primary);">${c.truckNo}</td>
-          <td>
-            <select class="crew-notify-select" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: #0f172a; color: white;">
-              <option value="1" ${savedNotifyType == 1 ? 'selected' : ''}>👥 Tag Nhóm</option>
-              <option value="2" ${savedNotifyType == 2 ? 'selected' : ''}>💬 Inbox Riêng</option>
-              <option value="3" ${savedNotifyType == 3 ? 'selected' : ''}>🔄 Nhóm + Inbox</option>
-            </select>
-          </td>
-        </tr>
-      `;
-    }).join('');
-
-    section.style.display = 'block';
-  } else {
-    notifyTbody.innerHTML = '';
-    section.style.display = 'none';
+  // gộp vào renderPersonZaloCompact — không vẽ panel cặp nữa
+  const section = document.getElementById('fms-person-zalo-section');
+  if (section && section.style.display === 'none') {
+    renderPersonZaloCompact(flights);
   }
 }
 
@@ -3437,8 +3586,7 @@ async function renderFmsPreviewContent(flights, shouldResetInputs = true) {
         state.fmsPreviewFlights[idx].operator_name = input.value.trim();
       }
     });
-    renderZaloMappingTable(state.fmsPreviewFlights);
-    renderCrewNotifyTable(state.fmsPreviewFlights);
+    renderPersonZaloCompact(state.fmsPreviewFlights);
   };
 
   tbody.querySelectorAll('.fms-preview-driver-input, .fms-preview-operator-input').forEach(input => {
@@ -3459,9 +3607,8 @@ async function renderFmsPreviewContent(flights, shouldResetInputs = true) {
     });
   });
 
-  // 3. Gọi render bảng Zalo Mapping & Crew Notify
-  renderZaloMappingTable(flights);
-  renderCrewNotifyTable(flights);
+  // 3. Bảng gọn map Zalo + báo tin từng người (Lái | NV)
+  renderPersonZaloCompact(flights);
 
   // Hiện Modal Xem trước
   document.getElementById('fms-preview-modal').classList.add('active');
@@ -3477,61 +3624,79 @@ async function handleConfirmFmsPreview() {
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Đang lưu...';
 
   try {
-    // 1. Gom các mapping Zalo từ giao diện người dùng
+    // 1. Gom map Zalo + báo tin theo TỪNG NGƯỜI (Lái / NV tách) từ bảng gọn
     const mappings = [];
-    const nameToUidMap = {}; // schedule_name -> zalo_uid
-    
-    document.querySelectorAll('.zalo-mapping-row').forEach(row => {
-      const scheduleName = row.getAttribute('data-name');
-      const select = row.querySelector('.zalo-member-select');
-      const zaloUid = select.value;
-      const zaloName = select.options[select.selectedIndex].text;
+    const nameToUidMap = {}; // schedule_name UPPER -> zalo_uid
+    const personNotifyMap = {}; // personName UPPER -> notifyType
+    const seenMap = new Set();
 
-      if (scheduleName && zaloUid) {
-        mappings.push({
-          scheduleName: scheduleName,
-          zaloUid: zaloUid,
-          zaloName: zaloName !== '-- Chưa liên kết --' ? zaloName : ''
-        });
-        nameToUidMap[scheduleName.toUpperCase()] = zaloUid;
+    const collectFromRow = (row) => {
+      const scheduleName = row.getAttribute('data-name') || row.getAttribute('data-person') || '';
+      if (!scheduleName) return;
+      const nameKey = scheduleName.toUpperCase().trim();
+      const mapSel = row.querySelector('.zalo-member-select, .fms-zalo-map-select');
+      const notifySel = row.querySelector('.fms-crew-notify-select, .crew-notify-select');
+
+      if (mapSel && !seenMap.has(nameKey)) {
+        seenMap.add(nameKey);
+        const zaloUid = mapSel.value;
+        const zaloName = mapSel.options[mapSel.selectedIndex]
+          ? mapSel.options[mapSel.selectedIndex].text
+          : '';
+        if (zaloUid) {
+          const cleanZaloName = (zaloName && !/chưa map|chưa liên kết/i.test(zaloName)) ? zaloName : '';
+          mappings.push({
+            scheduleName,
+            zaloUid,
+            zaloName: cleanZaloName
+          });
+          nameToUidMap[nameKey] = zaloUid;
+        }
       }
-    });
+      if (notifySel) {
+        personNotifyMap[nameKey] = parseInt(notifySel.value, 10) || 1;
+      }
+    };
 
-    // 1b. Gom cấu hình báo Zalo theo Cặp trực ban
-    const crewNotifyMap = {}; // "crewName::truckNo" -> notifyType
+    // Ưu tiên bảng gọn visible, fallback legacy rows
+    document.querySelectorAll('#fms-person-zalo-tbody .zalo-person-row').forEach(collectFromRow);
+    if (!seenMap.size) {
+      document.querySelectorAll('.zalo-mapping-row, .zalo-person-row').forEach(collectFromRow);
+    }
     document.querySelectorAll('.crew-notify-row').forEach(row => {
-      const key = row.getAttribute('data-key');
-      const select = row.querySelector('.crew-notify-select');
-      if (key && select) {
-        crewNotifyMap[key.toUpperCase()] = parseInt(select.value);
+      const person = row.getAttribute('data-person') || row.getAttribute('data-crew') || '';
+      const select = row.querySelector('.crew-notify-select, .fms-crew-notify-select');
+      if (person && select && personNotifyMap[person.toUpperCase().trim()] === undefined) {
+        personNotifyMap[person.toUpperCase().trim()] = parseInt(select.value, 10) || 1;
       }
     });
 
-    // 2. Cập nhật crew_zalo_uids và notify_type cho từng chuyến bay
-    const finalFlights = state.fmsPreviewFlights.map((f, index) => {
-      const driver = (f.driver_name || '').trim().toUpperCase();
-      const operator = (f.operator_name || '').trim().toUpperCase();
-      const crewName = `${driver}-${operator}`;
-      const truckNo = f.truck_no || '-';
-      const key = `${crewName}::${truckNo}`.toUpperCase();
+    // 2. Gán UID cả Lái + NV; notifyType ưu tiên người trên chuyến (max / hoặc driver)
+    const finalFlights = state.fmsPreviewFlights.map((f) => {
+      const { driver, operator } = parseCrewRoles(f);
+      const drKey = driver ? driver.toUpperCase().trim() : '';
+      const opKey = operator ? operator.toUpperCase().trim() : '';
 
-      const notifyType = crewNotifyMap[key] !== undefined ? crewNotifyMap[key] : 1;
-
-      // Gom UID của driver và operator của chuyến bay này dựa trên bảng nameToUidMap
       const uids = [];
-      if (f.driver_name && nameToUidMap[f.driver_name.trim().toUpperCase()]) {
-        uids.push(nameToUidMap[f.driver_name.trim().toUpperCase()]);
-      }
-      if (f.operator_name && nameToUidMap[f.operator_name.trim().toUpperCase()]) {
-        uids.push(nameToUidMap[f.operator_name.trim().toUpperCase()]);
-      }
-
-      // Loại bỏ trùng lặp UID
+      if (drKey && nameToUidMap[drKey]) uids.push(nameToUidMap[drKey]);
+      if (opKey && nameToUidMap[opKey]) uids.push(nameToUidMap[opKey]);
       const uniqueUids = Array.from(new Set(uids));
+
+      let notifyType = 1;
+      if (drKey && personNotifyMap[drKey] !== undefined) notifyType = personNotifyMap[drKey];
+      else if (opKey && personNotifyMap[opKey] !== undefined) notifyType = personNotifyMap[opKey];
+      // nếu cả hai có và khác nhau → ưu tiên "Cả hai" (3) nếu có, không thì max
+      if (drKey && opKey && personNotifyMap[drKey] !== undefined && personNotifyMap[opKey] !== undefined) {
+        const a = personNotifyMap[drKey];
+        const b = personNotifyMap[opKey];
+        notifyType = (a === 3 || b === 3) ? 3 : Math.max(a, b);
+      }
 
       return {
         ...f,
-        crew_info: f.driver_name && f.operator_name ? `${f.driver_name.trim()} - ${f.operator_name.trim()}` : f.crew_info,
+        driver_name: driver || f.driver_name,
+        operator_name: operator || f.operator_name,
+        crew_info: driver && operator ? `${driver} - ${operator}` : (f.crew_info || driver || operator || ''),
         crew_zalo_uids: uniqueUids.join(','),
         notify_type: notifyType
       };
@@ -5067,28 +5232,24 @@ window.syncFmsPeriodTabUI = function(period) {
   }
 };
 
-// Trích xuất các tên nhân sự từ lịch trực hiện tại để populate vào dropdown liên kết Zalo
+// Trích xuất từng người (Lái / NV) từ lịch để dropdown liên kết Zalo
 function populateScheduleNameSelect() {
   const select = document.getElementById('mapping-schedule-name-select');
   if (!select) return;
-  
-  // Trích xuất danh sách tên độc nhất từ lịch trực hiện tại
-  const namesSet = new Set();
-  if (Array.isArray(state.schedules)) {
-    state.schedules.forEach(s => {
-      if (s.driver_name) namesSet.add(s.driver_name.toUpperCase().trim());
-      if (s.operator_name) namesSet.add(s.operator_name.toUpperCase().trim());
-    });
-  }
-  
-  const names = Array.from(namesSet).sort();
-  
+
+  const people = collectPeopleFromRows(
+    (Array.isArray(cachedFmsRows) && cachedFmsRows.length)
+      ? cachedFmsRows
+      : (Array.isArray(state.schedules) ? state.schedules : [])
+  );
+
   let optionsHtml = '<option value="">-- Chọn tên từ lịch trực --</option>';
-  names.forEach(name => {
-    optionsHtml += `<option value="${name}">${name}</option>`;
+  people.forEach(p => {
+    const role = personRoleMeta(p.roles);
+    optionsHtml += `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)} (${role.label})</option>`;
   });
   optionsHtml += '<option value="custom">-- Nhập tên khác --</option>';
-  
+
   select.innerHTML = optionsHtml;
 }
 
@@ -5148,10 +5309,19 @@ async function fetchUnmappedCrews() {
     }
 
     let buttonsHtml = '';
-    unmapped.forEach(name => {
+    unmapped.forEach(item => {
+      // Hỗ trợ cả object {name, roles} và string cũ
+      const name = typeof item === 'string' ? item.replace(/\s*\([^)]*\)\s*$/, '').trim() : (item.name || '');
+      const roles = typeof item === 'object' && item.roles ? item.roles : [];
+      const roleLabel = roles.length
+        ? roles.map(r => (String(r).includes('Lái') ? 'Lái' : (String(r).includes('NV') || String(r).includes('nạp') ? 'NV' : r))).join('+')
+        : '';
+      const safeName = String(name).replace(/'/g, "\\'");
       buttonsHtml += `
-        <button onclick="quickMapCrew('${name}')" class="btn-secondary" style="margin-top: 0; padding: 4px 10px; font-size: 0.78rem; border-color: rgba(239, 68, 68, 0.35); color: #f87171; background: rgba(239, 68, 68, 0.05); cursor: pointer; border-radius: 6px; display: flex; align-items: center; gap: 4px; transition: all 0.2s;">
-          <i class="fa-solid fa-link"></i> ${name}
+        <button type="button" onclick="quickMapCrew('${safeName}')" class="btn-secondary" style="margin-top:0;padding:3px 8px;font-size:0.72rem;border-color:rgba(239,68,68,0.35);color:#b91c1c;background:rgba(239,68,68,0.05);cursor:pointer;border-radius:5px;display:inline-flex;align-items:center;gap:4px;line-height:1.3;">
+          <i class="fa-solid fa-link" style="font-size:0.65rem;"></i>
+          <span style="font-weight:600;">${escapeHtml(name)}</span>
+          ${roleLabel ? `<span class="zalo-role-pill ${roleLabel === 'Lái' ? 'is-lai' : (roleLabel === 'NV' ? 'is-nv' : 'is-both')}">${escapeHtml(roleLabel)}</span>` : ''}
         </button>
       `;
     });
