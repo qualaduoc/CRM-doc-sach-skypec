@@ -19,6 +19,15 @@ const {
   detectCurrentShift
 } = require('./scheduleFromFlights');
 const { initZaloBot, startQRLogin, getBotGroups, logoutBot, sendSkyEyesMessage, sendSkyEyesPrivateMessage, getBotState } = require('./zaloService');
+const {
+  normalizeMapKey,
+  isFullPersonName,
+  buildMappingLookup,
+  resolveCrewUids,
+  upsertZaloMapping,
+  deleteZaloMapping,
+  cleanupZaloMappings
+} = require('./zaloMapping');
 
 
 const app = express();
@@ -1400,17 +1409,20 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
   try {
     const db = await getDb();
 
-    // Lưu các mapping Zalo mới được cấu hình từ client (lưu học hỏi)
+    // Mapping từ preview = người dùng chọn tay → source=manual (ưu tiên DB)
     if (Array.isArray(mappings)) {
       for (const m of mappings) {
         if (m.scheduleName && m.zaloUid) {
           try {
-            await db.run(
-              'INSERT OR REPLACE INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name) VALUES (?, ?, ?)',
-              String(m.scheduleName).trim().toUpperCase(),
-              String(m.zaloUid).trim(),
-              m.zaloName ? String(m.zaloName).trim() : ''
-            );
+            const result = await upsertZaloMapping(db, {
+              scheduleName: m.scheduleName,
+              zaloUid: m.zaloUid,
+              zaloName: m.zaloName || '',
+              source: 'manual'
+            });
+            if (!result.ok) {
+              console.warn('[Save Mapping skip]', result.error);
+            }
           } catch (e) {
             console.error('[Save Mapping Error]', e.message);
           }
@@ -1514,14 +1526,11 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     // Xóa lịch cũ của ngày hôm nay
     await db.run('DELETE FROM fms_schedules WHERE date = ?', targetDate);
 
-    // Tải toàn bộ zalo_user_mappings từ DB để tự động map tên sang zalo_uid ở Backend
-    const { normalizeMapKey } = require('./fmsService');
-    const dbMappings = await db.all('SELECT schedule_name, zalo_uid FROM zalo_user_mappings');
-    const mappingMap = {};
-    dbMappings.forEach(m => {
-      const k = normalizeMapKey(m.schedule_name);
-      if (k) mappingMap[k] = m.zalo_uid;
-    });
+    // Lookup mapping theo name_key (bỏ dấu); luôn resolve UID từ DB (manual ưu tiên)
+    const dbMappings = await db.all(
+      'SELECT schedule_name, zalo_uid, zalo_name, name_key, source FROM zalo_user_mappings'
+    );
+    const mappingLookup = buildMappingLookup(dbMappings);
 
     // Thêm lịch mới — gán fms_date theo nguyên tắc ca ngày / ca tối
     for (const item of schedules) {
@@ -1531,15 +1540,11 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
         isOvernightShift
       );
       
-      // Tự động phân giải Zalo UIDs ở Backend nếu chưa có (exact normalizeMapKey)
-      let finalCrewZaloUids = item.crew_zalo_uids || '';
-      if (!finalCrewZaloUids) {
-        const uids = [];
-        const drName = normalizeMapKey(item.driver_name || '');
-        const opName = normalizeMapKey(item.operator_name || '');
-        if (drName && mappingMap[drName]) uids.push(mappingMap[drName]);
-        if (opName && mappingMap[opName]) uids.push(mappingMap[opName]);
-        finalCrewZaloUids = Array.from(new Set(uids)).join(',');
+      // Resolve UID từ mapping (normalize bỏ dấu). Fallback client UID chỉ khi không map được
+      const resolvedUids = resolveCrewUids(mappingLookup, item.driver_name, item.operator_name);
+      let finalCrewZaloUids = resolvedUids.join(',');
+      if (!finalCrewZaloUids && item.crew_zalo_uids) {
+        finalCrewZaloUids = String(item.crew_zalo_uids).trim();
       }
 
       await db.run(`
@@ -2770,12 +2775,18 @@ app.get('/api/fms/zalo/unmapped-crews', authenticateToken, async (req, res) => {
       todayStr, todayStr
     );
 
-    const activePeople = new Map(); // displayName upper -> { name, roles }
+    // De-dupe theo name_key (bỏ dấu), giữ dạng có dấu từ lịch
+    const activePeople = new Map(); // name_key -> { name, roles }
     const addPerson = (name, role) => {
       const raw = String(name || '').trim();
       if (!raw || raw === '-' || raw === '---' || /^NAFSC$/i.test(raw)) return;
-      const key = raw.toUpperCase().trim();
-      if (!activePeople.has(key)) activePeople.set(key, { name: raw, roles: new Set() });
+      const key = normalizeMapKey(raw);
+      if (!key) return;
+      if (!activePeople.has(key)) {
+        activePeople.set(key, { name: raw, roles: new Set() });
+      } else if (raw.length > activePeople.get(key).name.length) {
+        activePeople.get(key).name = raw;
+      }
       activePeople.get(key).roles.add(role);
     };
     schedules.forEach(s => {
@@ -2783,15 +2794,12 @@ app.get('/api/fms/zalo/unmapped-crews', authenticateToken, async (req, res) => {
       addPerson(s.operator_name, 'NV tra nạp');
     });
 
-    const { normalizeMapKey } = require('./fmsService');
-    const mappings = await db.all("SELECT schedule_name FROM zalo_user_mappings");
-    const mappedNames = new Set(mappings.map(m => normalizeMapKey(m.schedule_name)));
+    const mappings = await db.all('SELECT schedule_name, name_key, source, zalo_uid, zalo_name FROM zalo_user_mappings');
+    const lookup = buildMappingLookup(mappings);
 
-    // Trả name thuần (không gắn role vào chuỗi) để map Zalo đúng từng người
     const unmapped = [];
     activePeople.forEach((info, key) => {
-      const mapKey = normalizeMapKey(info.name || key);
-      if (!mappedNames.has(mapKey)) {
+      if (!lookup.has(key)) {
         unmapped.push({
           name: info.name,
           roles: [...info.roles]
@@ -2803,7 +2811,6 @@ app.get('/api/fms/zalo/unmapped-crews', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       unmapped,
-      // tương thích client cũ (string)
       unmappedNames: unmapped.map(u => u.name)
     });
   } catch (err) {
@@ -2893,15 +2900,19 @@ app.get('/api/fms/zalo/group-members', authenticateToken, async (req, res) => {
 app.get('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   try {
     const db = await getDb();
-    const rows = await db.all('SELECT schedule_name, zalo_uid, zalo_name FROM zalo_user_mappings');
+    const rows = await db.all(
+      `SELECT schedule_name, zalo_uid, zalo_name, name_key, source, created_at, updated_at
+       FROM zalo_user_mappings
+       ORDER BY schedule_name COLLATE NOCASE ASC`
+    );
     res.json({ success: true, mappings: rows });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// API thêm/cập nhật mapping Zalo
-// Quyền: admin / perm_zalo / perm_fms (mapping phục vụ báo tin FMS)
+// API thêm/cập nhật mapping Zalo thủ công (source=manual, ưu tiên cao nhất)
+// Quyền: admin / perm_zalo / perm_fms
 app.post('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1 && req.user.perm_fms !== 1) {
     return res.status(403).json({
@@ -2915,43 +2926,36 @@ app.post('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
     return res.status(400).json({ success: false, error: 'Vui lòng cung cấp đầy đủ Tên lịch trực và Zalo UID!' });
   }
 
-  const { normalizeMapKey } = require('./fmsService');
-  // Key chuẩn: bỏ dấu + hoa (khớp UI + tin nhắn)
-  const cleanName = normalizeMapKey(scheduleName);
-  if (!cleanName) {
-    return res.status(400).json({ success: false, error: 'Tên lịch trực không hợp lệ!' });
+  if (!isFullPersonName(scheduleName)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Chỉ nhận tên đầy đủ (vd: Nguyễn Đình Hùng, Nguyễn Đăng Vân). Không nhận tên 1 từ/viết tắt (HÙNG, N.LONG, TRỪNG...).'
+    });
   }
 
   try {
     const db = await getDb();
-    // Xóa bản ghi cũ cùng key (kể cả lưu kiểu UPPER có dấu trước đây)
-    const allMaps = await db.all('SELECT schedule_name FROM zalo_user_mappings');
-    for (const row of allMaps || []) {
-      if (normalizeMapKey(row.schedule_name) === cleanName && String(row.schedule_name) !== cleanName) {
-        await db.run('DELETE FROM zalo_user_mappings WHERE schedule_name = ?', row.schedule_name);
-      }
+    const result = await upsertZaloMapping(db, {
+      scheduleName,
+      zaloUid,
+      zaloName: zaloName || '',
+      source: 'manual'
+    });
+    if (!result.ok) {
+      return res.status(400).json({ success: false, error: result.error });
     }
-    await db.run(
-      'INSERT OR REPLACE INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name) VALUES (?, ?, ?)',
-      cleanName,
-      String(zaloUid).trim(),
-      zaloName ? String(zaloName).trim() : ''
-    );
+    const savedName = result.mapping?.schedule_name || scheduleName;
     res.json({
       success: true,
-      message: `Đã lưu map Zalo cho «${scheduleName}» thành công!`,
-      mapping: {
-        schedule_name: cleanName,
-        zalo_uid: String(zaloUid).trim(),
-        zalo_name: zaloName ? String(zaloName).trim() : ''
-      }
+      message: `Đã lưu mapping thủ công cho «${savedName}» (ưu tiên DB)!`,
+      mapping: result.mapping
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// API xóa mapping Zalo (Admin / Zalo / FMS)
+// API xóa mapping Zalo — theo name_key (bỏ dấu)
 app.delete('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1 && req.user.perm_fms !== 1) {
     return res.status(403).json({
@@ -2966,25 +2970,29 @@ app.delete('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   }
 
   try {
-    const { normalizeMapKey } = require('./fmsService');
-    const cleanName = normalizeMapKey(scheduleName);
     const db = await getDb();
-    // Xóa mọi bản ghi cùng key (cũ/mới)
-    const allMaps = await db.all('SELECT schedule_name FROM zalo_user_mappings');
-    let deleted = 0;
-    for (const row of allMaps || []) {
-      if (normalizeMapKey(row.schedule_name) === cleanName) {
-        await db.run('DELETE FROM zalo_user_mappings WHERE schedule_name = ?', row.schedule_name);
-        deleted++;
-      }
-    }
+    const result = await deleteZaloMapping(db, scheduleName);
     res.json({
       success: true,
-      message: deleted
+      message: result.deleted
         ? `Đã xóa liên kết của «${scheduleName}» thành công!`
         : `Không tìm thấy map cho «${scheduleName}».`,
-      deleted
+      deleted: result.deleted
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API dọn mapping cũ (tên ngắn / trùng key) — admin
+app.post('/api/fms/zalo/mappings/cleanup', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Chỉ admin được dọn mapping' });
+  }
+  try {
+    const db = await getDb();
+    const result = await cleanupZaloMappings(db);
+    res.json({ success: true, message: 'Đã dọn mapping', ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

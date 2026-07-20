@@ -123,7 +123,10 @@ async function getDb() {
       schedule_name TEXT UNIQUE,
       zalo_uid TEXT NOT NULL,
       zalo_name TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      name_key TEXT,
+      source TEXT DEFAULT 'auto',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS fms_flights_live (
@@ -329,6 +332,33 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_zalo INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_gemini INTEGER DEFAULT 0;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_gate INTEGER DEFAULT 0;`); } catch(e) {}
+
+  // Zalo mapping: name_key (bỏ dấu) + source (manual ưu tiên) + updated_at
+  try { await dbInstance.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN name_key TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN source TEXT DEFAULT 'auto';`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP;`); } catch(e) {}
+  try { await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_zalo_map_name_key ON zalo_user_mappings(name_key);`); } catch(e) {}
+
+  // Dọn mapping tên ngắn (HÙNG, TRỪNG…) + gộp trùng + nâng tên có dấu + re-resolve UID lịch
+  try {
+    const {
+      cleanupZaloMappings,
+      upgradeDisplayNamesFromSchedules,
+      reResolveScheduleUids
+    } = require('./zaloMapping');
+    const cleaned = await cleanupZaloMappings(dbInstance);
+    const upgraded = await upgradeDisplayNamesFromSchedules(dbInstance);
+    const reresolved = await reResolveScheduleUids(dbInstance, 2);
+    if (cleaned.removedShort > 0 || cleaned.merged > 0 || upgraded.upgraded > 0 || reresolved.updated > 0) {
+      console.log(
+        `[DB] Zalo mapping: removedShort=${cleaned.removedShort}, merged=${cleaned.merged}, ` +
+        `remaining=${cleaned.remaining}, displayUpgraded=${upgraded.upgraded}, ` +
+        `uidResync=${reresolved.updated}/${reresolved.scanned}`
+      );
+    }
+  } catch (e) {
+    console.error('[DB] Zalo mapping cleanup error:', e.message);
+  }
 
   // Tạo tài khoản admin mặc định nếu chưa tồn tại
   const adminRow = await dbInstance.get('SELECT * FROM admin WHERE username = ?', 'admin');

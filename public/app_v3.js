@@ -2925,22 +2925,36 @@ function personRoleMeta(rolesSet) {
   return { label: 'NV', cls: 'is-nv' };
 }
 
+/** Tên đầy đủ (họ+tên), từ chối HÙNG / N.LONG / TRỪNG… — khớp server isFullPersonName */
+function isFullPersonName(name) {
+  const key = normalizeMapKey(name);
+  if (!key) return false;
+  const parts = key.split(' ').filter(Boolean);
+  if (parts.length < 2) return false;
+  if (parts.length === 2 && parts[0].length <= 2) return false;
+  if (parts.join('').length < 8) return false;
+  if (parts.some((p) => p.length < 2)) return false;
+  return true;
+}
+
 /**
- * Map schedule_name -> { uid, zalo_name } từ state (DB only).
- * Key = normalizeMapKey (bỏ dấu + hoa).
+ * Map schedule_name -> { uid, zalo_name, source } từ state (DB only).
+ * Key = normalizeMapKey (bỏ dấu + hoa). Manual ưu tiên nếu trùng key.
  */
 function getZaloMapDb() {
   const mapDb = {};
   (state.zaloMappings || []).forEach(m => {
     if (!m || !m.schedule_name) return;
-    const key = normalizeMapKey(m.schedule_name);
+    const key = m.name_key || normalizeMapKey(m.schedule_name);
     if (!key) return;
-    // Không soft-match; exact key only. Giữ entry đầu nếu trùng.
-    if (!mapDb[key]) {
+    const existing = mapDb[key];
+    const isManual = (m.source || '') === 'manual';
+    if (!existing || (isManual && existing.source !== 'manual')) {
       mapDb[key] = {
         uid: m.zalo_uid || '',
         zalo_name: m.zalo_name || '',
-        schedule_name: m.schedule_name
+        schedule_name: m.schedule_name,
+        source: m.source || 'auto'
       };
     }
   });
@@ -4193,17 +4207,15 @@ function renderCrewNotifyTable(flights) {
 async function renderFmsPreviewContent(flights, shouldResetInputs = true) {
   state.fmsPreviewFlights = flights;
   
-  // 1. Tải danh sách thành viên Zalo và mapping (nếu chưa tải)
+  // 1. Luôn tải lại mapping từ DB (tránh F5 / cache stale hiện 0/n)
   const btnConfirm = document.getElementById('btn-fms-confirm-preview');
   const originalConfirmText = btnConfirm.innerHTML;
   
-  if (!state.zaloMembers || state.zaloMembers.length === 0) {
-    btnConfirm.disabled = true;
-    btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu Zalo...';
-    await loadZaloMembersAndMappings();
-    btnConfirm.disabled = false;
-    btnConfirm.innerHTML = originalConfirmText;
-  }
+  btnConfirm.disabled = true;
+  btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải dữ liệu Zalo...';
+  await loadZaloMembersAndMappings();
+  btnConfirm.disabled = false;
+  btnConfirm.innerHTML = originalConfirmText;
 
   // Điền ngày và ca trực kế hoạch mặc định khi mở modal lần đầu
   if (shouldResetInputs) {
@@ -4346,13 +4358,17 @@ async function handleConfirmFmsPreview() {
           ? mapSel.options[mapSel.selectedIndex].text
           : '';
         if (zaloUid) {
-          const cleanZaloName = (zaloName && !/chưa map|chưa liên kết/i.test(zaloName)) ? zaloName : '';
-          mappings.push({
-            scheduleName,
-            zaloUid,
-            zaloName: cleanZaloName
-          });
-          nameToUidMap[nameKey] = zaloUid;
+          if (!isFullPersonName(scheduleName)) {
+            console.warn('[Mapping] Bỏ qua tên không đầy đủ:', scheduleName);
+          } else {
+            const cleanZaloName = (zaloName && !/chưa map|chưa liên kết/i.test(zaloName)) ? zaloName : '';
+            mappings.push({
+              scheduleName,
+              zaloUid,
+              zaloName: cleanZaloName
+            });
+            nameToUidMap[nameKey] = zaloUid;
+          }
         }
       }
       if (notifySel) {
@@ -5489,6 +5505,15 @@ async function handleSaveSingleMapping() {
 
   if (!scheduleName || !zaloUid) {
     showToast('Vui lòng điền đầy đủ Tên trên lịch trực và chọn Tài khoản Zalo!', 'error', 'Thiếu thông tin');
+    return;
+  }
+
+  if (!isFullPersonName(scheduleName)) {
+    showToast(
+      'Chỉ nhận tên đầy đủ (vd: Nguyễn Đình Hùng). Không nhận HÙNG, N.LONG, TRỪNG...',
+      'error',
+      'Tên không hợp lệ'
+    );
     return;
   }
 

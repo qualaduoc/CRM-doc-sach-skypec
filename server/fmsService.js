@@ -10,6 +10,12 @@ const {
   listAirlineMappings
 } = require('./airlineCodes');
 const { archiveFromLiveRow, upsertMonitorEvent } = require('./monitorArchive');
+const {
+  normalizeMapKey: normalizeMapKeyCore,
+  buildMappingLookup,
+  resolveMapping,
+  resolveCrewUids
+} = require('./zaloMapping');
 
 const HOST = 'fms.vietnamairlines.com';
 
@@ -511,18 +517,11 @@ function normalizeFmsFlightNo(fn) {
 }
 
 /**
- * Key chuẩn cho map Zalo ↔ tên lịch (UI + API + tin nhắn dùng chung logic).
- * Bỏ dấu, hoa, gộp khoảng trắng — khớp CHẶT, không soft-match.
+ * Key chuẩn map Zalo ↔ tên lịch (bỏ dấu + hoa). Delegate zaloMapping.js.
+ * Khớp CHẶT theo key — không soft-match.
  */
 function normalizeMapKey(name) {
-  return String(name || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toUpperCase()
-    .replace(/\s+/g, ' ')
-    .trim();
+  return normalizeMapKeyCore(name);
 }
 
 function normalizeFmsAcReg(ac) {
@@ -2385,57 +2384,47 @@ async function syncFMSData(forceDate = null, forceShift = null) {
 
           const shouldNotify = eventQueue.length > 0;
 
-          // --- Resolve tag Zalo: BẮT BUỘC cố gắng tag cả Lái + NV ---
+          // --- Resolve tag Zalo: Lái + NV theo mapping DB (name_key bỏ dấu; manual ưu tiên) ---
           const rawDr = sched && sched.driver_name ? String(sched.driver_name).trim() : '';
           const rawOp = sched && sched.operator_name ? String(sched.operator_name).trim() : '';
-          // Chỉ map CHẶT theo DB (normalizeMapKey exact) — không soft-match includes/tên cuối
-          const drKey = normalizeMapKey(rawDr);
-          const opKey = normalizeMapKey(rawOp);
 
           let driverCrewPart = rawDr || '-';
           let operatorCrewPart = rawOp || '-';
           let driverMentionInfo = null;
           let operatorMentionInfo = null;
+          let resolvedNotifyUids = [];
 
           if (shouldNotify) {
             try {
-              const dbMappings = await db.all('SELECT schedule_name, zalo_uid, zalo_name FROM zalo_user_mappings');
-              const mappingMap = {};
-              dbMappings.forEach(m => {
-                const key = normalizeMapKey(m.schedule_name);
-                if (key) {
-                  // Giữ bản ghi đầu nếu trùng key (không ghi đè lung tung)
-                  if (!mappingMap[key]) {
-                    mappingMap[key] = {
-                      uid: m.zalo_uid,
-                      zaloName: m.zalo_name || '',
-                      scheduleName: m.schedule_name
-                    };
-                  }
-                }
-              });
-              // Exact key only — không includes / không token cuối
-              const resolveStrict = (normKey) => {
-                if (!normKey || normKey === '-') return null;
-                return mappingMap[normKey] || null;
-              };
-              if (drKey) {
-                const mapInfo = resolveStrict(drKey);
-                if (mapInfo && mapInfo.uid) {
-                  // Tag Zalo dùng display Zalo; kèm tên lịch để ops đọc rõ
-                  const tag = mapInfo.zaloName || rawDr;
+              const dbMappings = await db.all(
+                'SELECT schedule_name, zalo_uid, zalo_name, name_key, source FROM zalo_user_mappings'
+              );
+              const mappingLookup = buildMappingLookup(dbMappings);
+
+              if (rawDr) {
+                const mapInfo = resolveMapping(mappingLookup, rawDr);
+                if (mapInfo && mapInfo.zalo_uid) {
+                  const tag = mapInfo.zalo_name || rawDr;
                   driverCrewPart = `@${tag}`;
-                  driverMentionInfo = { uid: mapInfo.uid, tagLabel: `@${tag}` };
+                  driverMentionInfo = {
+                    uid: String(mapInfo.zalo_uid).trim(),
+                    tagLabel: `@${tag}`
+                  };
                 }
               }
-              if (opKey) {
-                const mapInfo = resolveStrict(opKey);
-                if (mapInfo && mapInfo.uid) {
-                  const tag = mapInfo.zaloName || rawOp;
+              if (rawOp) {
+                const mapInfo = resolveMapping(mappingLookup, rawOp);
+                if (mapInfo && mapInfo.zalo_uid) {
+                  const tag = mapInfo.zalo_name || rawOp;
                   operatorCrewPart = `@${tag}`;
-                  operatorMentionInfo = { uid: mapInfo.uid, tagLabel: `@${tag}` };
+                  operatorMentionInfo = {
+                    uid: String(mapInfo.zalo_uid).trim(),
+                    tagLabel: `@${tag}`
+                  };
                 }
               }
+              // Inbox: luôn resolve từ mapping theo tên lịch (không tin crew_zalo_uids stale)
+              resolvedNotifyUids = resolveCrewUids(mappingLookup, rawDr, rawOp);
             } catch (mappingErr) {
               console.error('[Mapping Fetch Error]', mappingErr.message);
             }
@@ -2552,8 +2541,11 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
             const targetGroupId = groupSetting ? groupSetting.value : null;
             const notifyType = sched ? (sched.notify_type || 1) : 1;
-            const crewZaloUidsStr = sched ? (sched.crew_zalo_uids || '') : '';
-            const uids = crewZaloUidsStr.split(',').map(uid => uid.trim()).filter(Boolean);
+            const uids = (resolvedNotifyUids && resolvedNotifyUids.length > 0)
+              ? resolvedNotifyUids
+              : (sched && sched.crew_zalo_uids
+                ? String(sched.crew_zalo_uids).split(',').map(uid => uid.trim()).filter(Boolean)
+                : []);
 
             if (isSkyOneEnabled) {
               if ((notifyType === 1 || notifyType === 3) && targetGroupId) {
