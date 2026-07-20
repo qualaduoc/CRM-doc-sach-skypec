@@ -2978,12 +2978,22 @@ function isPersonMappedInDb(personName, mapDb) {
   return !!resolveZaloUidForPerson(personName, mapDb);
 }
 
-function buildZaloMemberOptionsHtml(selectedUid) {
-  let html = '<option value="">— Chưa map —</option>';
+function buildZaloMemberOptionsHtml(selectedUid, fallbackLabel) {
+  const want = selectedUid != null && selectedUid !== '' ? String(selectedUid).trim() : '';
+  let html = `<option value="">— Chưa map —</option>`;
+  let found = false;
   (state.zaloMembers || []).forEach(mem => {
-    const sel = mem.uid === selectedUid ? 'selected' : '';
-    html += `<option value="${escapeHtml(mem.uid)}" ${sel}>${escapeHtml(mem.displayName)}</option>`;
+    const uid = mem && mem.uid != null ? String(mem.uid).trim() : '';
+    if (!uid) return;
+    const sel = want && uid === want;
+    if (sel) found = true;
+    html += `<option value="${escapeHtml(uid)}" ${sel ? 'selected' : ''}>${escapeHtml(mem.displayName || uid)}</option>`;
   });
+  // UID đã map trong DB nhưng không còn trong danh sách thành viên nhóm → vẫn hiện tên đã lưu
+  if (want && !found) {
+    const label = fallbackLabel || `Zalo (đã map) ${want.slice(-6)}`;
+    html += `<option value="${escapeHtml(want)}" selected>${escapeHtml(label)}</option>`;
+  }
   return html;
 }
 
@@ -2996,14 +3006,17 @@ function buildPersonZaloRowHtml(p, opts = {}) {
   const currentSel = opts.currentSelections || {};
   const role = personRoleMeta(p.roles);
   const nameKey = normalizeMapKey(p.name || '');
-  let savedUid = '';
-  if (currentSel[nameKey] !== undefined) {
-    savedUid = currentSel[nameKey];
-  } else {
-    savedUid = resolveZaloUidForPerson(p.name, mapDb);
+  const dbUid = resolveZaloUidForPerson(p.name, mapDb);
+  // Ưu tiên lựa chọn user trên form CHỈ khi đã chọn UID; "" không được ghi đè map DB
+  let savedUid = dbUid || '';
+  if (currentSel[nameKey] !== undefined && String(currentSel[nameKey]).trim() !== '') {
+    savedUid = String(currentSel[nameKey]).trim();
   }
-  // Chỉ coi “đã map” khi có UID từ DB (không soft-match Zalo)
-  const mapped = isPersonMappedInDb(p.name, mapDb);
+  const mapped = !!savedUid || isPersonMappedInDb(p.name, mapDb);
+  const dbHit = mapDb[nameKey];
+  const fallbackLabel = dbHit && (dbHit.zalo_name || dbHit.schedule_name)
+    ? (dbHit.zalo_name || dbHit.schedule_name)
+    : '';
   const notifyVal = currentSel[`notify::${nameKey}`] !== undefined
     ? currentSel[`notify::${nameKey}`]
     : (p.notifyType || 1);
@@ -3017,7 +3030,7 @@ function buildPersonZaloRowHtml(p, opts = {}) {
       <td>
         <select class="zalo-member-select fms-zalo-map-select ${mapped ? 'is-mapped' : 'is-unmapped'}"
           data-person="${escapeHtml(p.name)}" data-original-uid="${escapeHtml(savedUid || '')}">
-          ${buildZaloMemberOptionsHtml(savedUid || '')}
+          ${buildZaloMemberOptionsHtml(savedUid || '', fallbackLabel)}
         </select>
       </td>
       <td>
