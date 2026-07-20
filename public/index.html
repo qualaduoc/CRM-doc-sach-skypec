@@ -24,7 +24,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=3.2.4">
+  <link rel="stylesheet" href="style.css?v=3.2.5">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mini.min.js"></script>
   <style>
@@ -537,6 +537,69 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- ===== LỊCH SỬ / THỐNG KÊ THÁNG (lưu dài hạn) ===== -->
+          <div style="margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <h4 style="margin: 0; font-size: 1rem; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-clock-rotate-left"></i> Lịch sử &amp; Thống kê tháng
+              </h4>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                <label style="font-size: 0.78rem; color: var(--text-muted);">Từ
+                  <input type="date" id="monitor-hist-from" style="margin-left: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-elevated); color: inherit; font-size: 0.8rem;" />
+                </label>
+                <label style="font-size: 0.78rem; color: var(--text-muted);">Đến
+                  <input type="date" id="monitor-hist-to" style="margin-left: 4px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-elevated); color: inherit; font-size: 0.8rem;" />
+                </label>
+                <select id="monitor-hist-type" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-elevated); color: inherit; font-size: 0.8rem;">
+                  <option value="all">Mọi loại</option>
+                  <option value="CANCELLED_FUELED">Cancel → Tái xuất</option>
+                  <option value="DOMESTIC_TO_INTL">N.địa → Q.tế</option>
+                  <option value="INTL_TO_DOMESTIC">Q.tế → N.địa</option>
+                  <option value="TECHNICAL_HAN">NKT HAN-HAN</option>
+                </select>
+                <select id="monitor-hist-status" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-elevated); color: inherit; font-size: 0.8rem;">
+                  <option value="all">Mọi trạng thái</option>
+                  <option value="OPEN">Đang theo dõi</option>
+                  <option value="WARNED">Đã cảnh báo</option>
+                  <option value="CLOSED_SAFE">Đóng an toàn</option>
+                  <option value="RESOLVED">Đã xử lý</option>
+                  <option value="DELETED">Đã xóa live</option>
+                  <option value="EXPIRED">Hết hạn</option>
+                </select>
+                <input type="search" id="monitor-hist-q" placeholder="Tàu / chuyến..." style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-elevated); color: inherit; font-size: 0.8rem; width: 120px;" />
+                <button type="button" id="btn-monitor-hist-refresh" class="btn-secondary" style="margin-top: 0; padding: 5px 12px; font-size: 0.8rem;">
+                  <i class="fa-solid fa-rotate"></i> Lọc
+                </button>
+                <button type="button" id="btn-monitor-hist-export" class="btn-glow" style="margin-top: 0; padding: 5px 14px; font-size: 0.8rem; background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%); border: none; width: auto !important;">
+                  <i class="fa-solid fa-file-word"></i> Xuất báo cáo DOCX
+                </button>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+              Lưu <strong>dài hạn</strong> mọi sự kiện (Cancel, đổi tàu, NKT, tái xuất) kèm nguyên nhân &amp; trạng thái — kể cả khi bảng live đã dọn.
+            </p>
+            <div id="monitor-hist-summary" style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.78rem;"></div>
+            <div class="table-container" style="max-height: 360px; overflow: auto;">
+              <table class="crm-table" style="min-width: 900px; font-size: 0.8rem;">
+                <thead>
+                  <tr>
+                    <th>Ngày SK</th>
+                    <th>Loại</th>
+                    <th>Tàu</th>
+                    <th>Chuyến nạp</th>
+                    <th>Chặng / kg</th>
+                    <th>Chặng mới</th>
+                    <th>Trạng thái</th>
+                    <th>Nguyên nhân / sự kiện</th>
+                  </tr>
+                </thead>
+                <tbody id="monitor-hist-body">
+                  <tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 20px;">Chưa tải lịch sử.</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -1448,6 +1511,6 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     </div>
   </div>
 
-  <script src="app_v3.js?v=3.2.4"></script>
+  <script src="app_v3.js?v=3.2.5"></script>
 </body>
 </html>

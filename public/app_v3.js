@@ -795,6 +795,22 @@ function setupEventListeners() {
     });
   }
 
+  // Lịch sử giám sát tháng + xuất DOCX
+  const btnMonHist = document.getElementById('btn-monitor-hist-refresh');
+  if (btnMonHist) btnMonHist.addEventListener('click', () => fetchMonitorHistory());
+  const btnMonExport = document.getElementById('btn-monitor-hist-export');
+  if (btnMonExport) btnMonExport.addEventListener('click', () => exportMonitorHistoryDocx());
+  ['monitor-hist-from', 'monitor-hist-to', 'monitor-hist-type', 'monitor-hist-status'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => fetchMonitorHistory());
+  });
+  const monQ = document.getElementById('monitor-hist-q');
+  if (monQ) {
+    monQ.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') fetchMonitorHistory();
+    });
+  }
+
   // Cảnh báo sai tên hãng HK
   const btnAirlineRefresh = document.getElementById('btn-airline-alert-refresh');
   if (btnAirlineRefresh) btnAirlineRefresh.addEventListener('click', () => fetchAirlineAlerts());
@@ -2602,11 +2618,156 @@ async function fetchTempImportExportData() {
         </tr>
       `;
     }).join('');
+
+    // Đồng thời tải lịch sử tháng (kho dài hạn)
+    fetchMonitorHistory();
   } catch (err) {
     console.error('[Frontend Tạm nhập] Lỗi tải dữ liệu:', err.message);
   }
 }
 window.fetchTempImportExportData = fetchTempImportExportData;
+
+// ── Lịch sử giám sát dài hạn (tháng) + xuất DOCX ──────────────────────────
+function initMonitorHistoryDefaults() {
+  const fromEl = document.getElementById('monitor-hist-from');
+  const toEl = document.getElementById('monitor-hist-to');
+  if (!fromEl || !toEl) return;
+  const base = document.getElementById('fms-filter-date');
+  const d = (base && base.value) || new Date().toISOString().slice(0, 10);
+  const m = d.match(/^(\d{4})-(\d{2})-/);
+  if (m && !fromEl.value) {
+    fromEl.value = `${m[1]}-${m[2]}-01`;
+    const last = new Date(+m[1], +m[2], 0).getDate();
+    toEl.value = `${m[1]}-${m[2]}-${String(last).padStart(2, '0')}`;
+  }
+}
+
+function monitorTypeLabel(t) {
+  return ({
+    CANCELLED_FUELED: 'Cancel → Tái xuất',
+    DOMESTIC_TO_INTL: 'N.địa → Q.tế',
+    INTL_TO_DOMESTIC: 'Q.tế → N.địa',
+    TECHNICAL_HAN: 'NKT HAN-HAN'
+  })[t] || t || '-';
+}
+
+function monitorStatusLabel(s) {
+  return ({
+    OPEN: 'Đang theo dõi',
+    WARNED: 'Đã cảnh báo',
+    CLOSED_SAFE: 'Đóng an toàn',
+    RESOLVED: 'Đã xử lý',
+    EXPIRED: 'Hết hạn',
+    DELETED: 'Đã xóa live',
+    LOST: 'Mất live'
+  })[s] || s || '-';
+}
+
+function monitorStatusColor(s) {
+  return ({
+    OPEN: '#38bdf8',
+    WARNED: '#f59e0b',
+    CLOSED_SAFE: '#22c55e',
+    RESOLVED: '#16a34a',
+    EXPIRED: '#94a3b8',
+    DELETED: '#f87171',
+    LOST: '#a78bfa'
+  })[s] || 'var(--text-muted)';
+}
+
+async function fetchMonitorHistory() {
+  const tbody = document.getElementById('monitor-hist-body');
+  const sumEl = document.getElementById('monitor-hist-summary');
+  if (!tbody) return;
+  initMonitorHistoryDefaults();
+  const from = document.getElementById('monitor-hist-from')?.value || '';
+  const to = document.getElementById('monitor-hist-to')?.value || '';
+  const type = document.getElementById('monitor-hist-type')?.value || 'all';
+  const status = document.getElementById('monitor-hist-status')?.value || 'all';
+  const q = document.getElementById('monitor-hist-q')?.value || '';
+  const params = new URLSearchParams({ from, to, monitor_type: type, status, q });
+  try {
+    const res = await fetch(`/api/fms/monitor-events?${params}`, {
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#f87171;padding:16px;">${data.error || 'Lỗi tải lịch sử'}</td></tr>`;
+      return;
+    }
+    const rows = data.data || [];
+    const summary = data.summary || { total: 0, byType: {}, byStatus: {} };
+    if (sumEl) {
+      const chips = [
+        `<span style="padding:3px 10px;border-radius:999px;background:rgba(15,118,110,0.15);border:1px solid rgba(15,118,110,0.35);color:#5eead4;font-weight:600;">Tổng: ${summary.total}</span>`
+      ];
+      Object.entries(summary.byType || {}).forEach(([k, n]) => {
+        chips.push(`<span style="padding:3px 8px;border-radius:6px;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.25);color:#7dd3fc;">${monitorTypeLabel(k)}: ${n}</span>`);
+      });
+      Object.entries(summary.byStatus || {}).forEach(([k, n]) => {
+        chips.push(`<span style="padding:3px 8px;border-radius:6px;border:1px solid ${monitorStatusColor(k)}55;color:${monitorStatusColor(k)};">${monitorStatusLabel(k)}: ${n}</span>`);
+      });
+      sumEl.innerHTML = chips.join('');
+    }
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">Không có sự kiện trong khoảng đã chọn.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      const kg = Number(r.fuel_order || 0).toLocaleString('vi-VN');
+      const next = r.new_flight_no
+        ? `<span style="color:#fb923c;font-weight:600;">${r.new_flight_no}</span><br><span style="font-size:0.72rem;color:var(--text-muted);">${r.new_route || ''}</span>`
+        : '<span style="color:var(--text-muted);font-style:italic;">—</span>';
+      return `<tr>
+        <td style="white-space:nowrap;">${r.event_date || '-'}</td>
+        <td>${monitorTypeLabel(r.monitor_type)}</td>
+        <td style="font-weight:700;">${r.ac_reg || '-'}</td>
+        <td>${r.old_flight_no || '-'}<br><span style="font-size:0.72rem;color:var(--text-muted);">${r.old_time || ''}</span></td>
+        <td>${r.old_route || '-'} · ${kg} kg</td>
+        <td>${next}</td>
+        <td><span style="color:${monitorStatusColor(r.status)};font-weight:600;font-size:0.75rem;">${monitorStatusLabel(r.status)}</span></td>
+        <td style="font-size:0.75rem;max-width:280px;line-height:1.35;color:var(--text-muted);">${r.reason || r.resolved_note || '-'}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    console.error('[Monitor history]', e);
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#f87171;padding:16px;">Lỗi: ${e.message}</td></tr>`;
+  }
+}
+window.fetchMonitorHistory = fetchMonitorHistory;
+
+async function exportMonitorHistoryDocx() {
+  initMonitorHistoryDefaults();
+  const from = document.getElementById('monitor-hist-from')?.value || '';
+  const to = document.getElementById('monitor-hist-to')?.value || '';
+  const type = document.getElementById('monitor-hist-type')?.value || 'all';
+  const status = document.getElementById('monitor-hist-status')?.value || 'all';
+  const q = document.getElementById('monitor-hist-q')?.value || '';
+  const params = new URLSearchParams({ from, to, monitor_type: type, status, q });
+  try {
+    showToast('Đang tạo file DOCX...', 'info', 'Xuất báo cáo');
+    const res = await fetch(`/api/fms/monitor-events/export?${params}`, {
+      headers: { Authorization: `Bearer ${state.token}` }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Bao_cao_Giam_sat_Tai_xuat_${from}_${to}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Đã tải báo cáo DOCX.', 'success', 'Thành công');
+  } catch (e) {
+    showToast(e.message || 'Lỗi xuất DOCX', 'error', 'Thất bại');
+  }
+}
+window.exportMonitorHistoryDocx = exportMonitorHistoryDocx;
 
 // Xác nhận hoàn thành xử lý hóa đơn hoặc xóa theo dõi
 async function confirmTempImportExport(id, action) {

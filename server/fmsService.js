@@ -9,6 +9,7 @@ const {
   getExpectedAirlineName,
   listAirlineMappings
 } = require('./airlineCodes');
+const { archiveFromLiveRow, upsertMonitorEvent } = require('./monitorArchive');
 
 const HOST = 'fms.vietnamairlines.com';
 
@@ -1434,11 +1435,28 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
         ? ` (sau nạp ~${minsAfter}p; kỳ vọng bay 40p–${CANCEL_TYPICAL_MAX_HOURS}h)`
         : '';
 
-      await db.run(
+      const ins = await db.run(
         `INSERT INTO fms_temp_import_exports
           (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time, is_warned)
          VALUES (?, ?, ?, ?, ?, 'CANCELLED_FUELED', ?, 0)`,
         acReg, fltNo, route, kg, targetDate, timeFuel
+      );
+
+      // Lưu dài hạn (thống kê tháng) — không phụ thuộc bảng live
+      await archiveFromLiveRow(
+        db,
+        {
+          id: ins && ins.lastID,
+          ac_reg: acReg,
+          old_flight_no: fltNo,
+          old_route: route,
+          fuel_order: kg,
+          date: targetDate,
+          monitor_type: 'CANCELLED_FUELED',
+          old_time: timeFuel
+        },
+        'OPEN',
+        { zalo_sent: true, resolved_note: 'Cancel phát hiện — bắt đầu bám tái xuất' }
       );
 
       const msg = `⚠️ [CẢNH BÁO CANCEL CHUYẾN BAY]
@@ -1553,6 +1571,7 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
 
       // Chỉ VN (NKT synthetic VNNKT vẫn startsWith VN)
       if (oldFlt && !isVnAirlineFlightNo(oldFlt) && mType !== 'TECHNICAL_HAN') {
+        await archiveFromLiveRow(db, track, 'DELETED', { resolved_note: 'Xóa: không phải chuyến VN' });
         await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', track.id);
         continue;
       }
@@ -1563,6 +1582,9 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
         // (không dùng list ngày khác — VN1806 ngày 20 trên tàu khác ≠ hủy ngày 19)
         if (String(targetDate) === String(track.date) && vnaFltSet.has(oldFlt)) {
           log(`[Cancel] Self-heal: ${oldFlt} đã có lại trên VNA ngày ${track.date} → xóa #${track.id}`);
+          await archiveFromLiveRow(db, track, 'DELETED', {
+            resolved_note: `Self-heal: ${oldFlt} đã có lại trên VNA (Cancel giả)`
+          });
           await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', track.id);
           continue;
         }
@@ -1578,6 +1600,9 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
           );
           if (liveOld && liveOld.ac_reg && acRegsMatch(liveOld.ac_reg, trackAcReg)) {
             log(`[Giám sát] Self-heal đổi tàu: ${oldFlt} vẫn tàu ${liveOld.ac_reg} → xóa #${track.id}`);
+            await archiveFromLiveRow(db, track, 'DELETED', {
+              resolved_note: `Self-heal: ${oldFlt} vẫn tàu ${liveOld.ac_reg} (đổi tàu giả)`
+            });
             await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', track.id);
             continue;
           }
@@ -1669,6 +1694,16 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
            WHERE id = ?`,
           next.fltNo, next.route, track.id
         );
+        await archiveFromLiveRow(
+          db,
+          { ...track, new_flight_no: next.fltNo, new_route: next.route },
+          'CLOSED_SAFE',
+          {
+            new_flight_no: next.fltNo,
+            new_route: next.route,
+            resolved_note: `Đóng an toàn: ${decision.kind} → ${next.fltNo} (${next.route})`
+          }
+        );
         continue;
       }
 
@@ -1682,6 +1717,17 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
            SET new_flight_no = ?, new_route = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP
            WHERE id = ? AND is_warned = 0`,
           next.fltNo, next.route, track.id
+        );
+        await archiveFromLiveRow(
+          db,
+          { ...track, new_flight_no: next.fltNo, new_route: next.route },
+          'WARNED',
+          {
+            new_flight_no: next.fltNo,
+            new_route: next.route,
+            zalo_sent: true,
+            resolved_note: `Phát hiện chặng mới: ${next.fltNo} (${next.route}) [${decision.kind}]`
+          }
         );
         sendImportExportZalo(targetGroupId, isSkyOneEnabled, warningMsg, `Giám sát ${trackAcReg}`);
       }
@@ -2944,10 +2990,20 @@ async function syncFmsSkypecLive(forceDate = null) {
 
               if (monitorType && !exists) {
                 log(`[FMS Skypec Live] Phát hiện đổi tàu chéo: Tàu ${oldAcReg} đã nạp ${oldFuelOrder} kg dầu cho chuyến ${cleanFltNo} (${oldRoute}) nhưng bị đổi. Kiểu giám sát: ${monitorType}`);
-                await db.run(`
+                const insCh = await db.run(`
                   INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
                   VALUES (?, ?, ?, ?, ?, ?, ?)
                 `, oldAcReg, cleanFltNo, oldRoute, oldFuelOrder, flight.date, monitorType, oldFlight.time_fuel || '-');
+                await archiveFromLiveRow(db, {
+                  id: insCh && insCh.lastID,
+                  ac_reg: oldAcReg,
+                  old_flight_no: cleanFltNo,
+                  old_route: oldRoute,
+                  fuel_order: oldFuelOrder,
+                  date: flight.date,
+                  monitor_type: monitorType,
+                  old_time: oldFlight.time_fuel || '-'
+                }, 'OPEN');
               }
               }
             }
@@ -2975,10 +3031,20 @@ async function syncFmsSkypecLive(forceDate = null) {
             );
             if (!exists) {
               log(`[FMS Skypec Live] NKT HAN-HAN: Tàu ${currentAcReg} nạp ${currentFuel} kg (${cleanFltNo}) date=${flight.date} → giám sát.`);
-              await db.run(`
+              const insNkt = await db.run(`
                 INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
                 VALUES (?, ?, ?, ?, ?, 'TECHNICAL_HAN', ?)
               `, currentAcReg, cleanFltNo, currentRoute, currentFuel, flight.date, flight.time_fuel || '-');
+              await archiveFromLiveRow(db, {
+                id: insNkt && insNkt.lastID,
+                ac_reg: currentAcReg,
+                old_flight_no: cleanFltNo,
+                old_route: currentRoute,
+                fuel_order: currentFuel,
+                date: flight.date,
+                monitor_type: 'TECHNICAL_HAN',
+                old_time: flight.time_fuel || '-'
+              }, 'OPEN');
             }
             }
           }

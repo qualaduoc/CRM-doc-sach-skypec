@@ -165,6 +165,31 @@ async function getDb() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Lưu dài hạn sự kiện giám sát (thống kê tháng / xuất DOCX) — không xóa theo live
+    CREATE TABLE IF NOT EXISTS fms_monitor_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_key TEXT NOT NULL UNIQUE,
+      ac_reg TEXT NOT NULL,
+      monitor_type TEXT NOT NULL,
+      event_date TEXT NOT NULL,
+      old_flight_no TEXT,
+      old_route TEXT,
+      old_time TEXT DEFAULT '-',
+      fuel_order INTEGER DEFAULT 0,
+      reason TEXT,
+      status TEXT DEFAULT 'OPEN',
+      new_flight_no TEXT,
+      new_route TEXT,
+      resolved_at TEXT,
+      resolved_note TEXT,
+      zalo_sent INTEGER DEFAULT 0,
+      source_monitor_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_monitor_events_date ON fms_monitor_events(event_date);
+    CREATE INDEX IF NOT EXISTS idx_monitor_events_status ON fms_monitor_events(status);
+
     -- Snapshot chuyến từng xuất hiện trên FMS VNA (để detect Cancel đúng, không nhầm hãng ngoài)
     CREATE TABLE IF NOT EXISTS fms_vna_presence (
       flight_no TEXT NOT NULL,
@@ -251,6 +276,35 @@ async function getDb() {
   // Thêm các cột cho fms_temp_import_exports của database cũ
   try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN monitor_type TEXT DEFAULT 'DOMESTIC_TO_INTL';`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN old_time TEXT DEFAULT '-';`); } catch(e) {}
+
+  // Lịch sử giám sát dài hạn (DB cũ)
+  try {
+    await dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS fms_monitor_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_key TEXT NOT NULL UNIQUE,
+        ac_reg TEXT NOT NULL,
+        monitor_type TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        old_flight_no TEXT,
+        old_route TEXT,
+        old_time TEXT DEFAULT '-',
+        fuel_order INTEGER DEFAULT 0,
+        reason TEXT,
+        status TEXT DEFAULT 'OPEN',
+        new_flight_no TEXT,
+        new_route TEXT,
+        resolved_at TEXT,
+        resolved_note TEXT,
+        zalo_sent INTEGER DEFAULT 0,
+        source_monitor_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (e) {}
+  try { await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_monitor_events_date ON fms_monitor_events(event_date);`); } catch (e) {}
+  try { await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_monitor_events_status ON fms_monitor_events(status);`); } catch (e) {}
 
   // Snapshot FMS VNA cho detect Cancel (DB cũ)
   try { await dbInstance.exec(`ALTER TABLE fms_vna_presence ADD COLUMN last_etd TEXT;`); } catch (e) {}

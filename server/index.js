@@ -2990,26 +2990,127 @@ app.post('/api/fms/temp-import-exports/confirm', authenticateToken, async (req, 
 
   try {
     const db = await getDb();
+    const { archiveFromLiveRow } = require('./monitorArchive');
+    const row = await db.get('SELECT * FROM fms_temp_import_exports WHERE id = ?', id);
+
     if (action === 'confirm') {
-      // Đánh dấu là đã xử lý/xác nhận (is_warned = 2)
       await db.run(
         "UPDATE fms_temp_import_exports SET is_warned = 2, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         id
       );
+      if (row) {
+        await archiveFromLiveRow(db, { ...row, is_warned: 2 }, 'RESOLVED', {
+          resolved_note: 'Xác nhận đã xử lý thủ công trên UI'
+        });
+      }
       res.json({ success: true, message: 'Đã chuyển trạng thái sang Đã xử lý!' });
     } else if (action === 'pending') {
-      // Đặt lại về trạng thái đang theo dõi/chờ xử lý (is_warned = 0)
       await db.run(
         "UPDATE fms_temp_import_exports SET is_warned = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         id
       );
+      if (row) {
+        await archiveFromLiveRow(db, { ...row, is_warned: 0 }, 'OPEN', {
+          resolved_note: 'Khôi phục Chờ xử lý trên UI',
+          forceStatus: true
+        });
+      }
       res.json({ success: true, message: 'Đã khôi phục trạng thái sang Chờ xử lý!' });
     } else {
-      // Xóa hẳn bản ghi khỏi database
+      if (row) {
+        await archiveFromLiveRow(db, row, 'DELETED', {
+          resolved_note: 'Xóa theo dõi thủ công trên UI'
+        });
+      }
       await db.run("DELETE FROM fms_temp_import_exports WHERE id = ?", id);
       res.json({ success: true, message: 'Đã xóa bản ghi theo dõi thành công!' });
     }
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// API lịch sử dài hạn giám sát (thống kê tháng) — không phụ thuộc bảng live
+app.get('/api/fms/monitor-events', authenticateToken, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { listMonitorEvents, summarizeEvents, typeLabel, statusLabel } = require('./monitorArchive');
+    const { getVietnamDbDateStr } = require('./fmsService');
+    let { from, to, status, monitor_type, q } = req.query;
+    const today = getVietnamDbDateStr();
+    // Mặc định: tháng hiện tại (VN)
+    if (!from || !to) {
+      const m = String(today).match(/^(\d{4})-(\d{2})-/);
+      if (m) {
+        from = from || `${m[1]}-${m[2]}-01`;
+        const last = new Date(Date.UTC(+m[1], +m[2], 0)).getUTCDate();
+        to = to || `${m[1]}-${m[2]}-${String(last).padStart(2, '0')}`;
+      } else {
+        from = from || today;
+        to = to || today;
+      }
+    }
+    const rows = await listMonitorEvents(db, {
+      from: String(from),
+      to: String(to),
+      status: status || 'all',
+      monitor_type: monitor_type || 'all',
+      q: q || ''
+    });
+    const summary = await summarizeEvents(rows);
+    res.json({
+      success: true,
+      data: rows,
+      summary,
+      meta: {
+        from,
+        to,
+        count: rows.length,
+        typeLabels: require('./monitorArchive').TYPE_LABELS,
+        statusLabels: require('./monitorArchive').STATUS_LABELS
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Xuất báo cáo DOCX lịch sử giám sát
+app.get('/api/fms/monitor-events/export', authenticateToken, async (req, res) => {
+  try {
+    const db = await getDb();
+    const { listMonitorEvents, buildMonitorEventsDocx } = require('./monitorArchive');
+    const { getVietnamDbDateStr } = require('./fmsService');
+    let { from, to, status, monitor_type, q } = req.query;
+    const today = getVietnamDbDateStr();
+    if (!from || !to) {
+      const m = String(today).match(/^(\d{4})-(\d{2})-/);
+      if (m) {
+        from = from || `${m[1]}-${m[2]}-01`;
+        const last = new Date(Date.UTC(+m[1], +m[2], 0)).getUTCDate();
+        to = to || `${m[1]}-${m[2]}-${String(last).padStart(2, '0')}`;
+      } else {
+        from = from || today;
+        to = to || today;
+      }
+    }
+    const rows = await listMonitorEvents(db, {
+      from: String(from),
+      to: String(to),
+      status: status || 'all',
+      monitor_type: monitor_type || 'all',
+      q: q || ''
+    });
+    const buffer = await buildMonitorEventsDocx(rows, { from, to });
+    const fname = `Bao_cao_Giam_sat_Tai_xuat_${from}_${to}.docx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('[Export monitor-events DOCX]', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
