@@ -2783,13 +2783,15 @@ app.get('/api/fms/zalo/unmapped-crews', authenticateToken, async (req, res) => {
       addPerson(s.operator_name, 'NV tra nạp');
     });
 
+    const { normalizeMapKey } = require('./fmsService');
     const mappings = await db.all("SELECT schedule_name FROM zalo_user_mappings");
-    const mappedNames = new Set(mappings.map(m => m.schedule_name.toUpperCase().trim()));
+    const mappedNames = new Set(mappings.map(m => normalizeMapKey(m.schedule_name)));
 
     // Trả name thuần (không gắn role vào chuỗi) để map Zalo đúng từng người
     const unmapped = [];
     activePeople.forEach((info, key) => {
-      if (!mappedNames.has(key)) {
+      const mapKey = normalizeMapKey(info.name || key);
+      if (!mappedNames.has(mapKey)) {
         unmapped.push({
           name: info.name,
           roles: [...info.roles]
