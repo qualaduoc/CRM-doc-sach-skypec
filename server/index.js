@@ -1515,10 +1515,12 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
     await db.run('DELETE FROM fms_schedules WHERE date = ?', targetDate);
 
     // Tải toàn bộ zalo_user_mappings từ DB để tự động map tên sang zalo_uid ở Backend
+    const { normalizeMapKey } = require('./fmsService');
     const dbMappings = await db.all('SELECT schedule_name, zalo_uid FROM zalo_user_mappings');
     const mappingMap = {};
     dbMappings.forEach(m => {
-      mappingMap[m.schedule_name.toUpperCase().trim()] = m.zalo_uid;
+      const k = normalizeMapKey(m.schedule_name);
+      if (k) mappingMap[k] = m.zalo_uid;
     });
 
     // Thêm lịch mới — gán fms_date theo nguyên tắc ca ngày / ca tối
@@ -1529,19 +1531,14 @@ app.post('/api/fms/schedule', authenticateToken, async (req, res) => {
         isOvernightShift
       );
       
-      // Tự động phân giải Zalo UIDs ở Backend nếu chưa có
+      // Tự động phân giải Zalo UIDs ở Backend nếu chưa có (exact normalizeMapKey)
       let finalCrewZaloUids = item.crew_zalo_uids || '';
       if (!finalCrewZaloUids) {
         const uids = [];
-        const drName = item.driver_name ? item.driver_name.toUpperCase().trim() : '';
-        const opName = item.operator_name ? item.operator_name.toUpperCase().trim() : '';
-        
-        if (drName && mappingMap[drName]) {
-          uids.push(mappingMap[drName]);
-        }
-        if (opName && mappingMap[opName]) {
-          uids.push(mappingMap[opName]);
-        }
+        const drName = normalizeMapKey(item.driver_name || '');
+        const opName = normalizeMapKey(item.operator_name || '');
+        if (drName && mappingMap[drName]) uids.push(mappingMap[drName]);
+        if (opName && mappingMap[opName]) uids.push(mappingMap[opName]);
         finalCrewZaloUids = Array.from(new Set(uids)).join(',');
       }
 
@@ -2902,9 +2899,13 @@ app.get('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
 });
 
 // API thêm/cập nhật mapping Zalo
+// Quyền: admin / perm_zalo / perm_fms (mapping phục vụ báo tin FMS)
 app.post('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
-    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1 && req.user.perm_fms !== 1) {
+    return res.status(403).json({
+      success: false,
+      error: 'Không có quyền map Zalo (cần Admin, quyền Zalo hoặc quyền FMS)!'
+    });
   }
 
   const { scheduleName, zaloUid, zaloName } = req.body;
@@ -2912,26 +2913,49 @@ app.post('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
     return res.status(400).json({ success: false, error: 'Vui lòng cung cấp đầy đủ Tên lịch trực và Zalo UID!' });
   }
 
-  const cleanName = String(scheduleName).trim().toUpperCase();
+  const { normalizeMapKey } = require('./fmsService');
+  // Key chuẩn: bỏ dấu + hoa (khớp UI + tin nhắn)
+  const cleanName = normalizeMapKey(scheduleName);
+  if (!cleanName) {
+    return res.status(400).json({ success: false, error: 'Tên lịch trực không hợp lệ!' });
+  }
 
   try {
     const db = await getDb();
+    // Xóa bản ghi cũ cùng key (kể cả lưu kiểu UPPER có dấu trước đây)
+    const allMaps = await db.all('SELECT schedule_name FROM zalo_user_mappings');
+    for (const row of allMaps || []) {
+      if (normalizeMapKey(row.schedule_name) === cleanName && String(row.schedule_name) !== cleanName) {
+        await db.run('DELETE FROM zalo_user_mappings WHERE schedule_name = ?', row.schedule_name);
+      }
+    }
     await db.run(
       'INSERT OR REPLACE INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name) VALUES (?, ?, ?)',
       cleanName,
       String(zaloUid).trim(),
       zaloName ? String(zaloName).trim() : ''
     );
-    res.json({ success: true, message: `Đã cập nhật mapping cho nhân viên ${cleanName} thành công!` });
+    res.json({
+      success: true,
+      message: `Đã lưu map Zalo cho «${scheduleName}» thành công!`,
+      mapping: {
+        schedule_name: cleanName,
+        zalo_uid: String(zaloUid).trim(),
+        zalo_name: zaloName ? String(zaloName).trim() : ''
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// API xóa mapping Zalo (chỉ Admin hoặc người có quyền Zalo)
+// API xóa mapping Zalo (Admin / Zalo / FMS)
 app.delete('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1) {
-    return res.status(403).json({ success: false, error: 'Không có quyền thực hiện hành động này' });
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_zalo !== 1 && req.user.perm_fms !== 1) {
+    return res.status(403).json({
+      success: false,
+      error: 'Không có quyền xóa map Zalo (cần Admin, quyền Zalo hoặc quyền FMS)!'
+    });
   }
 
   const { scheduleName } = req.body;
@@ -2940,9 +2964,25 @@ app.delete('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   }
 
   try {
+    const { normalizeMapKey } = require('./fmsService');
+    const cleanName = normalizeMapKey(scheduleName);
     const db = await getDb();
-    await db.run('DELETE FROM zalo_user_mappings WHERE UPPER(schedule_name) = UPPER(?)', String(scheduleName).trim());
-    res.json({ success: true, message: `Đã xóa liên kết của nhân viên ${scheduleName} thành công!` });
+    // Xóa mọi bản ghi cùng key (cũ/mới)
+    const allMaps = await db.all('SELECT schedule_name FROM zalo_user_mappings');
+    let deleted = 0;
+    for (const row of allMaps || []) {
+      if (normalizeMapKey(row.schedule_name) === cleanName) {
+        await db.run('DELETE FROM zalo_user_mappings WHERE schedule_name = ?', row.schedule_name);
+        deleted++;
+      }
+    }
+    res.json({
+      success: true,
+      message: deleted
+        ? `Đã xóa liên kết của «${scheduleName}» thành công!`
+        : `Không tìm thấy map cho «${scheduleName}».`,
+      deleted
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

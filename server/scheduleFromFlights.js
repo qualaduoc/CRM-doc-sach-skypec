@@ -403,17 +403,8 @@ async function resolveZaloUids(db, driverName, operatorName) {
   for (const name of [driverName, operatorName]) {
     if (!name || /^NAFSC$/i.test(name) || name === '-') continue;
     const key = strip(name);
-    if (byKey[key]) {
-      uids.push(byKey[key]);
-      continue;
-    }
-    // khớp mềm họ-tên đầy đủ
-    for (const [k, uid] of Object.entries(byKey)) {
-      if (k.includes(key) || key.includes(k)) {
-        uids.push(uid);
-        break;
-      }
-    }
+    // Chỉ exact key — không soft-match includes (tránh gán nhầm Zalo)
+    if (byKey[key]) uids.push(byKey[key]);
   }
   return [...new Set(uids)].join(',');
 }

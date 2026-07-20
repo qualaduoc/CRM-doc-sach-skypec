@@ -1236,7 +1236,7 @@ function setupEventListeners() {
 
   }
 
-  // Map Zalo + báo tin — event global (FMS banner + tab Cấu hình)
+  // Map Zalo + báo tin — 1 listener body duy nhất (Settings + FMS)
   if (!document.body.dataset.zaloMapListener) {
     document.body.dataset.zaloMapListener = '1';
     document.body.addEventListener('change', async (e) => {
@@ -1246,7 +1246,7 @@ function setupEventListeners() {
       const isNotifySel = t.classList.contains('fms-crew-notify-select');
       if (!isMapSel && !isNotifySel) return;
 
-      // --- Map tài khoản Zalo ---
+      // --- Map tài khoản Zalo (lưu DB, exact key) ---
       if (isMapSel) {
         const select = t;
         const personName = select.getAttribute('data-person')
@@ -1254,11 +1254,13 @@ function setupEventListeners() {
           || (select.closest('[data-name]') && select.closest('[data-name]').getAttribute('data-name'));
         const zaloUid = select.value;
         const originalUid = select.getAttribute('data-original-uid') || '';
-        if (!personName) return;
+        if (!personName) {
+          showToast('Thiếu tên nhân sự trên form map', 'error', 'Zalo');
+          return;
+        }
 
         try {
           if (!zaloUid) {
-            // Bỏ map
             const res = await fetch('/api/fms/zalo/mappings', {
               method: 'DELETE',
               headers: {
@@ -1267,20 +1269,27 @@ function setupEventListeners() {
               },
               body: JSON.stringify({ scheduleName: personName })
             });
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 403) {
+              showToast(data.error || 'Thiếu quyền map Zalo (cần Admin / Zalo / FMS)', 'error', 'Không lưu được');
+              select.value = originalUid;
+              return;
+            }
             if (data.success) {
+              const dropKey = normalizeMapKey(personName);
               state.zaloMappings = (state.zaloMappings || []).filter(
-                m => String(m.schedule_name).toUpperCase().trim() !== personName.toUpperCase().trim()
+                m => normalizeMapKey(m.schedule_name) !== dropKey
               );
               select.setAttribute('data-original-uid', '');
               select.classList.remove('is-mapped');
               select.classList.add('is-unmapped');
-              showToast(`Đã bỏ map: ${personName}`, 'success', 'Zalo');
+              showToast(`Đã bỏ map & lưu DB: ${personName}`, 'success', 'Zalo');
+              // Reload mappings từ server (nguồn sự thật)
+              await loadZaloMembersAndMappings();
               renderSettingsZaloMappingPanel();
-              // Chỉ cập nhật banner FMS, không full table rebuild
               if (typeof renderFmsTable === 'function') renderFmsTable();
             } else {
-              showToast(data.error || 'Lỗi bỏ map', 'error');
+              showToast(data.error || 'Lỗi bỏ map', 'error', 'Không lưu được');
               select.value = originalUid;
             }
             return;
@@ -1301,35 +1310,25 @@ function setupEventListeners() {
               zaloName: /chưa map|chưa liên kết/i.test(zaloName) ? '' : zaloName
             })
           });
-          const data = await res.json();
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 403) {
+            showToast(data.error || 'Thiếu quyền map Zalo (cần Admin / Zalo / FMS)', 'error', 'Không lưu được');
+            select.value = originalUid;
+            return;
+          }
           if (data.success) {
-            const key = personName.toUpperCase().trim();
-            const existing = (state.zaloMappings || []).find(
-              m => String(m.schedule_name).toUpperCase().trim() === key
-            );
-            if (existing) {
-              existing.zalo_uid = zaloUid;
-              existing.zalo_name = zaloName;
-            } else {
-              state.zaloMappings = state.zaloMappings || [];
-              state.zaloMappings.push({
-                schedule_name: key,
-                zalo_uid: zaloUid,
-                zalo_name: zaloName
-              });
-            }
+            // Đồng bộ state từ server (tránh lệch key / soft-map giả)
+            await loadZaloMembersAndMappings();
             select.setAttribute('data-original-uid', zaloUid);
             select.classList.remove('is-unmapped');
             select.classList.add('is-mapped');
-            showToast(`Đã map ${personName}`, 'success', 'Zalo');
-            // Cập nhật crew_zalo_uids trên cache cho chuyến có người này
-            const pNorm = normalizePersonName(personName);
+            showToast(`Đã lưu map DB: ${personName} → Zalo`, 'success', 'Zalo');
+            const pNorm = normalizeMapKey(personName);
+            const mapDb = getZaloMapDb();
             cachedFmsRows.forEach(r => {
               const { driver, operator } = parseCrewRoles(r);
               const names = [driver, operator].filter(Boolean);
-              if (!names.some(n => normalizePersonName(n) === pNorm)) return;
-              const mapDb = getZaloMapDb();
-              mapDb[key] = zaloUid;
+              if (!names.some(n => normalizeMapKey(n) === pNorm)) return;
               const uids = [];
               names.forEach(n => {
                 const uid = resolveZaloUidForPerson(n, mapDb);
@@ -1338,13 +1337,13 @@ function setupEventListeners() {
               r.crew_zalo_uids = Array.from(new Set(uids)).join(',');
             });
             renderSettingsZaloMappingPanel();
-            renderFmsTable();
+            if (typeof renderFmsTable === 'function') renderFmsTable();
           } else {
-            showToast(data.error || 'Lỗi map Zalo', 'error');
+            showToast(data.error || 'Lỗi map Zalo', 'error', 'Không lưu được');
             select.value = originalUid;
           }
         } catch (err) {
-          showToast('Lỗi kết nối: ' + err.message, 'error');
+          showToast('Lỗi kết nối: ' + err.message, 'error', 'Không lưu được');
           select.value = originalUid;
         }
         return;
@@ -2850,6 +2849,11 @@ function normalizePersonName(name) {
     .trim();
 }
 
+/** Key map Zalo ↔ tên lịch (khớp server normalizeMapKey — exact only) */
+function normalizeMapKey(name) {
+  return normalizePersonName(name);
+}
+
 function cleanCrewPerson(name) {
   const s = String(name || '').trim();
   if (!s || s === '-' || s === '---' || /^NAFSC$/i.test(s)) return '';
@@ -2921,33 +2925,43 @@ function personRoleMeta(rolesSet) {
   return { label: 'NV', cls: 'is-nv' };
 }
 
-/** Map schedule_name -> zalo_uid từ state */
+/**
+ * Map schedule_name -> { uid, zalo_name } từ state (DB only).
+ * Key = normalizeMapKey (bỏ dấu + hoa).
+ */
 function getZaloMapDb() {
   const mapDb = {};
   (state.zaloMappings || []).forEach(m => {
-    if (m && m.schedule_name) {
-      mapDb[String(m.schedule_name).toUpperCase().trim()] = m.zalo_uid;
+    if (!m || !m.schedule_name) return;
+    const key = normalizeMapKey(m.schedule_name);
+    if (!key) return;
+    // Không soft-match; exact key only. Giữ entry đầu nếu trùng.
+    if (!mapDb[key]) {
+      mapDb[key] = {
+        uid: m.zalo_uid || '',
+        zalo_name: m.zalo_name || '',
+        schedule_name: m.schedule_name
+      };
     }
   });
   return mapDb;
 }
 
-/** Tìm zalo uid: DB mapping trước, rồi khớp displayName Zalo (soft) */
+/**
+ * UID Zalo chỉ khi có bản ghi DB (exact normalizeMapKey).
+ * KHÔNG soft-match displayName Zalo (tránh giả “đã map” / gán nhầm).
+ */
 function resolveZaloUidForPerson(personName, mapDb) {
-  const key = String(personName || '').toUpperCase().trim();
+  const key = normalizeMapKey(personName);
   if (!key) return '';
-  if (mapDb && mapDb[key]) return mapDb[key];
-  const norm = normalizePersonName(personName);
-  const members = state.zaloMembers || [];
-  // khớp exact displayName
-  let hit = members.find(m => normalizePersonName(m.displayName) === norm);
-  if (hit) return hit.uid;
-  // khớp chứa (tên không dấu chứa nhau)
-  hit = members.find(m => {
-    const dn = normalizePersonName(m.displayName);
-    return dn && norm && (dn.includes(norm) || norm.includes(dn));
-  });
-  return hit ? hit.uid : '';
+  const db = mapDb || getZaloMapDb();
+  const hit = db[key];
+  return hit && hit.uid ? hit.uid : '';
+}
+
+/** Có bản ghi mapping DB? (chấm xanh chỉ khi true) */
+function isPersonMappedInDb(personName, mapDb) {
+  return !!resolveZaloUidForPerson(personName, mapDb);
 }
 
 function buildZaloMemberOptionsHtml(selectedUid) {
@@ -2967,14 +2981,15 @@ function buildPersonZaloRowHtml(p, opts = {}) {
   const mapDb = opts.mapDb || getZaloMapDb();
   const currentSel = opts.currentSelections || {};
   const role = personRoleMeta(p.roles);
-  const nameKey = (p.name || '').toUpperCase();
+  const nameKey = normalizeMapKey(p.name || '');
   let savedUid = '';
   if (currentSel[nameKey] !== undefined) {
     savedUid = currentSel[nameKey];
   } else {
     savedUid = resolveZaloUidForPerson(p.name, mapDb);
   }
-  const mapped = !!savedUid;
+  // Chỉ coi “đã map” khi có UID từ DB (không soft-match Zalo)
+  const mapped = isPersonMappedInDb(p.name, mapDb);
   const notifyVal = currentSel[`notify::${nameKey}`] !== undefined
     ? currentSel[`notify::${nameKey}`]
     : (p.notifyType || 1);
@@ -2983,12 +2998,12 @@ function buildPersonZaloRowHtml(p, opts = {}) {
     <tr class="zalo-person-row zalo-mapping-row" data-name="${escapeHtml(p.name)}" data-person="${escapeHtml(p.name)}" data-date="${escapeHtml(p.date || '')}" data-key="${escapeHtml(p.key || nameKey)}">
       <td><span class="zalo-role-pill ${role.cls}">${role.label}</span></td>
       <td class="zalo-name-cell" title="${escapeHtml(p.name)}">
-        <span class="zalo-map-dot ${mapped ? 'on' : 'off'}" title="${mapped ? 'Đã map' : 'Chưa map'}"></span>${escapeHtml(p.name)}
+        <span class="zalo-map-dot ${mapped ? 'on' : 'off'}" title="${mapped ? 'Đã map (DB)' : 'Chưa map — chọn Zalo rồi đợi toast Lưu thành công'}"></span>${escapeHtml(p.name)}
       </td>
       <td>
         <select class="zalo-member-select fms-zalo-map-select ${mapped ? 'is-mapped' : 'is-unmapped'}"
-          data-person="${escapeHtml(p.name)}" data-original-uid="${escapeHtml(savedUid)}">
-          ${buildZaloMemberOptionsHtml(savedUid)}
+          data-person="${escapeHtml(p.name)}" data-original-uid="${escapeHtml(savedUid || '')}">
+          ${buildZaloMemberOptionsHtml(savedUid || '')}
         </select>
       </td>
       <td>
@@ -3110,10 +3125,10 @@ function renderSettingsZaloMappingPanel() {
     });
   }
 
-  // Giữ lựa chọn đang chọn trên form
+  // Giữ lựa chọn đang chọn trên form (key chuẩn normalizeMapKey)
   const currentSelections = {};
   body.querySelectorAll('.zalo-person-row, .zalo-mapping-row').forEach(row => {
-    const name = (row.getAttribute('data-name') || row.getAttribute('data-person') || '').toUpperCase();
+    const name = normalizeMapKey(row.getAttribute('data-name') || row.getAttribute('data-person') || '');
     const mapSel = row.querySelector('.zalo-member-select, .fms-zalo-map-select');
     const notifySel = row.querySelector('.fms-crew-notify-select');
     if (name && mapSel) currentSelections[name] = mapSel.value;
@@ -3154,7 +3169,8 @@ function renderSettingsZaloMappingPanel() {
   panel.style.display = 'block';
   panel.classList.add('zalo-person-dense-wrap');
 
-  // Pause refresh while interacting here
+  // Pause auto-refresh khi đang thao tác map (tránh mất form)
+  // Lưu map: chỉ qua document.body change (class fms-zalo-map-select) — không handler chết
   if (!panel.dataset.boundBusy) {
     panel.dataset.boundBusy = '1';
     panel.addEventListener('focusin', () => { window.__fmsMappingPaused = true; });
@@ -3162,13 +3178,6 @@ function renderSettingsZaloMappingPanel() {
       setTimeout(() => {
         if (!panel.contains(document.activeElement)) window.__fmsMappingPaused = false;
       }, 100);
-    });
-    // Reuse same change handler as FMS mapping (event delegation on container)
-    panel.addEventListener('change', async (e) => {
-      const notifyContainer = document.getElementById('fms-crew-notify-settings-container');
-      if (notifyContainer && notifyContainer._mappingChangeHandler) {
-        notifyContainer._mappingChangeHandler(e);
-      }
     });
   }
 }
@@ -4107,7 +4116,7 @@ function renderPersonZaloCompact(flights) {
   // Giữ lựa chọn đang chọn khi re-render
   const currentSelections = {};
   document.querySelectorAll('.zalo-person-row, .zalo-mapping-row').forEach(row => {
-    const name = (row.getAttribute('data-name') || row.getAttribute('data-person') || '').toUpperCase();
+    const name = normalizeMapKey(row.getAttribute('data-name') || row.getAttribute('data-person') || '');
     const mapSel = row.querySelector('.zalo-member-select, .fms-zalo-map-select');
     const notifySel = row.querySelector('.fms-crew-notify-select, .crew-notify-select');
     if (name && mapSel) currentSelections[name] = mapSel.value;
@@ -4130,7 +4139,7 @@ function renderPersonZaloCompact(flights) {
   // Mirror vào tbody ẩn để handleConfirmFmsPreview (đọc .zalo-mapping-row) vẫn hoạt động
   if (legacyMapBody) {
     legacyMapBody.innerHTML = people.map(p => {
-      const nameKey = (p.name || '').toUpperCase();
+      const nameKey = normalizeMapKey(p.name || '');
       let savedUid = currentSelections[nameKey] !== undefined
         ? currentSelections[nameKey]
         : resolveZaloUidForPerson(p.name, mapDb);
@@ -4147,7 +4156,7 @@ function renderPersonZaloCompact(flights) {
   }
   if (legacyNotifyBody) {
     legacyNotifyBody.innerHTML = people.map(p => {
-      const nameKey = (p.name || '').toUpperCase();
+      const nameKey = normalizeMapKey(p.name || '');
       const notifyVal = currentSelections[`notify::${nameKey}`] !== undefined
         ? currentSelections[`notify::${nameKey}`]
         : (p.notifyType || 1);
@@ -4319,14 +4328,14 @@ async function handleConfirmFmsPreview() {
   try {
     // 1. Gom map Zalo + báo tin theo TỪNG NGƯỜI (Lái / NV tách) từ bảng gọn
     const mappings = [];
-    const nameToUidMap = {}; // schedule_name UPPER -> zalo_uid
-    const personNotifyMap = {}; // personName UPPER -> notifyType
+    const nameToUidMap = {}; // normalizeMapKey -> zalo_uid
+    const personNotifyMap = {}; // normalizeMapKey -> notifyType
     const seenMap = new Set();
 
     const collectFromRow = (row) => {
       const scheduleName = row.getAttribute('data-name') || row.getAttribute('data-person') || '';
       if (!scheduleName) return;
-      const nameKey = scheduleName.toUpperCase().trim();
+      const nameKey = normalizeMapKey(scheduleName);
       const mapSel = row.querySelector('.zalo-member-select, .fms-zalo-map-select');
       const notifySel = row.querySelector('.fms-crew-notify-select, .crew-notify-select');
 
@@ -4367,8 +4376,8 @@ async function handleConfirmFmsPreview() {
     // 2. Gán UID cả Lái + NV; notifyType ưu tiên người trên chuyến (max / hoặc driver)
     const finalFlights = state.fmsPreviewFlights.map((f) => {
       const { driver, operator } = parseCrewRoles(f);
-      const drKey = driver ? driver.toUpperCase().trim() : '';
-      const opKey = operator ? operator.toUpperCase().trim() : '';
+      const drKey = driver ? normalizeMapKey(driver) : '';
+      const opKey = operator ? normalizeMapKey(operator) : '';
 
       const uids = [];
       if (drKey && nameToUidMap[drKey]) uids.push(nameToUidMap[drKey]);

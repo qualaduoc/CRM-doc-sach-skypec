@@ -510,6 +510,21 @@ function normalizeFmsFlightNo(fn) {
   return String(fn || '').toUpperCase().replace(/\s+/g, '');
 }
 
+/**
+ * Key chuẩn cho map Zalo ↔ tên lịch (UI + API + tin nhắn dùng chung logic).
+ * Bỏ dấu, hoa, gộp khoảng trắng — khớp CHẶT, không soft-match.
+ */
+function normalizeMapKey(name) {
+  return String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function normalizeFmsAcReg(ac) {
   return String(ac || '').toUpperCase().replace(/[\s\-_.]/g, '');
 }
@@ -2373,12 +2388,9 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           // --- Resolve tag Zalo: BẮT BUỘC cố gắng tag cả Lái + NV ---
           const rawDr = sched && sched.driver_name ? String(sched.driver_name).trim() : '';
           const rawOp = sched && sched.operator_name ? String(sched.operator_name).trim() : '';
-          const stripAccents = (s) => String(s || '')
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-            .replace(/đ/g, 'd').replace(/Đ/g, 'D')
-            .toUpperCase().replace(/\s+/g, ' ').trim();
-          const drName = stripAccents(rawDr);
-          const opName = stripAccents(rawOp);
+          // Chỉ map CHẶT theo DB (normalizeMapKey exact) — không soft-match includes/tên cuối
+          const drKey = normalizeMapKey(rawDr);
+          const opKey = normalizeMapKey(rawOp);
 
           let driverCrewPart = rawDr || '-';
           let operatorCrewPart = rawOp || '-';
@@ -2390,37 +2402,38 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               const dbMappings = await db.all('SELECT schedule_name, zalo_uid, zalo_name FROM zalo_user_mappings');
               const mappingMap = {};
               dbMappings.forEach(m => {
-                const key = stripAccents(m.schedule_name);
+                const key = normalizeMapKey(m.schedule_name);
                 if (key) {
-                  mappingMap[key] = { uid: m.zalo_uid, name: m.zalo_name || m.schedule_name };
+                  // Giữ bản ghi đầu nếu trùng key (không ghi đè lung tung)
+                  if (!mappingMap[key]) {
+                    mappingMap[key] = {
+                      uid: m.zalo_uid,
+                      zaloName: m.zalo_name || '',
+                      scheduleName: m.schedule_name
+                    };
+                  }
                 }
               });
-              const resolveOne = (normKey) => {
+              // Exact key only — không includes / không token cuối
+              const resolveStrict = (normKey) => {
                 if (!normKey || normKey === '-') return null;
-                if (mappingMap[normKey]) return mappingMap[normKey];
-                // Khớp token cuối (tên) + độ dài hợp lý
-                const tokens = normKey.split(' ').filter(Boolean);
-                const last = tokens[tokens.length - 1] || '';
-                for (const [k, v] of Object.entries(mappingMap)) {
-                  if (k === normKey) return v;
-                  if (k.includes(normKey) || normKey.includes(k)) return v;
-                  const kt = k.split(' ').filter(Boolean);
-                  if (last && kt[kt.length - 1] === last && Math.abs(kt.length - tokens.length) <= 2) return v;
-                }
-                return null;
+                return mappingMap[normKey] || null;
               };
-              if (drName) {
-                const mapInfo = resolveOne(drName);
-                if (mapInfo) {
-                  driverCrewPart = `@${mapInfo.name}`;
-                  driverMentionInfo = { uid: mapInfo.uid, tagLabel: `@${mapInfo.name}` };
+              if (drKey) {
+                const mapInfo = resolveStrict(drKey);
+                if (mapInfo && mapInfo.uid) {
+                  // Tag Zalo dùng display Zalo; kèm tên lịch để ops đọc rõ
+                  const tag = mapInfo.zaloName || rawDr;
+                  driverCrewPart = `@${tag}`;
+                  driverMentionInfo = { uid: mapInfo.uid, tagLabel: `@${tag}` };
                 }
               }
-              if (opName) {
-                const mapInfo = resolveOne(opName);
-                if (mapInfo) {
-                  operatorCrewPart = `@${mapInfo.name}`;
-                  operatorMentionInfo = { uid: mapInfo.uid, tagLabel: `@${mapInfo.name}` };
+              if (opKey) {
+                const mapInfo = resolveStrict(opKey);
+                if (mapInfo && mapInfo.uid) {
+                  const tag = mapInfo.zaloName || rawOp;
+                  operatorCrewPart = `@${tag}`;
+                  operatorMentionInfo = { uid: mapInfo.uid, tagLabel: `@${tag}` };
                 }
               }
             } catch (mappingErr) {
@@ -3474,5 +3487,6 @@ module.exports = {
   decideMonitorAction,
   MONITOR_EPOCH_DATE,
   isMonitorEpochDate,
-  canCreateMonitorForDate
+  canCreateMonitorForDate,
+  normalizeMapKey
 };
