@@ -3138,27 +3138,36 @@ function getRefuelStatusMeta(r) {
 }
 
 /** Panel Map Zalo trên tab Cấu hình — giữ lựa chọn khi re-render */
-function renderSettingsZaloMappingPanel() {
+async function renderSettingsZaloMappingPanel() {
   const panel = document.getElementById('settings-zalo-mapping-panel');
   const body = document.getElementById('settings-zalo-mapping-body');
   if (!panel || !body) return;
 
   const people = collectPeopleFromRows(cachedFmsRows || []);
-  if ((!state.zaloMembers || state.zaloMembers.length === 0) && state.token && !window.__zaloLoadInflight) {
-    window.__zaloLoadInflight = true;
-    loadZaloMembersAndMappings().finally(() => {
-      window.__zaloLoadInflight = false;
-      renderSettingsZaloMappingPanel();
-    });
+
+  // Luôn nạp members + mappings trước khi vẽ dropdown (tránh 12/17 xanh nhưng select “Chưa map”)
+  if (state.token && !window.__zaloLoadInflight) {
+    const needMembers = !state.zaloMembers || state.zaloMembers.length === 0;
+    const needMaps = !state.zaloMappings || state.zaloMappings.length === 0;
+    if (needMembers || needMaps) {
+      window.__zaloLoadInflight = true;
+      try {
+        await loadZaloMembersAndMappings();
+      } finally {
+        window.__zaloLoadInflight = false;
+      }
+    }
   }
 
-  // Giữ lựa chọn đang chọn trên form (key chuẩn normalizeMapKey)
+  // Giữ lựa chọn user trên form — BỎ QUA value rỗng (không đè map DB)
   const currentSelections = {};
   body.querySelectorAll('.zalo-person-row, .zalo-mapping-row').forEach(row => {
     const name = normalizeMapKey(row.getAttribute('data-name') || row.getAttribute('data-person') || '');
     const mapSel = row.querySelector('.zalo-member-select, .fms-zalo-map-select');
     const notifySel = row.querySelector('.fms-crew-notify-select');
-    if (name && mapSel) currentSelections[name] = mapSel.value;
+    if (name && mapSel && String(mapSel.value || '').trim() !== '') {
+      currentSelections[name] = String(mapSel.value).trim();
+    }
     if (name && notifySel) currentSelections[`notify::${name}`] = notifySel.value;
   });
 
@@ -3195,6 +3204,18 @@ function renderSettingsZaloMappingPanel() {
     </div>`;
   panel.style.display = 'block';
   panel.classList.add('zalo-person-dense-wrap');
+
+  // Ép select.value = UID đã map (tránh browser bỏ selected nếu option tới trễ)
+  body.querySelectorAll('select.fms-zalo-map-select, select.zalo-member-select').forEach((sel) => {
+    const want = sel.getAttribute('data-original-uid') || '';
+    if (want && sel.value !== want) {
+      sel.value = want;
+      if (sel.value === want) {
+        sel.classList.add('is-mapped');
+        sel.classList.remove('is-unmapped');
+      }
+    }
+  });
 
   // Pause auto-refresh khi đang thao tác map (tránh mất form)
   // Lưu map: chỉ qua document.body change (class fms-zalo-map-select) — không handler chết
@@ -4140,13 +4161,15 @@ function renderPersonZaloCompact(flights) {
   const legacyMapBody = document.getElementById('fms-zalo-mapping-table-body');
   const legacyNotifyBody = document.getElementById('fms-crew-notify-table-body');
 
-  // Giữ lựa chọn đang chọn khi re-render
+  // Giữ lựa chọn user — bỏ value rỗng (không đè map DB)
   const currentSelections = {};
   document.querySelectorAll('.zalo-person-row, .zalo-mapping-row').forEach(row => {
     const name = normalizeMapKey(row.getAttribute('data-name') || row.getAttribute('data-person') || '');
     const mapSel = row.querySelector('.zalo-member-select, .fms-zalo-map-select');
     const notifySel = row.querySelector('.fms-crew-notify-select, .crew-notify-select');
-    if (name && mapSel) currentSelections[name] = mapSel.value;
+    if (name && mapSel && String(mapSel.value || '').trim() !== '') {
+      currentSelections[name] = String(mapSel.value).trim();
+    }
     if (name && notifySel) currentSelections[`notify::${name}`] = notifySel.value;
   });
 
@@ -4163,23 +4186,39 @@ function renderPersonZaloCompact(flights) {
   if (tbody) tbody.innerHTML = rowsHtml;
   if (section) section.style.display = 'block';
 
+  // Ép selected UID sau khi gán HTML
+  if (tbody) {
+    tbody.querySelectorAll('select.fms-zalo-map-select, select.zalo-member-select').forEach((sel) => {
+      const want = sel.getAttribute('data-original-uid') || '';
+      if (want) sel.value = want;
+    });
+  }
+
   // Mirror vào tbody ẩn để handleConfirmFmsPreview (đọc .zalo-mapping-row) vẫn hoạt động
   if (legacyMapBody) {
     legacyMapBody.innerHTML = people.map(p => {
       const nameKey = normalizeMapKey(p.name || '');
-      let savedUid = currentSelections[nameKey] !== undefined
-        ? currentSelections[nameKey]
-        : resolveZaloUidForPerson(p.name, mapDb);
+      const dbUid = resolveZaloUidForPerson(p.name, mapDb);
+      let savedUid = dbUid || '';
+      if (currentSelections[nameKey] !== undefined && String(currentSelections[nameKey]).trim() !== '') {
+        savedUid = String(currentSelections[nameKey]).trim();
+      }
+      const dbHit = mapDb[nameKey];
+      const fallbackLabel = dbHit ? (dbHit.zalo_name || dbHit.schedule_name || '') : '';
       return `
         <tr class="zalo-mapping-row" data-name="${escapeHtml(p.name)}">
           <td>${escapeHtml(p.name)}</td>
           <td>
-            <select class="zalo-member-select">
-              ${buildZaloMemberOptionsHtml(savedUid)}
+            <select class="zalo-member-select" data-original-uid="${escapeHtml(savedUid || '')}">
+              ${buildZaloMemberOptionsHtml(savedUid, fallbackLabel)}
             </select>
           </td>
         </tr>`;
     }).join('');
+    legacyMapBody.querySelectorAll('select.zalo-member-select').forEach((sel) => {
+      const want = sel.getAttribute('data-original-uid') || '';
+      if (want) sel.value = want;
+    });
   }
   if (legacyNotifyBody) {
     legacyNotifyBody.innerHTML = people.map(p => {
