@@ -367,6 +367,131 @@ async function loginFMS() {
   });
 }
 
+/**
+ * FMS VNA đôi khi trả NHIỀU dòng cùng FLIGHTNO (vd VN1806: VNA601 + VNA603).
+ * Quét song song từng dòng → ghi đè DB → báo đổi tàu/ETD đảo liên tục (vòng lặp).
+ *
+ * Chiến lược:
+ * 1) Gộp theo flight_no → chỉ 1 chân (leg) / chuyến / chu kỳ
+ * 2) Ưu tiên chân trùng tàu đang lưu (sticky) nếu vẫn còn trên FMS
+ * 3) Đổi tàu/ETD chỉ chốt sau STABLE_HITS chu kỳ liên tiếp cùng giá trị mới
+ */
+const FMS_STABLE_HITS = 2; // ≥2 chu kỳ quét (~2 vòng worker) mới tin là đổi thật
+/** @type {Map<string, { value: string, hits: number }>} */
+const pendingAcRegConfirm = new Map();
+/** @type {Map<string, { value: string, hits: number }>} */
+const pendingEtdConfirm = new Map();
+
+function normalizeFmsFlightNo(fn) {
+  return String(fn || '').toUpperCase().replace(/\s+/g, '');
+}
+
+function normalizeFmsAcReg(ac) {
+  return String(ac || '').toUpperCase().replace(/[\s\-_.]/g, '');
+}
+
+/**
+ * Chọn 1 chân đại diện khi FMS có nhiều dòng cùng số chuyến.
+ * preferredAc: tàu đang bám trong DB (sticky) — nếu còn trong list thì giữ, không nhảy.
+ */
+function pickBestFmsLeg(legs, preferredAc) {
+  if (!legs || !legs.length) return null;
+  if (legs.length === 1) return legs[0];
+
+  const pref = normalizeFmsAcReg(preferredAc);
+  if (pref && pref !== '-') {
+    const sticky = legs.find(l => {
+      const ac = normalizeFmsAcReg(l.ACREG || l.ac_reg);
+      return ac && (ac === pref || acRegsMatch(ac, pref));
+    });
+    if (sticky) return sticky;
+  }
+
+  // Không còn sticky: chấm điểm chân "đầy đủ" hơn (có ACREG, ETD, ACTYPE)
+  let best = legs[0];
+  let bestScore = -1;
+  for (const l of legs) {
+    let score = 0;
+    const ac = normalizeFmsAcReg(l.ACREG || l.ac_reg);
+    if (ac && ac !== '-') score += 20;
+    if (l.ETD || l.STD || l.DEP_TIME) score += 10;
+    if (l.ACTYPE || l.ac_type) score += 5;
+    if (l.LEG_NO || l.LEGNO) score += 2;
+    // Ưu tiên ACREG dạng VNA### (đầy đủ) hơn số ngắn
+    if (ac && ac.length >= 5) score += 8;
+    if (score > bestScore) {
+      bestScore = score;
+      best = l;
+    }
+  }
+  return best;
+}
+
+/**
+ * Gộp list FMS: 1 flight_no → 1 leg.
+ * preferredByFlight: Map flightNo → ac_reg đang lưu DB
+ * Trả về { uniqueLegs, multiLegFlights: Set flightNos có ≥2 dòng }
+ */
+function dedupeFmsFlightsByFlightNo(fmsFlights, preferredByFlight = new Map()) {
+  const groups = new Map();
+  for (const f of fmsFlights || []) {
+    if (!f || !f.FLIGHTNO) continue;
+    const key = normalizeFmsFlightNo(f.FLIGHTNO);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(f);
+  }
+
+  const uniqueLegs = [];
+  const multiLegFlights = new Set();
+  for (const [fltNo, legs] of groups.entries()) {
+    if (legs.length > 1) {
+      multiLegFlights.add(fltNo);
+      const acs = [...new Set(legs.map(l => normalizeFmsAcReg(l.ACREG || l.ac_reg)).filter(Boolean))];
+      log(`[FMS Multi-leg] ${fltNo}: ${legs.length} dòng FMS (tàu: ${acs.join(', ')}) → chọn 1 chân ổn định`);
+    }
+    const preferred = preferredByFlight.get(fltNo) || '';
+    const chosen = pickBestFmsLeg(legs, preferred);
+    if (chosen) {
+      // Gắn meta để logic notify biết chuyến đang multi-leg
+      chosen._fmsSiblingCount = legs.length;
+      chosen._fmsSiblingAcRegs = legs
+        .map(l => normalizeFmsAcReg(l.ACREG || l.ac_reg))
+        .filter(Boolean);
+      uniqueLegs.push(chosen);
+    }
+  }
+  return { uniqueLegs, multiLegFlights };
+}
+
+/**
+ * Xác nhận thay đổi bền vững qua nhiều chu kỳ (chống đảo 601↔603).
+ * return true → được phép báo / commit giá trị mới
+ */
+function confirmStableValue(map, key, newValue, requiredHits = FMS_STABLE_HITS) {
+  const v = String(newValue || '').trim();
+  if (!v) return false;
+  const prev = map.get(key);
+  if (!prev || prev.value !== v) {
+    map.set(key, { value: v, hits: 1 });
+    return false;
+  }
+  prev.hits += 1;
+  if (prev.hits >= requiredHits) {
+    map.delete(key);
+    return true;
+  }
+  return false;
+}
+
+function clearPendingIfMatch(map, key, currentValue) {
+  const prev = map.get(key);
+  if (prev && prev.value === String(currentValue || '').trim()) {
+    // Giá trị đã về ổn định cũ / đã chốt — xóa pending
+    map.delete(key);
+  }
+}
+
 // Tải danh sách chuyến bay của một ngày nhất định
 async function fetchFMSData(dateStr, authCookie) {
   return new Promise((resolve, reject) => {
@@ -1849,7 +1974,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
 
       // Lọc các chuyến bay khớp với lịch trực của ngày này
       // Rà soát chi tiết FMS VNA: chỉ chuyến VN (VNA). Bỏ 9G, VU, hãng ngoài.
-      const matchedFlights = fmsFlights.filter(f => {
+      const matchedRaw = fmsFlights.filter(f => {
         if (!f.FLIGHTNO) return false;
         const cleanFltNo = f.FLIGHTNO.toUpperCase().replace(/\s+/g, '');
         if (!flightNumbers.includes(cleanFltNo)) return false;
@@ -1861,7 +1986,27 @@ async function syncFMSData(forceDate = null, forceShift = null) {
         return true;
       });
 
-      log(`[Ngày ${targetDate}] Khớp FMS VNA (chỉ VN nội địa): ${matchedFlights.length} chuyến (lịch gốc ${flightNumbers.length}, bỏ 9G/VU/QT).`);
+      // Sticky ac từ DB — khi FMS có 2 dòng (601+603) thì giữ tàu đang bám
+      const preferredByFlight = new Map();
+      try {
+        const foRows = await db.all(
+          `SELECT flight_no, ac_reg FROM fms_fuel_orders WHERE flight_no LIKE ?`,
+          `%_${targetDate}`
+        );
+        for (const r of foRows || []) {
+          const raw = String(r.flight_no || '');
+          const fn = raw.replace(new RegExp(`_${targetDate}$`), '').toUpperCase().replace(/\s+/g, '');
+          if (fn && r.ac_reg) preferredByFlight.set(fn, r.ac_reg);
+        }
+      } catch (_) { /* ignore */ }
+
+      // Gộp multi-leg: 1 chuyến chỉ 1 chân / chu kỳ (chặn vòng lặp 601↔603)
+      const { uniqueLegs: matchedFlights, multiLegFlights } = dedupeFmsFlightsByFlightNo(
+        matchedRaw,
+        preferredByFlight
+      );
+
+      log(`[Ngày ${targetDate}] Khớp FMS VNA (chỉ VN nội địa): raw=${matchedRaw.length} → unique=${matchedFlights.length} (lịch ${flightNumbers.length}, multi-leg=${multiLegFlights.size}).`);
       if (matchedFlights.length === 0) continue;
 
       // Map lịch trực theo flight_no để gắn cặp nạp vào cảnh báo hãng
@@ -1878,14 +2023,16 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       // Cảnh báo sai tên hãng (ký hiệu chuyến vs CARRIER FMS)
       await checkAirlineNameMismatchAlerts(db, targetDate, matchedFlights, scheduleByFlight);
 
-      // Quét chi tiết tải dầu SONG SONG (Promise.all) cho các chuyến bay trùng khớp của ngày này
+      // Quét chi tiết tải dầu SONG SONG (Promise.all) — đã unique theo flight_no
       log(`[Ngày ${targetDate}] Bắt đầu quét song song chi tiết tải dầu cho các chuyến bay...`);
       const promises = matchedFlights.map(async (flt) => {
         const cleanFltNo = flt.FLIGHTNO.toUpperCase().replace(/\s+/g, '');
         const legNo = flt.LEG_NO;
+        const siblingCount = flt._fmsSiblingCount || 1;
+        const siblingAcs = flt._fmsSiblingAcRegs || [];
 
         try {
-          log(`[Bắt đầu quét] Chuyến bay: ${cleanFltNo} (LEG_NO: ${legNo})`);
+          log(`[Bắt đầu quét] Chuyến bay: ${cleanFltNo} (LEG_NO: ${legNo}${siblingCount > 1 ? `, multi-leg n=${siblingCount} ac=[${siblingAcs.join(',')}]` : ''})`);
           const detail = await fetchFlightDetail(legNo, activeCookie);
 
           // Xác định trạng thái tải dầu
@@ -1897,7 +2044,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           // Lấy lịch trực để so sánh bến đỗ trước khi check thay đổi
           const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type, driver_name, operator_name FROM fms_schedules WHERE flight_no = ? AND COALESCE(fms_date, date) = ?', cleanFltNo, targetDate);
 
-          const cleanACREG = flt.ACREG ? String(flt.ACREG).trim() : '';
+          let cleanACREG = flt.ACREG ? String(flt.ACREG).trim() : '';
           const acTypeStr = flt.ACTYPE ? String(flt.ACTYPE).trim() : '-';
           const oldStandby = oldOrder ? (parseInt(oldOrder.standby_fuel) || 0) : 0;
           const oldFuelOrder = oldOrder ? (parseInt(oldOrder.fuel_order) || 0) : 0;
@@ -1919,16 +2066,83 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const newGate = sched ? String(sched.gate || '').trim() : '';
           const isGateChanged = !!(oldOrder && oldGate && newGate && oldGate !== newGate);
 
-          const newEtd = convertUtcToVnTime(flt.ETD);
+          let newEtd = convertUtcToVnTime(flt.ETD);
           const oldEtd = oldOrder ? String(oldOrder.etd || '').trim() : '';
-          const isEtdChanged = !!(oldOrder && oldEtd && newEtd && oldEtd !== String(newEtd).trim());
 
           const prevWarnedFuel = oldOrder ? (oldOrder.warn_fuel_order || 0) : 0;
           const prevWarnedStandby = oldOrder ? (oldOrder.warn_standby || 0) : 0;
           const prevWarnedAc = oldOrder ? (oldOrder.warn_ac_reg || 0) : 0;
           const prevWarnedEtd = oldOrder ? (oldOrder.warn_etd || 0) : 0;
-          // Gate: dùng last gate trong DB — chỉ báo khi đổi thật
-          // warn_gate không có cột riêng → so sánh giá trị là đủ
+
+          const stableKey = `${cleanFltNo}_${targetDate}`;
+          const oldAcNorm = oldOrder ? normalizeFmsAcReg(oldOrder.ac_reg) : '';
+          const newAcNorm = normalizeFmsAcReg(cleanACREG);
+
+          // --- Multi-leg / sticky: nếu tàu cũ VẪN còn trong snapshot FMS → không nhảy tàu ---
+          // (FMS có cả 601 và 603: sticky giữ tàu DB, chặn ping-pong)
+          if (oldAcNorm && siblingCount > 1 && siblingAcs.length) {
+            const oldStillPresent = siblingAcs.some(a => a === oldAcNorm || acRegsMatch(a, oldAcNorm));
+            if (oldStillPresent && newAcNorm !== oldAcNorm) {
+              log(`[FMS Sticky] ${cleanFltNo}: multi-leg còn tàu cũ ${oldOrder.ac_reg} → giữ, bỏ qua chân ${cleanACREG}`);
+              cleanACREG = String(oldOrder.ac_reg).trim();
+              // Giữ ETD cũ nếu có (chân khác mang ETD khác gây đảo giờ)
+              if (oldEtd) newEtd = oldEtd;
+            }
+          }
+
+          // --- Ổn định đổi tàu: chỉ báo khi giá trị MỚI lặp ≥ FMS_STABLE_HITS chu kỳ ---
+          let isAcRegChangedRaw = !!(
+            oldOrder &&
+            oldAcNorm &&
+            newAcNorm &&
+            oldAcNorm !== newAcNorm &&
+            !acRegsMatch(oldAcNorm, newAcNorm)
+          );
+          let isAcRegChanged = false;
+          if (isAcRegChangedRaw) {
+            // Multi-leg cùng lúc có cả 2 tàu → không bao giờ báo đổi (đang nhiễu)
+            const bothInSnapshot = siblingCount > 1 && siblingAcs.some(a => a === oldAcNorm || acRegsMatch(a, oldAcNorm))
+              && siblingAcs.some(a => a === newAcNorm || acRegsMatch(a, newAcNorm));
+            if (bothInSnapshot) {
+              log(`[FMS Anti-flip] ${cleanFltNo}: snapshot còn CẢ ${oldOrder.ac_reg} và ${cleanACREG} → bỏ báo đổi tàu`);
+              cleanACREG = String(oldOrder.ac_reg).trim();
+              isAcRegChangedRaw = false;
+            } else {
+              const confirmed = confirmStableValue(pendingAcRegConfirm, stableKey + '_ac', newAcNorm, FMS_STABLE_HITS);
+              if (confirmed) {
+                isAcRegChanged = true;
+                log(`[FMS Stable] ${cleanFltNo}: chốt đổi tàu ${oldOrder.ac_reg} → ${cleanACREG} (sau ${FMS_STABLE_HITS} chu kỳ)`);
+              } else {
+                // Chưa chốt: giữ ac cũ trên DB, không báo
+                log(`[FMS Stable] ${cleanFltNo}: nghi đổi tàu → ${cleanACREG}, chờ xác nhận (${FMS_STABLE_HITS} chu kỳ)`);
+                cleanACREG = String(oldOrder.ac_reg).trim();
+              }
+            }
+          } else {
+            clearPendingIfMatch(pendingAcRegConfirm, stableKey + '_ac', newAcNorm);
+          }
+
+          // --- Ổn định ETD (cùng cơ chế chống đảo 19:00↔11:15) ---
+          let isEtdChangedRaw = !!(oldOrder && oldEtd && newEtd && oldEtd !== String(newEtd).trim());
+          let isEtdChanged = false;
+          if (isEtdChangedRaw) {
+            const confirmedEtd = confirmStableValue(
+              pendingEtdConfirm,
+              stableKey + '_etd',
+              String(newEtd).trim(),
+              FMS_STABLE_HITS
+            );
+            if (confirmedEtd) {
+              isEtdChanged = true;
+              log(`[FMS Stable] ${cleanFltNo}: chốt đổi ETD ${oldEtd} → ${newEtd}`);
+            } else {
+              log(`[FMS Stable] ${cleanFltNo}: nghi đổi ETD → ${newEtd}, chờ xác nhận`);
+              newEtd = oldEtd; // giữ ETD cũ đến khi chốt
+              isEtdChanged = false;
+            }
+          } else {
+            clearPendingIfMatch(pendingEtdConfirm, stableKey + '_etd', String(newEtd || '').trim());
+          }
 
           // --- Phát hiện sự kiện (RAW) ---
           // "Mới": lần đầu có số >0 và CHƯA từng báo (warn_*=0). Đã báo rồi + FMS về 0 rồi lên lại → KHÔNG báo "mới" nữa.
@@ -1936,13 +2150,6 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const isNewFuelOrder = newFuelOrder > 0 && oldFuelOrder <= 0 && prevWarnedFuel === 0;
           const isStandbyChanged = oldStandby > 0 && newStandby > 0 && oldStandby !== newStandby;
           const isFuelOrderChanged = oldFuelOrder > 0 && newFuelOrder > 0 && oldFuelOrder !== newFuelOrder;
-          const isAcRegChanged = !!(
-            oldOrder &&
-            oldOrder.ac_reg &&
-            cleanACREG &&
-            String(oldOrder.ac_reg).trim().toUpperCase().replace(/\s+/g, '') !==
-              cleanACREG.toUpperCase().replace(/\s+/g, '')
-          );
 
           // Áp dụng settings bật/tắt
           let triggerNewStandby = isNewStandby && notifyNewStandby;
