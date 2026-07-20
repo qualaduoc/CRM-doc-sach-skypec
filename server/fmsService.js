@@ -2236,9 +2236,12 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             detail.standby_fuel = String(oldStandby);
           }
 
+          // Gate: CHỈ đồng bộ im lặng xuống fuel_orders — KHÔNG báo Zalo từ FMS/Skypec.
+          // FMS Skypec chỉ có vị trí sau khi đã tra nạp → báo lúc đó vô nghĩa.
+          // Cảnh báo đổi vị trí CHỈ từ sửa thủ công API /api/fms/schedule/update-gate.
           const oldGate = oldOrder ? String(oldOrder.gate || '').trim() : '';
           const newGate = sched ? String(sched.gate || '').trim() : '';
-          const isGateChanged = !!(oldOrder && oldGate && newGate && oldGate !== newGate);
+          const isGateChanged = false;
 
           let newEtd = convertUtcToVnTime(flt.ETD);
           const oldEtd = oldOrder ? String(oldOrder.etd || '').trim() : '';
@@ -2338,13 +2341,6 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             clearPendingIfMatch(pendingEtdConfirm, stableKey + '_etd', String(newEtd || '').trim());
           }
 
-          // Gate: chuyến stale không báo đổi vị trí
-          let isGateChangedNotify = isGateChanged;
-          if (isGateChanged && opsStale) {
-            log(`[FMS Stale] ${cleanFltNo}: đổi gate nhưng chuyến đã quá giờ → không báo Zalo`);
-            isGateChangedNotify = false;
-          }
-
           // --- Phát hiện sự kiện (RAW) ---
           // "Mới": lần đầu có số >0 và CHƯA từng báo (warn_*=0). Đã báo rồi + FMS về 0 rồi lên lại → KHÔNG báo "mới" nữa.
           const isNewStandby = newStandby > 0 && oldStandby <= 0 && prevWarnedStandby === 0;
@@ -2358,7 +2354,8 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           let triggerStandbyChanged = isStandbyChanged && notifyStandbyChanged;
           let triggerFuelOrderChanged = isFuelOrderChanged && notifyFuelOrderChanged;
           let triggerAcRegChanged = isAcRegChanged && notifyAcRegChanged;
-          let triggerGateChanged = isGateChangedNotify && notifyGateChanged;
+          // Gate: tuyệt đối không auto-notify từ vòng quét FMS (chỉ manual update-gate)
+          let triggerGateChanged = false;
           let triggerEtdChanged = isEtdChanged && notifyEtdChanged;
 
           // Lần import đầu (chưa có oldOrder): không bắn Zalo

@@ -518,6 +518,11 @@ async function upsertOneUnitSchedule(db, item, dutyDate, unitCode, nowStr) {
   const displayFn = item.flight_no_display || flightNo;
 
   if (existing) {
+    // Gate: giữ vị trí đã có trên lịch (thủ công / kế hoạch).
+    // FMS Skypec thường chỉ có parking sau khi tra nạp → không ghi đè (tránh spam + sai nguồn).
+    const existingGate = String(existing.gate || '').trim();
+    const gateToStore = existingGate || (item.gate || '');
+
     await db.run(
       `UPDATE fms_schedules SET
         flight_no = ?, ac_type = ?, ac_reg = ?, route = ?,
@@ -535,7 +540,7 @@ async function upsertOneUnitSchedule(db, item, dutyDate, unitCode, nowStr) {
       item.time_arr || '',
       item.time_dep || '',
       item.time_fuel || '',
-      item.gate || '',
+      gateToStore,
       item.truck_no || '',
       driverName,
       operatorName,

@@ -2567,6 +2567,7 @@ app.post('/api/fms/sync', authenticateToken, async (req, res) => {
 });
 
 // Cập nhật vị trí đỗ (Gate) thủ công và báo Zalo (Admin hoặc người có quyền sửa vị trí đỗ)
+// Sửa vị trí đỗ thủ công trên app — NGUỒN DUY NHẤT được phép báo Zalo đổi gate
 app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_gate !== 1) {
     return res.status(403).json({ success: false, error: 'Không có quyền sửa vị trí đỗ' });
@@ -2581,10 +2582,14 @@ app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) =>
 
   try {
     const db = await getDb();
-    
+    const { resolveMapping, buildMappingLookup, resolveCrewUids } = require('./zaloMapping');
+    const { getVietnamDateTimeStr } = require('./fmsService');
+
     // Tìm chuyến bay trong fms_schedules
     const flight = await db.get(
-      'SELECT id, flight_no, ac_reg, crew_info, truck_no, gate, crew_zalo_uids, notify_type FROM fms_schedules WHERE flight_no = ? AND date = ? ORDER BY id DESC LIMIT 1',
+      `SELECT id, flight_no, ac_reg, crew_info, truck_no, gate, crew_zalo_uids, notify_type,
+              driver_name, operator_name, time_fuel
+       FROM fms_schedules WHERE flight_no = ? AND date = ? ORDER BY id DESC LIMIT 1`,
       flightNo,
       date
     );
@@ -2598,76 +2603,130 @@ app.post('/api/fms/schedule/update-gate', authenticateToken, async (req, res) =>
       return res.json({ success: true, message: 'Vị trí đỗ không thay đổi.' });
     }
 
-    // Cập nhật vị trí đỗ
+    // Cập nhật vị trí đỗ trên lịch
     await db.run('UPDATE fms_schedules SET gate = ? WHERE id = ?', newGate, flight.id);
 
-    // Gửi thông báo qua Zalo nếu cấu hình thông báo đang bật
-    const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
-    const notifyEnabled = notifySetting ? notifySetting.value === 'true' : false;
+    // Đồng bộ gate im lặng vào fuel_orders (không kích hoạt auto-scan notify)
+    try {
+      await db.run(
+        `UPDATE fms_fuel_orders SET gate = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE flight_no = ? OR flight_no = ?`,
+        newGate,
+        String(flightNo),
+        `${String(flightNo)}_${String(date)}`
+      );
+    } catch (_) {}
 
-    if (notifyEnabled) {
+    // Chỉ gửi Zalo nếu bật bot + bật loại "đổi vị trí"
+    const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+    const gateNotifySetting = await db.get("SELECT value FROM settings WHERE key = 'fms_notify_gate_changed'");
+    const notifyEnabled = notifySetting ? notifySetting.value === 'true' : false;
+    const gateNotifyEnabled = gateNotifySetting ? gateNotifySetting.value !== 'false' : true;
+
+    let zaloSent = false;
+    if (notifyEnabled && gateNotifyEnabled) {
       const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
       const targetGroupId = groupSetting ? groupSetting.value : null;
 
-      const crewZaloUids = flight.crew_zalo_uids || '';
-      const notifyType = flight.notify_type !== undefined ? parseInt(flight.notify_type) : 1; // 1: Tag Nhóm, 2: Inbox, 3: Cả hai
-      const uids = crewZaloUids.split(',').map(uid => uid.trim()).filter(Boolean);
+      const notifyType = flight.notify_type !== undefined ? parseInt(flight.notify_type, 10) : 1;
+      const rawDr = (flight.driver_name || '').trim();
+      const rawOp = (flight.operator_name || '').trim();
 
-      const title = '🔄 [FMS THAY ĐỔI VỊ TRÍ ĐỖ]';
-      const msg = `${title}
-✈️ Chuyến bay: ${flight.flight_no} - ${flight.ac_reg || '-'}
-📍 Vị trí đỗ cũ: ${oldGate || '-'} ➔ Mới: ${newGate || '-'}
-👥 Cặp tra nạp: ${flight.crew_info || '-'}
-🚛 Số xe nạp: ${flight.truck_no || '-'}`;
-
-      let msgGroup = msg;
-      let groupMentions = [];
-
-      // 1. Gửi tin nhóm (notifyType === 1 || notifyType === 3)
-      if ((notifyType === 1 || notifyType === 3) && targetGroupId) {
-        if (uids.length > 0) {
-          try {
-            const placeholders = uids.map(() => '?').join(',');
-            const mappings = await db.all(`SELECT zalo_uid, zalo_name FROM zalo_user_mappings WHERE zalo_uid IN (${placeholders})`, uids);
-            const nameMap = {};
-            mappings.forEach(m => {
-              nameMap[m.zalo_uid] = m.zalo_name || m.zalo_uid;
-            });
-
-            let tagPrefix = '\n👥 Người trực: ';
-            let msgWithTags = msg + tagPrefix;
-            uids.forEach(uid => {
-              const zaloName = nameMap[uid] || 'Thành viên';
-              const tagLabel = `@${zaloName}`;
-              const startPos = msgWithTags.length;
-              msgWithTags += tagLabel + ' ';
-              groupMentions.push({
-                pos: startPos,
-                uid: uid,
-                len: tagLabel.length
-              });
-            });
-            msgGroup = msgWithTags.trimEnd();
-          } catch (mentionErr) {
-            console.error('[Gate Mentions Build Error]', mentionErr.message);
+      // Resolve tag từ mapping (ưu tiên) — không tin crew_zalo_uids cũ
+      let driverPart = rawDr || '-';
+      let operatorPart = rawOp || '-';
+      let driverMention = null;
+      let operatorMention = null;
+      let uids = [];
+      try {
+        const maps = await db.all(
+          'SELECT schedule_name, zalo_uid, zalo_name, name_key, source FROM zalo_user_mappings'
+        );
+        const lookup = buildMappingLookup(maps);
+        if (rawDr) {
+          const m = resolveMapping(lookup, rawDr);
+          if (m && m.zalo_uid) {
+            const tag = m.zalo_name || rawDr;
+            driverPart = `@${tag}`;
+            driverMention = { uid: String(m.zalo_uid).trim(), tagLabel: `@${tag}` };
           }
         }
-
-        const ids = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
-        ids.forEach(id => {
-          sendSkyEyesMessage(id, msgGroup, groupMentions).catch(err => console.error('[Zalo Gate Change Error] Group:', id, err.message));
-        });
+        if (rawOp) {
+          const m = resolveMapping(lookup, rawOp);
+          if (m && m.zalo_uid) {
+            const tag = m.zalo_name || rawOp;
+            operatorPart = `@${tag}`;
+            operatorMention = { uid: String(m.zalo_uid).trim(), tagLabel: `@${tag}` };
+          }
+        }
+        uids = resolveCrewUids(lookup, rawDr, rawOp);
+      } catch (mapErr) {
+        console.error('[Gate Map Resolve]', mapErr.message);
+        uids = String(flight.crew_zalo_uids || '').split(',').map((u) => u.trim()).filter(Boolean);
       }
 
-      // 2. Gửi inbox cá nhân riêng (notifyType === 2 || notifyType === 3)
+      const crewLine = (rawDr || rawOp)
+        ? [
+            rawDr ? `Lái: ${driverPart}` : null,
+            rawOp ? `NV: ${operatorPart}` : null
+          ].filter(Boolean).join(' | ')
+        : (flight.crew_info || '-');
+      const timeFuel = flight.time_fuel || '-';
+      const notifyTime = getVietnamDateTimeStr();
+
+      const msg = [
+        '📍 [FMS CẢNH BÁO THAY ĐỔI VỊ TRÍ ĐỖ]',
+        `✈️ Chuyến: ${flight.flight_no} - ${flight.ac_reg || '-'}`,
+        `👥 Cặp: ${crewLine}${timeFuel !== '-' ? ` | Giờ nạp: ${timeFuel}` : ''}`,
+        `📍 Vị trí đỗ: ${oldGate || '-'} → ${newGate || '-'}`,
+        `📢 Giờ thông báo: ${notifyTime}`
+      ].join('\n');
+
+      // 1. Gửi tin nhóm
+      if ((notifyType === 1 || notifyType === 3) && targetGroupId) {
+        const groupMentions = [];
+        if (driverMention) {
+          const pos = msg.indexOf(driverMention.tagLabel);
+          if (pos !== -1) {
+            groupMentions.push({ pos, uid: driverMention.uid, len: driverMention.tagLabel.length });
+          }
+        }
+        if (operatorMention) {
+          const pos = msg.indexOf(operatorMention.tagLabel);
+          if (pos !== -1) {
+            groupMentions.push({ pos, uid: operatorMention.uid, len: operatorMention.tagLabel.length });
+          }
+        }
+        const ids = String(targetGroupId).split(',').map((id) => id.trim()).filter(Boolean);
+        for (const id of ids) {
+          try {
+            await sendSkyEyesMessage(id, msg, groupMentions);
+            zaloSent = true;
+          } catch (err) {
+            console.error('[Zalo Gate Change Error] Group:', id, err.message);
+          }
+        }
+      }
+
+      // 2. Inbox
       if ((notifyType === 2 || notifyType === 3) && uids.length > 0) {
-        uids.forEach(uid => {
-          sendSkyEyesPrivateMessage(uid, msg).catch(err => console.error('[Zalo Gate Change Private Error] UID:', uid, err.message));
-        });
+        for (const uid of uids) {
+          try {
+            await sendSkyEyesPrivateMessage(uid, msg);
+            zaloSent = true;
+          } catch (err) {
+            console.error('[Zalo Gate Change Private Error] UID:', uid, err.message);
+          }
+        }
       }
     }
 
-    res.json({ success: true, message: `Đã cập nhật vị trí đỗ thành ${newGate || 'trống'} và gửi tin nhắn Zalo thành công!` });
+    res.json({
+      success: true,
+      message: zaloSent
+        ? `Đã cập nhật vị trí ${oldGate || '-'} → ${newGate || '-'} và gửi Zalo.`
+        : `Đã cập nhật vị trí đỗ thành ${newGate || 'trống'}${!notifyEnabled || !gateNotifyEnabled ? ' (Zalo tắt / loại đổi vị trí tắt)' : ''}.`
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
