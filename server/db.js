@@ -334,10 +334,21 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE accounts ADD COLUMN perm_gate INTEGER DEFAULT 0;`); } catch(e) {}
 
   // Zalo mapping: name_key (bỏ dấu) + source (manual ưu tiên) + updated_at
+  // SQLite cũ có thể reject DEFAULT trong ALTER → thêm cột trần, không DEFAULT
   try { await dbInstance.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN name_key TEXT;`); } catch(e) {}
-  try { await dbInstance.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN source TEXT DEFAULT 'auto';`); } catch(e) {}
-  try { await dbInstance.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN source TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN updated_at TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_zalo_map_name_key ON zalo_user_mappings(name_key);`); } catch(e) {}
+  // Đảm bảo cột tồn tại (log nếu còn thiếu)
+  try {
+    const cols = await dbInstance.all('PRAGMA table_info(zalo_user_mappings)');
+    const names = new Set((cols || []).map((c) => c.name));
+    for (const col of ['name_key', 'source', 'updated_at']) {
+      if (!names.has(col)) {
+        console.error(`[DB] zalo_user_mappings still missing column: ${col}`);
+      }
+    }
+  } catch (e) {}
 
   // Dọn mapping tên ngắn (HÙNG, TRỪNG…) + gộp trùng + nâng tên có dấu + re-resolve UID lịch
   try {

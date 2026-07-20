@@ -163,20 +163,53 @@ async function upsertZaloMapping(db, { scheduleName, zaloUid, zaloName, source =
   // Also remove exact UNIQUE schedule_name conflict if any leftover
   await db.run('DELETE FROM zalo_user_mappings WHERE UPPER(TRIM(schedule_name)) = UPPER(?)', finalDisplay);
 
-  await db.run(
-    `INSERT INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name, name_key, source, updated_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-    finalDisplay,
-    uid,
-    zName,
-    key,
-    src
-  );
+  // Insert tương thích schema: ưu tiên đủ cột; fallback nếu DB cũ thiếu cột
+  try {
+    await db.run(
+      `INSERT INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name, name_key, source, updated_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+      finalDisplay,
+      uid,
+      zName,
+      key,
+      src
+    );
+  } catch (insErr) {
+    const msg = String(insErr && insErr.message || insErr);
+    if (/no column named/i.test(msg)) {
+      // Tự thêm cột thiếu rồi thử lại 1 lần
+      try { await db.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN name_key TEXT`); } catch (_) {}
+      try { await db.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN source TEXT`); } catch (_) {}
+      try { await db.exec(`ALTER TABLE zalo_user_mappings ADD COLUMN updated_at TEXT`); } catch (_) {}
+      try {
+        await db.run(
+          `INSERT INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name, name_key, source, updated_at)
+           VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+          finalDisplay, uid, zName, key, src
+        );
+      } catch (insErr2) {
+        // Fallback tối thiểu (schema gốc)
+        await db.run(
+          `INSERT INTO zalo_user_mappings (schedule_name, zalo_uid, zalo_name) VALUES (?, ?, ?)`,
+          finalDisplay, uid, zName
+        );
+        console.warn('[upsertZaloMapping] fallback minimal insert:', insErr2.message);
+      }
+    } else {
+      throw insErr;
+    }
+  }
 
-  const saved = await db.get(
+  let saved = await db.get(
     'SELECT schedule_name, zalo_uid, zalo_name, name_key, source FROM zalo_user_mappings WHERE name_key = ?',
     key
   );
+  if (!saved) {
+    saved = await db.get(
+      'SELECT schedule_name, zalo_uid, zalo_name FROM zalo_user_mappings WHERE UPPER(TRIM(schedule_name)) = UPPER(?)',
+      finalDisplay
+    );
+  }
   return { ok: true, mapping: saved };
 }
 
@@ -250,11 +283,17 @@ async function cleanupZaloMappings(db) {
       merged++;
     }
     // Ensure winner has name_key
-    await db.run(
-      `UPDATE zalo_user_mappings SET name_key = ?, updated_at = datetime('now') WHERE id = ?`,
-      key,
-      winner.id
-    );
+    try {
+      await db.run(
+        `UPDATE zalo_user_mappings SET name_key = ?, updated_at = datetime('now') WHERE id = ?`,
+        key,
+        winner.id
+      );
+    } catch (_) {
+      try {
+        await db.run(`UPDATE zalo_user_mappings SET name_key = ? WHERE id = ?`, key, winner.id);
+      } catch (__) {}
+    }
   }
 
   return { removedShort, merged, remaining: (await db.get('SELECT COUNT(*) as c FROM zalo_user_mappings')).c };
@@ -300,11 +339,21 @@ async function upgradeDisplayNamesFromSchedules(db) {
     if (scoreDisplayName(preferred) <= scoreDisplayName(m.schedule_name)) continue;
     // Đổi schedule_name (UNIQUE) cẩn thận: xóa+insert nếu cần
     try {
-      await db.run('UPDATE zalo_user_mappings SET schedule_name = ?, name_key = ?, updated_at = datetime(\'now\') WHERE id = ?',
-        preferred, key, m.id);
+      await db.run(
+        `UPDATE zalo_user_mappings SET schedule_name = ?, name_key = ?, updated_at = datetime('now') WHERE id = ?`,
+        preferred, key, m.id
+      );
       upgraded++;
     } catch (e) {
-      // conflict UNIQUE — skip
+      try {
+        await db.run(
+          `UPDATE zalo_user_mappings SET schedule_name = ?, name_key = ? WHERE id = ?`,
+          preferred, key, m.id
+        );
+        upgraded++;
+      } catch (e2) {
+        // conflict UNIQUE / missing col — skip
+      }
     }
   }
   return { upgraded };

@@ -2900,12 +2900,23 @@ app.get('/api/fms/zalo/group-members', authenticateToken, async (req, res) => {
 app.get('/api/fms/zalo/mappings', authenticateToken, async (req, res) => {
   try {
     const db = await getDb();
-    const rows = await db.all(
-      `SELECT schedule_name, zalo_uid, zalo_name, name_key, source, created_at, updated_at
-       FROM zalo_user_mappings
-       ORDER BY schedule_name COLLATE NOCASE ASC`
-    );
-    res.json({ success: true, mappings: rows });
+    // SELECT an toàn: nếu DB thiếu cột mới vẫn trả được list
+    let rows;
+    try {
+      rows = await db.all(
+        `SELECT schedule_name, zalo_uid, zalo_name, name_key, source, created_at, updated_at
+         FROM zalo_user_mappings
+         ORDER BY schedule_name COLLATE NOCASE ASC`
+      );
+    } catch (selErr) {
+      console.warn('[GET mappings] fallback select:', selErr.message);
+      rows = await db.all(
+        `SELECT schedule_name, zalo_uid, zalo_name, created_at
+         FROM zalo_user_mappings
+         ORDER BY schedule_name COLLATE NOCASE ASC`
+      );
+    }
+    res.json({ success: true, mappings: rows || [] });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
