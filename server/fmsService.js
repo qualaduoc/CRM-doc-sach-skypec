@@ -133,7 +133,10 @@ function getVietnamNowParts() {
  * - Ngoài “hôm nay” (và nửa đêm ca tối): không quét Cancel rộng.
  */
 const CANCEL_GRACE_MIN_AFTER_FUEL = 40;
+/** Kỳ vọng bay 40p–2h; sau cửa sổ này không còn coi “mới Cancel” (tránh FMS gỡ chuyến đã bay → false Cancel lúc chiều) */
 const CANCEL_TYPICAL_MAX_HOURS = 2;
+/** Phút tối đa sau giờ nạp/dep để còn được báo Cancel (2h bay + buffer thời tiết) */
+const CANCEL_MAX_MIN_AFTER_FUEL = CANCEL_TYPICAL_MAX_HOURS * 60 + 60; // 3 giờ
 
 function addDaysYmdStr(ymd, days) {
   const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -292,20 +295,29 @@ function minutesSinceFuelEvent(dateYmd, timeFuelStr) {
 
 /**
  * Có được phép báo Cancel theo cửa sổ ops sau giờ nạp?
- * - Chưa đủ 40 phút sau nạp → chờ (chưa chắc hủy / đổi tàu)
- * - Trong ngày theo dõi + đã qua grace → được báo
+ * - Chưa đủ 40 phút sau nạp → chờ (tránh nhiễu FMS)
+ * - Đã quá CANCEL_MAX_MIN_AFTER_FUEL (~3h) → KHÔNG báo (chuyến đã bay / FMS gỡ list)
+ * - Trong [40p .. max] + ngày theo dõi → được báo
+ *
+ * Lỗi cũ: chỉ có min 40p → VN229 nạp 05:30, FMS gỡ list lúc trưa, 14:30 báo Cancel sai
+ * dù GetData range vẫn thấy chuyến (đã operate).
  */
 function canReportCancelAfterFuel(dateYmd, timeFuelStr) {
   const mins = minutesSinceFuelEvent(dateYmd, timeFuelStr);
   if (mins === null) {
-    // Không có giờ nạp: chỉ cho báo nếu đang trong ngày theo dõi (tránh spam)
-    return isCancelWatchDate(dateYmd);
+    // Không có giờ nạp: không Cancel mù (tránh spam) — chỉ khi đang watch day
+    return false;
+  }
+  if (mins < 0) {
+    // Giờ nạp trong tương lai (lệch ngày) → chưa
+    return false;
   }
   if (mins < CANCEL_GRACE_MIN_AFTER_FUEL) {
     return false; // còn trong cửa sổ “sắp bay”
   }
-  // Quá grace: cho Cancel (cùng ngày). Không giới hạn cứng 2h cho biến mất —
-  // 2h là kỳ vọng bay; biến mất sau 2h trong ngày vẫn là Cancel hợp lệ.
+  if (mins > CANCEL_MAX_MIN_AFTER_FUEL) {
+    return false; // quá cửa sổ ops — không còn “Cancel mới”
+  }
   return true;
 }
 
@@ -1363,13 +1375,12 @@ async function upsertVnaPresence(db, targetDate, vnaFmsFlights) {
 
 /**
  * CANCEL đã nạp (ops sát trong ngày):
- * 1) Chỉ ngày theo dõi: hôm nay (+ hôm qua nếu <07:30 ca tối) — không quét rộng
+ * 1) Chỉ ngày theo dõi: hôm nay (+ hôm qua nếu <07:30 ca tối)
  * 2) VN nội địa, từng có trên FMS VNA (snapshot) + đúng tàu
  * 3) Skypec kg > 0
- * 4) Mất trên VNA
- * 5) Đã qua ≥40 phút sau giờ nạp (thường bay 40p–1h, tối đa ~2h → đổi tàu hoặc hủy)
+ * 4) Mất trên list GetData hiện tại
+ * 5) Cửa sổ 40p … ~3h sau giờ nạp (ngoài cửa sổ = đã bay / FMS gỡ list — KHÔNG Cancel)
  * → Zalo 1 lần + monitor CANCELLED_FUELED
- * Đổi tàu: nhánh riêng (Skypec ac_reg đổi khi còn chuyến).
  */
 async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
   try {
@@ -1415,42 +1426,23 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
     // Cập nhật snapshot trước khi so “biến mất”
     await upsertVnaPresence(db, targetDate, vnaFmsFlights);
 
-    // Bổ sung snapshot từ fms_fuel_orders (đã từng quét chi tiết trên VNA) — bắt case Cancel đã mất trước vòng hiện tại
-    try {
-      const orderRows = await db.all(
-        `SELECT flight_no, ac_reg FROM fms_fuel_orders
-         WHERE flight_no LIKE ?
-           AND ac_reg IS NOT NULL AND TRIM(ac_reg) != '' AND TRIM(ac_reg) != '-'`,
-        `%_${targetDate}`
-      );
-      for (const o of orderRows || []) {
-        const raw = String(o.flight_no || '');
-        const fltNo = raw.replace(new RegExp(`_${targetDate}$`), '').toUpperCase().replace(/\s+/g, '');
-        const acReg = String(o.ac_reg || '').trim().toUpperCase();
-        if (!fltNo || !acReg) continue;
-        if (!isVnAirlineFlightNo(fltNo)) continue; // chỉ VN
-        await db.run(
-          `INSERT INTO fms_vna_presence (flight_no, date, ac_reg, route, last_seen_at)
-           VALUES (?, ?, ?, '-', CURRENT_TIMESTAMP)
-           ON CONFLICT(flight_no, date) DO UPDATE SET
-             ac_reg = CASE WHEN fms_vna_presence.ac_reg IS NULL OR fms_vna_presence.ac_reg = '-' THEN excluded.ac_reg ELSE fms_vna_presence.ac_reg END`,
-          fltNo, targetDate, acReg
-        );
-      }
-    } catch (seedErr) {
-      console.error('[Cancel] Seed presence từ fuel_orders:', seedErr.message);
-    }
+    // KHÔNG seed presence từ fuel_orders cho Cancel:
+    // fuel_orders có thể còn chuyến đã bay (Skypec) trong khi GetData đã gỡ → false Cancel.
+    // Presence chỉ từ list FMS VNA thực tế (upsertVnaPresence ở trên).
 
     const vnaSet = new Set();
     vnaFmsFlights.forEach(f => {
       if (!f || !f.FLIGHTNO) return;
-      vnaSet.add(String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, ''));
+      // Chuẩn hóa thống nhất: bỏ space + gạch
+      vnaSet.add(String(f.FLIGHTNO).toUpperCase().replace(/[\s\-_.]/g, ''));
     });
 
-    // Chỉ xét chuyến TỪNG thấy trên VNA, nay mất
+    // Chỉ xét chuyến TỪNG thấy trên VNA, nay mất khỏi list GetData
     const presenceRows = await db.all(
-      'SELECT flight_no, ac_reg, route FROM fms_vna_presence WHERE date = ?',
+      'SELECT flight_no, ac_reg, route, last_etd, last_seen_at FROM fms_vna_presence WHERE date = ?',
       targetDate
+    ).catch(async () =>
+      db.all('SELECT flight_no, ac_reg, route FROM fms_vna_presence WHERE date = ?', targetDate)
     );
 
     let cancelled = 0;
@@ -1458,20 +1450,20 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
     const { isSkyOneEnabled, targetGroupId } = await getImportExportNotifyTargets(db);
 
     for (const prev of presenceRows || []) {
-      const fltNo = String(prev.flight_no || '').toUpperCase().replace(/\s+/g, '');
+      const fltNo = String(prev.flight_no || '').toUpperCase().replace(/[\s\-_.]/g, '');
       const snapAc = String(prev.ac_reg || '').trim().toUpperCase();
       if (!fltNo || !snapAc || snapAc === '-') continue;
 
       // Chỉ VN nội địa — bỏ 9G, VU, quốc tế, hãng ngoài
       if (!isCancelScopeFlight(fltNo, prev.route)) continue;
 
-      // Còn trên VNA → không Cancel
+      // Còn trên VNA GetData → không Cancel
       if (vnaSet.has(fltNo)) continue;
       checked++;
 
       // Skypec: đã nạp kg > 0
       const skypec = await db.get(
-        'SELECT flight_no, ac_reg, route, fuel_order, time_fuel, driver_name, operator_name FROM fms_flights_live WHERE date = ? AND UPPER(REPLACE(flight_no,\' \',\'\')) = ?',
+        'SELECT flight_no, ac_reg, route, fuel_order, time_fuel, time_dep, driver_name, operator_name FROM fms_flights_live WHERE date = ? AND UPPER(REPLACE(REPLACE(flight_no,\' \',\'\'),\'-\',\'\')) = ?',
         targetDate, fltNo
       );
       const kg = skypec
@@ -1479,11 +1471,11 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
         : 0;
       if (kg <= 0) continue;
 
-      // Khớp tàu: ưu tiên Skypec ac_reg nếu có; phải trùng snapshot VNA
+      // Khớp tàu: ưu tiên Skypec ac_reg nếu có; phải trùng snapshot VNA (cho phép fuzzy acRegsMatch)
       const skypecAc = skypec && skypec.ac_reg
         ? String(skypec.ac_reg).trim().toUpperCase()
         : '';
-      if (skypecAc && skypecAc !== '-' && skypecAc !== snapAc) {
+      if (skypecAc && skypecAc !== '-' && !acRegsMatch(skypecAc, snapAc) && skypecAc !== snapAc) {
         log(`[Cancel] Bỏ ${fltNo}: tàu Skypec ${skypecAc} ≠ VNA snapshot ${snapAc}`);
         continue;
       }
@@ -1499,7 +1491,7 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
       // Đã báo 1 lần
       const exists = await db.get(
         `SELECT id FROM fms_temp_import_exports
-         WHERE UPPER(TRIM(ac_reg)) = ? AND UPPER(REPLACE(old_flight_no,' ','')) = ?
+         WHERE UPPER(TRIM(ac_reg)) = ? AND UPPER(REPLACE(REPLACE(old_flight_no,' ',''),'-','')) = ?
            AND date = ? AND monitor_type = 'CANCELLED_FUELED'`,
         acReg, fltNo, targetDate
       );
@@ -1507,6 +1499,10 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
       let timeFuel = skypec && skypec.time_fuel && skypec.time_fuel !== '-'
         ? String(skypec.time_fuel).trim()
         : '-';
+      // Ưu tiên giờ dep kế hoạch nếu có (sát ops bay hơn)
+      const timeDep = skypec && skypec.time_dep && skypec.time_dep !== '-'
+        ? String(skypec.time_dep).trim()
+        : null;
 
       let driver = skypec ? String(skypec.driver_name || '').split(',')[0].trim() : '';
       let operator = skypec ? String(skypec.operator_name || '').split(',')[0].trim() : '';
@@ -1515,7 +1511,7 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
 
       if (!driver && !operator) {
         const sched = await db.get(
-          `SELECT driver_name, operator_name, crew_info, time_fuel FROM fms_schedules
+          `SELECT driver_name, operator_name, crew_info, time_fuel, time_dep FROM fms_schedules
            WHERE (date = ? OR fms_date = ?)
              AND REPLACE(REPLACE(UPPER(flight_no),' ',''),'-','') = ?
            LIMIT 1`,
@@ -1533,17 +1529,23 @@ async function detectCancelledFueledFlights(db, targetDate, vnaFmsFlights) {
         }
       }
 
-      // Cửa sổ ops: sau nạp ≥40p mới kết luận Cancel (trước đó có thể sắp bay / nhiễu FMS)
-      if (!canReportCancelAfterFuel(targetDate, timeFuel)) {
-        const mins = minutesSinceFuelEvent(targetDate, timeFuel);
-        log(`[Cancel] Chờ ${fltNo}: mới nạp ${mins != null ? mins + 'p' : '?'} (<${CANCEL_GRACE_MIN_AFTER_FUEL}p) — chưa báo.`);
+      // Mốc thời gian cho cửa sổ Cancel: ưu tiên dep, fallback nạp
+      const timeAnchor = timeDep || timeFuel;
+      // Cửa sổ ops: 40p … ~3h sau nạp/dep — ngoài cửa sổ = đã bay / FMS gỡ list (VD VN229 lúc 14:30)
+      if (!canReportCancelAfterFuel(targetDate, timeAnchor)) {
+        const mins = minutesSinceFuelEvent(targetDate, timeAnchor);
+        if (mins != null && mins > CANCEL_MAX_MIN_AFTER_FUEL) {
+          log(`[Cancel] Bỏ ${fltNo}: đã ${mins}p sau ${timeAnchor} (>${CANCEL_MAX_MIN_AFTER_FUEL}p) — ngoài cửa sổ Cancel (có thể đã bay, FMS gỡ list).`);
+        } else {
+          log(`[Cancel] Chờ ${fltNo}: sau mốc ${timeAnchor} mới ${mins != null ? mins + 'p' : '?'} (cần ${CANCEL_GRACE_MIN_AFTER_FUEL}–${CANCEL_MAX_MIN_AFTER_FUEL}p).`);
+        }
         continue;
       }
 
       const crewPair = [driver, operator].filter(Boolean).join(' - ') || '-';
-      const minsAfter = minutesSinceFuelEvent(targetDate, timeFuel);
+      const minsAfter = minutesSinceFuelEvent(targetDate, timeAnchor);
       const windowNote = minsAfter != null
-        ? ` (sau nạp ~${minsAfter}p; kỳ vọng bay 40p–${CANCEL_TYPICAL_MAX_HOURS}h)`
+        ? ` (sau ${timeAnchor} ~${minsAfter}p; cửa sổ Cancel ${CANCEL_GRACE_MIN_AFTER_FUEL}p–${CANCEL_MAX_MIN_AFTER_FUEL}p)`
         : '';
 
       const ins = await db.run(
