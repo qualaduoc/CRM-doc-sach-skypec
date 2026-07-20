@@ -171,6 +171,7 @@ async function getDb() {
       date TEXT NOT NULL,
       ac_reg TEXT NOT NULL,
       route TEXT DEFAULT '-',
+      last_etd TEXT DEFAULT NULL,
       last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (flight_no, date)
     );
@@ -252,6 +253,7 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN old_time TEXT DEFAULT '-';`); } catch(e) {}
 
   // Snapshot FMS VNA cho detect Cancel (DB cũ)
+  try { await dbInstance.exec(`ALTER TABLE fms_vna_presence ADD COLUMN last_etd TEXT;`); } catch (e) {}
   try {
     await dbInstance.exec(`
       CREATE TABLE IF NOT EXISTS fms_vna_presence (
@@ -259,6 +261,7 @@ async function getDb() {
         date TEXT NOT NULL,
         ac_reg TEXT NOT NULL,
         route TEXT DEFAULT '-',
+        last_etd TEXT DEFAULT NULL,
         last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (flight_no, date)
       );

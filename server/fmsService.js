@@ -615,16 +615,27 @@ function extractFmsFlightTimeMinutes(f) {
 }
 
 /**
- * Chuyến tiếp hợp lệ để bám (Cancel / Kỹ thuật HAN / đổi tàu…):
- * - Cùng tàu, khác chuyến gốc
- * - Bỏ chặng về (*-HAN), HAN-HAN; chỉ chặng ĐI từ HAN
- * - Cùng ngày monitor: giờ ≥ old_time (chống gán ngược VN837 trước VN7063)
- * - Ngày SAU monitor: mọi giờ đều “sau” (bám tái xuất qua đêm — case VN1806 → QT ngày kế)
- * - Mỗi flight có thể mang _date (ngày FMS); mặc định = scanDate
+ * Điểm thời gian tuyệt đối để so “chặng gần nhất”:
+ * date YYYY-MM-DD + phút trong ngày → 1 số. Không có giờ → cuối ngày (+1999).
+ */
+function flightAbsSortKey(fDate, ftMins) {
+  const m = String(fDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ftMins != null ? ftMins : 9e12;
+  const day = (+m[1]) * 372 + (+m[2]) * 31 + (+m[3]); // monotonic enough
+  const t = ftMins != null ? ftMins : 1999; // chưa biết giờ → xếp sau mọi chuyến đã biết giờ cùng ngày
+  return day * 2000 + t;
+}
+
+/**
+ * Chặng bay TIẾP THEO duy nhất của tàu sau sự kiện (đổi tàu / Cancel / NKT):
+ * 1) Cùng tàu, khác chuyến gốc
+ * 2) Chỉ chặng ĐI từ HAN (bỏ về *-HAN, HAN-HAN)
+ * 3) Cùng ngày monitor: giờ ≥ old_time; ngày sau: mọi giờ
+ * 4) CHỌN ĐÚNG 1 chuyến: sớm nhất theo (ngày, giờ) — KHÔNG ưu tiên QT/ND
+ *    → VD VNA326 sau cancel: VN661 00:30, không phải VN923 10:15
  */
 function findNextMonitorFlight(fmsFlights, track, scanDate, opts = {}) {
   const requireAfterOldTime = opts.requireAfterOldTime !== false;
-  const preferIntl = !!opts.preferIntl;
   const trackAc = normalizeAcRegKey(track.ac_reg);
   const oldFlt = String(track.old_flight_no || '').toUpperCase().replace(/\s+/g, '');
   const oldMins = parseHhMmToMinutes(track.old_time);
@@ -660,19 +671,22 @@ function findNextMonitorFlight(fmsFlights, track, scanDate, opts = {}) {
       if (ft == null) continue;
       if (ft < oldMins) continue;
     }
-    // fDate > trackDate → ngày sau: OK (không so giờ)
 
-    scored.push({ f, route, fltNo, ft, intl, fDate });
+    scored.push({
+      f,
+      route,
+      fltNo,
+      ft,
+      intl,
+      fDate,
+      abs: flightAbsSortKey(fDate, ft)
+    });
   }
 
   if (!scored.length) return null;
+  // Chỉ 1 tiêu chí: gần nhất theo thời gian thực tế
   scored.sort((a, b) => {
-    // Ưu tiên ngày sớm hơn (gần sau sự kiện), rồi QT nếu prefer, rồi giờ
-    if (a.fDate && b.fDate && a.fDate !== b.fDate) return a.fDate < b.fDate ? -1 : 1;
-    if (preferIntl && a.intl !== b.intl) return a.intl ? -1 : 1;
-    if (a.ft != null && b.ft != null) return a.ft - b.ft;
-    if (a.ft != null) return -1;
-    if (b.ft != null) return 1;
+    if (a.abs !== b.abs) return a.abs - b.abs;
     return String(a.fltNo).localeCompare(String(b.fltNo));
   });
   const best = scored[0];
@@ -681,7 +695,8 @@ function findNextMonitorFlight(fmsFlights, track, scanDate, opts = {}) {
     route: best.route,
     fltNo: best.fltNo,
     isIntl: best.intl,
-    fDate: best.fDate
+    fDate: best.fDate,
+    ft: best.ft
   };
 }
 
@@ -784,16 +799,23 @@ Tàu ${ac} đã nạp ${kgStr} kg dầu Quốc tế cho ${oldFlt} (${oldRoute} l
   return '';
 }
 
-/** Gom ứng viên chặng mới: VNA payload + presence + Skypec live (ngày monitor + ngày kế + ngày quét) */
+/** Gom ứng viên chặng mới: VNA payload + Skypec + presence (ngày monitor + ngày kế + ngày quét).
+ *  Ưu tiên bản ghi CÓ GIỜ (ETD/STD) — presence không giờ không đè mất FMS.
+ */
 async function collectNextFlightCandidates(db, track, vnaFlights, scanDate) {
-  const out = [];
-  const seen = new Set();
+  const byKey = new Map();
   const push = (f) => {
     if (!f || !f.FLIGHTNO || !f.ACREG) return;
     const key = `${String(f._date || '')}|${String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '')}|${normalizeAcRegKey(f.ACREG)}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push(f);
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, f);
+      return;
+    }
+    // Giữ bản có giờ rõ hơn (không để presence không ETD che FMS có ETD)
+    const prevT = extractFmsFlightTimeMinutes(prev);
+    const nextT = extractFmsFlightTimeMinutes(f);
+    if (prevT == null && nextT != null) byKey.set(key, f);
   };
 
   const trackDate = String(track.date || '').trim();
@@ -801,6 +823,7 @@ async function collectNextFlightCandidates(db, track, vnaFlights, scanDate) {
   const today = getVietnamDbDateStr();
   const dates = [...new Set([trackDate, nextDate, scanDate, today].filter(Boolean))];
 
+  // 1) FMS VNA payload (thường có ETD)
   for (const f of vnaFlights || []) {
     push({
       ...f,
@@ -809,25 +832,7 @@ async function collectNextFlightCandidates(db, track, vnaFlights, scanDate) {
   }
 
   for (const d of dates) {
-    try {
-      const pres = await db.all(
-        `SELECT flight_no, ac_reg, route FROM fms_vna_presence WHERE date = ?`,
-        d
-      );
-      for (const r of pres || []) {
-        if (!acRegsMatch(r.ac_reg, track.ac_reg)) continue;
-        const { origin, dest } = parseRouteEndpoints(r.route);
-        if (!origin || !dest) continue;
-        push({
-          FLIGHTNO: r.flight_no,
-          ACREG: r.ac_reg,
-          DEP_AP_SCHED: origin,
-          ARR_AP_SCHED: dest,
-          _date: d
-        });
-      }
-    } catch (_) { /* presence table optional */ }
-
+    // 2) Skypec live (có time_dep / time_fuel)
     try {
       const lives = await db.all(
         `SELECT flight_no, ac_reg, route, time_dep, time_fuel FROM fms_flights_live WHERE date = ?`,
@@ -843,15 +848,41 @@ async function collectNextFlightCandidates(db, track, vnaFlights, scanDate) {
           DEP_AP_SCHED: origin,
           ARR_AP_SCHED: dest,
           STD: r.time_dep,
+          ETD: r.time_dep,
           time_dep: r.time_dep,
           time_fuel: r.time_fuel,
           _date: d
         });
       }
     } catch (_) { /* ignore */ }
+
+    // 3) Presence (+ last_etd nếu có) — bổ sung chuyến QT chưa có trên Skypec
+    try {
+      const pres = await db.all(
+        `SELECT flight_no, ac_reg, route, last_etd FROM fms_vna_presence WHERE date = ?`,
+        d
+      ).catch(async () =>
+        db.all(`SELECT flight_no, ac_reg, route FROM fms_vna_presence WHERE date = ?`, d)
+      );
+      for (const r of pres || []) {
+        if (!acRegsMatch(r.ac_reg, track.ac_reg)) continue;
+        const { origin, dest } = parseRouteEndpoints(r.route);
+        if (!origin || !dest) continue;
+        const etd = r.last_etd || null;
+        push({
+          FLIGHTNO: r.flight_no,
+          ACREG: r.ac_reg,
+          DEP_AP_SCHED: origin,
+          ARR_AP_SCHED: dest,
+          STD: etd,
+          ETD: etd,
+          _date: d
+        });
+      }
+    } catch (_) { /* presence table optional */ }
   }
 
-  return out;
+  return [...byKey.values()];
 }
 
 /** Alias Cancel */
@@ -1031,30 +1062,65 @@ function sendImportExportZalo(targetGroupId, isSkyOneEnabled, message, logTag) {
   });
 }
 
+/** Lấy chuỗi giờ ETD/STD từ object FMS (HH:MM) */
+function extractFmsFlightTimeStr(f) {
+  if (!f) return null;
+  const keys = [
+    'ETD', 'STD', 'ATD', 'DEP_TIME', 'SCHED_DEP', 'DEP_SCHED',
+    'time_dep', 'TIME_DEP', 'ETD_SCHED', 'DEP'
+  ];
+  for (const k of keys) {
+    const m = String(f[k] || '').match(/(\d{1,2}):(\d{2})/);
+    if (m) return `${String(m[1]).padStart(2, '0')}:${m[2]}`;
+  }
+  for (const k of Object.keys(f)) {
+    if (/time|etd|std|dep/i.test(k)) {
+      const m = String(f[k] || '').match(/(\d{1,2}):(\d{2})/);
+      if (m) return `${String(m[1]).padStart(2, '0')}:${m[2]}`;
+    }
+  }
+  return null;
+}
+
 /**
- * Ghi nhận chuyến đang có trên FMS VNA (snapshot).
- * Cancel chỉ khi chuyến TỪNG có trong snapshot rồi biến mất — tránh nhầm hãng ngoài (chỉ có Skypec).
+ * Ghi nhận chuyến VN trên FMS VNA (snapshot).
+ * - Lưu cả ND + QT + ETD (để bám ĐÚNG 1 chặng tiếp theo theo giờ)
+ * - Cancel detect vẫn chỉ xét chuyến ND qua isCancelScopeFlight
  */
 async function upsertVnaPresence(db, targetDate, vnaFmsFlights) {
   for (const f of vnaFmsFlights || []) {
     if (!f || !f.FLIGHTNO) continue;
     const fltNo = String(f.FLIGHTNO).toUpperCase().replace(/\s+/g, '');
-    // Chỉ snapshot chuyến VN (VNA) — bỏ 9G, VU, hãng ngoài
     if (!isVnAirlineFlightNo(fltNo)) continue;
     const acReg = String(f.ACREG || f.ac_reg || '').trim().toUpperCase();
     if (!fltNo || !acReg || acReg === '-') continue;
-    const route = `${f.DEP_AP_SCHED || ''}-${f.ARR_AP_SCHED || ''}`.toUpperCase() || '-';
-    // Không snapshot chuyến quốc tế cho Cancel
-    if (route !== '-' && !isCancelScopeFlight(fltNo, route)) continue;
-    await db.run(
-      `INSERT INTO fms_vna_presence (flight_no, date, ac_reg, route, last_seen_at)
-       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(flight_no, date) DO UPDATE SET
-         ac_reg = excluded.ac_reg,
-         route = excluded.route,
-         last_seen_at = CURRENT_TIMESTAMP`,
-      fltNo, targetDate, acReg, route
-    );
+    const dep = normalizeAirportCode(f.DEP_AP_SCHED || f.DEP || '');
+    const arr = normalizeAirportCode(f.ARR_AP_SCHED || f.ARR || '');
+    const route = dep && arr ? `${dep}-${arr}` : '-';
+    const etd = extractFmsFlightTimeStr(f);
+    try {
+      await db.run(
+        `INSERT INTO fms_vna_presence (flight_no, date, ac_reg, route, last_etd, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(flight_no, date) DO UPDATE SET
+           ac_reg = excluded.ac_reg,
+           route = excluded.route,
+           last_etd = COALESCE(excluded.last_etd, fms_vna_presence.last_etd),
+           last_seen_at = CURRENT_TIMESTAMP`,
+        fltNo, targetDate, acReg, route, etd
+      );
+    } catch (_) {
+      // DB chưa có last_etd
+      await db.run(
+        `INSERT INTO fms_vna_presence (flight_no, date, ac_reg, route, last_seen_at)
+         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(flight_no, date) DO UPDATE SET
+           ac_reg = excluded.ac_reg,
+           route = excluded.route,
+           last_seen_at = CURRENT_TIMESTAMP`,
+        fltNo, targetDate, acReg, route
+      );
+    }
   }
 }
 
@@ -1393,30 +1459,23 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
         } catch (_) { /* ignore */ }
       }
 
-      // ── Ứng viên chặng mới (VNA + presence + Skypec, ngày monitor + ngày kế) ──
+      // ── Đúng 1 chặng tiếp theo: gần nhất theo (ngày, giờ) — không ưu tiên QT ──
       let candidates = await collectNextFlightCandidates(db, track, fmsFlights, targetDate);
-      const preferIntl = mType === 'CANCELLED_FUELED' || mType === 'DOMESTIC_TO_INTL';
+      // Gắn _date cho payload đang quét
+      candidates = candidates.map((f) => ({
+        ...f,
+        _date: f._date || f.date || targetDate
+      }));
 
-      // Thử lần lượt ứng viên (bỏ cái fail verify, không skip cả monitor)
       let next = null;
       let decision = { action: 'wait' };
-      const tried = new Set();
-      for (let attempt = 0; attempt < 12; attempt++) {
+      // Bỏ lần lượt nếu verify fail — nhưng mỗi lần vẫn lấy “gần nhất” còn lại
+      for (let attempt = 0; attempt < 8; attempt++) {
         const cand = findNextMonitorFlight(candidates, track, targetDate, {
-          requireAfterOldTime: true,
-          preferIntl
+          requireAfterOldTime: true
         });
         if (!cand) break;
-        const tryKey = `${cand.fDate || ''}|${cand.fltNo}`;
-        if (tried.has(tryKey)) {
-          candidates = candidates.filter(
-            (f) => String(f.FLIGHTNO || '').toUpperCase().replace(/\s+/g, '') !== cand.fltNo
-          );
-          continue;
-        }
-        tried.add(tryKey);
 
-        // Verify Skypec khi có live đầy đủ; QT chỉ có trên VNA/presence vẫn được
         let liveRejected = false;
         try {
           const vdList = [...new Set([cand.fDate, track.date, targetDate].filter(Boolean))];
@@ -1430,12 +1489,11 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
             if (!liveCheck || !liveCheck.ac_reg) continue;
             const liveAc = normalizeAcRegKey(liveCheck.ac_reg);
             if (!acRegsMatch(liveCheck.ac_reg, trackAcReg)) {
-              // Số đăng ký Skypec quá ngắn ("622") → không tin, giữ ACREG từ VNA/presence
               if (liveAc.length < 5) {
-                log(`[Giám sát] Skypec ac="${liveCheck.ac_reg}" mơ hồ cho ${cand.fltNo} — tin VNA/presence ${trackAcReg}`);
+                // ac mơ hồ trên Skypec — tin VNA/presence
                 break;
               }
-              log(`[Giám sát] Bỏ next ${cand.fltNo}: Skypec tàu ${liveCheck.ac_reg} ≠ ${trackAcReg}`);
+              log(`[Giám sát] Bỏ ${cand.fltNo}: Skypec ${liveCheck.ac_reg} ≠ ${trackAcReg}`);
               liveRejected = true;
               break;
             }
@@ -1446,12 +1504,12 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
                 cand.isIntl = isDepartingIntlRoute(cand.route);
               }
             }
-            if (String(vd) === String(track.date)) {
+            // Cùng ngày monitor: chặn gán ngược giờ
+            if (String(vd) === String(track.date) && cand.fDate === track.date) {
               const oldM = parseHhMmToMinutes(track.old_time);
               const liveM = parseHhMmToMinutes(liveCheck.time_dep);
               const liveMf = liveM != null ? liveM : parseHhMmToMinutes(liveCheck.time_fuel);
               if (oldM != null && liveMf != null && liveMf < oldM) {
-                log(`[Giám sát] Bỏ next ${cand.fltNo}: giờ Skypec ${liveMf}p < old ${oldM}p`);
                 liveRejected = true;
                 break;
               }
@@ -1469,16 +1527,8 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
           continue;
         }
 
+        // 1 chặng gần nhất → quyết định 1 lần theo loại monitor
         const dec = decideMonitorAction(track, cand);
-        if (dec.action === 'wait') {
-          // Ứng viên không khớp loại (vd Cancel gặp ND) → đóng an toàn đã handle trong decide;
-          // nếu wait thật (route lạ) bỏ và thử tiếp
-          candidates = candidates.filter(
-            (f) => String(f.FLIGHTNO || '').toUpperCase().replace(/\s+/g, '') !== cand.fltNo
-          );
-          continue;
-        }
-
         next = cand;
         decision = dec;
         break;
@@ -1487,7 +1537,7 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
       if (!next || decision.action === 'wait') continue;
 
       if (decision.action === 'close') {
-        log(`[Giám sát] Đóng #${track.id} ${mType} ${trackAcReg}: ${decision.kind} → ${next.fltNo} (${next.route})`);
+        log(`[Giám sát] Đóng #${track.id} ${mType} ${trackAcReg}: ${decision.kind} → ${next.fltNo} (${next.route}) @${next.fDate || ''} ${next.ft != null ? Math.floor(next.ft / 60) + ':' + String(next.ft % 60).padStart(2, '0') : ''}`);
         await db.run(
           `UPDATE fms_temp_import_exports
            SET new_flight_no = ?, new_route = ?, is_warned = 2, updated_at = CURRENT_TIMESTAMP
@@ -1498,13 +1548,14 @@ async function checkTempImportExportAlerts(db, targetDate, fmsFlights) {
       }
 
       if (decision.action === 'warn') {
+        // Chỉ cảnh báo 1 lần (is_warned: 0 → 1)
         const warningMsg = buildMonitorWarningMessage(track, next, decision.kind);
         if (!warningMsg) continue;
         log(`[Giám sát] Cảnh báo #${track.id} ${mType} ${trackAcReg} → ${next.fltNo} (${next.route}) [${decision.kind}]`);
         await db.run(
           `UPDATE fms_temp_import_exports
            SET new_flight_no = ?, new_route = ?, is_warned = 1, updated_at = CURRENT_TIMESTAMP
-           WHERE id = ?`,
+           WHERE id = ? AND is_warned = 0`,
           next.fltNo, next.route, track.id
         );
         sendImportExportZalo(targetGroupId, isSkyOneEnabled, warningMsg, `Giám sát ${trackAcReg}`);
