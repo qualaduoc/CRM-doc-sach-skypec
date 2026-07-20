@@ -1897,143 +1897,133 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           // Lấy lịch trực để so sánh bến đỗ trước khi check thay đổi
           const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type, driver_name, operator_name FROM fms_schedules WHERE flight_no = ? AND COALESCE(fms_date, date) = ?', cleanFltNo, targetDate);
 
-          const cleanACREG = flt.ACREG ? flt.ACREG.trim() : '';
+          const cleanACREG = flt.ACREG ? String(flt.ACREG).trim() : '';
+          const acTypeStr = flt.ACTYPE ? String(flt.ACTYPE).trim() : '-';
           const oldStandby = oldOrder ? (parseInt(oldOrder.standby_fuel) || 0) : 0;
           const oldFuelOrder = oldOrder ? (parseInt(oldOrder.fuel_order) || 0) : 0;
-          const newStandby = parseInt(detail.standby_fuel) || 0;
-          const newFuelOrder = parseInt(detail.fuel_order) || 0;
+          let newStandby = parseInt(String(detail.standby_fuel || '0').replace(/[^\d]/g, ''), 10) || 0;
+          let newFuelOrder = parseInt(String(detail.fuel_order || '0').replace(/[^\d]/g, ''), 10) || 0;
 
-          // So sánh vị trí đỗ
-          const oldGate = oldOrder ? (oldOrder.gate || '') : '';
-          const newGate = sched ? (sched.gate || '') : '';
-          const isGateChanged = oldOrder && oldGate && newGate && (oldGate.trim() !== newGate.trim());
+          // Không ghi đè kg về 0 khi FMS tạm trống / đổi tàu nhiễu (tránh spam "CHÍNH THỨC MỚI" lặp)
+          // Giữ số kg đã biết nếu bản ghi mới = 0 nhưng trước đó đã có số liệu & đã báo
+          if (oldOrder && (oldOrder.warn_fuel_order || 0) === 1 && newFuelOrder <= 0 && oldFuelOrder > 0) {
+            newFuelOrder = oldFuelOrder;
+            detail.fuel_order = String(oldFuelOrder);
+          }
+          if (oldOrder && (oldOrder.warn_standby || 0) === 1 && newStandby <= 0 && oldStandby > 0) {
+            newStandby = oldStandby;
+            detail.standby_fuel = String(oldStandby);
+          }
 
-          // So sánh giờ bay ETD dự kiến
+          const oldGate = oldOrder ? String(oldOrder.gate || '').trim() : '';
+          const newGate = sched ? String(sched.gate || '').trim() : '';
+          const isGateChanged = !!(oldOrder && oldGate && newGate && oldGate !== newGate);
+
           const newEtd = convertUtcToVnTime(flt.ETD);
-          const oldEtd = oldOrder ? (oldOrder.etd || '') : '';
-          const isEtdChanged = oldOrder && oldEtd && newEtd && (oldEtd.trim() !== newEtd.trim());
+          const oldEtd = oldOrder ? String(oldOrder.etd || '').trim() : '';
+          const isEtdChanged = !!(oldOrder && oldEtd && newEtd && oldEtd !== String(newEtd).trim());
 
-          // Báo tin khi mới xuất hiện standby_fuel lần đầu
-          const isNewStandby = newStandby > 0 && oldStandby <= 0;
-          // Báo tin khi mới xuất hiện fuel_order lần đầu
-          const isNewFuelOrder = newFuelOrder > 0 && oldFuelOrder <= 0;
-          
-          // Kiểm tra thay đổi trị số khi đã có dữ liệu từ trước
+          const prevWarnedFuel = oldOrder ? (oldOrder.warn_fuel_order || 0) : 0;
+          const prevWarnedStandby = oldOrder ? (oldOrder.warn_standby || 0) : 0;
+          const prevWarnedAc = oldOrder ? (oldOrder.warn_ac_reg || 0) : 0;
+          const prevWarnedEtd = oldOrder ? (oldOrder.warn_etd || 0) : 0;
+          // Gate: dùng last gate trong DB — chỉ báo khi đổi thật
+          // warn_gate không có cột riêng → so sánh giá trị là đủ
+
+          // --- Phát hiện sự kiện (RAW) ---
+          // "Mới": lần đầu có số >0 và CHƯA từng báo (warn_*=0). Đã báo rồi + FMS về 0 rồi lên lại → KHÔNG báo "mới" nữa.
+          const isNewStandby = newStandby > 0 && oldStandby <= 0 && prevWarnedStandby === 0;
+          const isNewFuelOrder = newFuelOrder > 0 && oldFuelOrder <= 0 && prevWarnedFuel === 0;
           const isStandbyChanged = oldStandby > 0 && newStandby > 0 && oldStandby !== newStandby;
           const isFuelOrderChanged = oldFuelOrder > 0 && newFuelOrder > 0 && oldFuelOrder !== newFuelOrder;
-          const isFuelChanged = isStandbyChanged || isFuelOrderChanged;
+          const isAcRegChanged = !!(
+            oldOrder &&
+            oldOrder.ac_reg &&
+            cleanACREG &&
+            String(oldOrder.ac_reg).trim().toUpperCase().replace(/\s+/g, '') !==
+              cleanACREG.toUpperCase().replace(/\s+/g, '')
+          );
 
-          // Báo tin khi đổi tàu bay
-          const isAcRegChanged = oldOrder && oldOrder.status === 'Đã có số liệu' && oldOrder.ac_reg && cleanACREG && 
-                                 (String(oldOrder.ac_reg).trim() !== cleanACREG);
+          // Áp dụng settings bật/tắt
+          let triggerNewStandby = isNewStandby && notifyNewStandby;
+          let triggerNewFuelOrder = isNewFuelOrder && notifyNewFuelOrder;
+          let triggerStandbyChanged = isStandbyChanged && notifyStandbyChanged;
+          let triggerFuelOrderChanged = isFuelOrderChanged && notifyFuelOrderChanged;
+          let triggerAcRegChanged = isAcRegChanged && notifyAcRegChanged;
+          let triggerGateChanged = isGateChanged && notifyGateChanged;
+          let triggerEtdChanged = isEtdChanged && notifyEtdChanged;
 
-          // (Logic kiểm soát Tạm nhập - Tái xuất và đổi tàu chéo đã được dồn về cào Skypec Live syncFmsSkypecLive)
+          // Lần import đầu (chưa có oldOrder): không bắn Zalo
+          if (!oldOrder) {
+            triggerNewStandby = false;
+            triggerNewFuelOrder = false;
+            triggerStandbyChanged = false;
+            triggerFuelOrderChanged = false;
+            triggerAcRegChanged = false;
+            triggerGateChanged = false;
+            triggerEtdChanged = false;
+          }
 
-          // Áp dụng bộ lọc tắt/bật thông báo từ settings của Khầy
-          const triggerNewStandby = isNewStandby && notifyNewStandby;
-          const triggerNewFuelOrder = isNewFuelOrder && notifyNewFuelOrder;
-          const triggerStandbyChanged = isStandbyChanged && notifyStandbyChanged;
-          const triggerFuelOrderChanged = isFuelOrderChanged && notifyFuelOrderChanged;
-          const triggerAcRegChanged = isAcRegChanged && notifyAcRegChanged;
-          const triggerGateChanged = isGateChanged && notifyGateChanged;
-          const triggerEtdChanged = isEtdChanged && notifyEtdChanged;
+          // Danh sách sự kiện theo thứ tự ưu tiên — MỖI sự kiện 1 tin, CHỈ field liên quan
+          const eventQueue = [];
+          if (triggerNewFuelOrder) eventQueue.push('new_fuel');
+          if (triggerNewStandby) eventQueue.push('new_standby');
+          if (triggerFuelOrderChanged) eventQueue.push('fuel_changed');
+          if (triggerStandbyChanged) eventQueue.push('standby_changed');
+          if (triggerAcRegChanged) eventQueue.push('ac_changed');
+          if (triggerGateChanged) eventQueue.push('gate_changed');
+          if (triggerEtdChanged) eventQueue.push('etd_changed');
 
-          // Nhận diện lần quét đầu tiên khi import lịch trực: nếu oldOrder chưa tồn tại trong DB, không bắn thông báo Zalo
-          const shouldNotify = oldOrder ? (triggerNewStandby || triggerNewFuelOrder || triggerStandbyChanged || triggerFuelOrderChanged || triggerAcRegChanged || triggerGateChanged || triggerEtdChanged) : false;
+          const shouldNotify = eventQueue.length > 0;
+
+          // --- Resolve tag Zalo: BẮT BUỘC cố gắng tag cả Lái + NV ---
+          const rawDr = sched && sched.driver_name ? String(sched.driver_name).trim() : '';
+          const rawOp = sched && sched.operator_name ? String(sched.operator_name).trim() : '';
+          const stripAccents = (s) => String(s || '')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+            .toUpperCase().replace(/\s+/g, ' ').trim();
+          const drName = stripAccents(rawDr);
+          const opName = stripAccents(rawOp);
+
+          let driverCrewPart = rawDr || '-';
+          let operatorCrewPart = rawOp || '-';
+          let driverMentionInfo = null;
+          let operatorMentionInfo = null;
 
           if (shouldNotify) {
-            let title = '🔔 [FMS BÁO TẢI DẦU MỚI]';
-            if (triggerNewStandby && !triggerNewFuelOrder) {
-              title = '🔔 [FMS BÁO TẢI DẦU STANDBY MỚI]';
-            } else if (triggerNewFuelOrder) {
-              title = '⛽ [FMS BÁO TẢI DẦU CHÍNH THỨC MỚI]';
-            } else if (triggerStandbyChanged || triggerFuelOrderChanged) {
-              title = '🔄 [FMS CẬP NHẬT SỐ LIỆU TẢI DẦU]';
-            } else if (triggerAcRegChanged) {
-              title = '🛩️ [FMS CẢNH BÁO THAY ĐỔI TÀU BAY]';
-            } else if (triggerGateChanged) {
-              title = '📍 [FMS CẢNH BÁO THAY ĐỔI VỊ TRÍ ĐỖ]';
-            } else if (triggerEtdChanged) {
-              title = '🔄 [FMS THAY ĐỔI THÔNG TIN CHUYẾN BAY]';
-            }
-            
-            // Lấy giá trị cũ phục vụ template
-            const oldAcRegVal = oldOrder ? (oldOrder.ac_reg || '-') : '-';
-            const oldStandbyFuelVal = oldOrder ? (parseInt(oldOrder.standby_fuel) > 0 ? parseInt(oldOrder.standby_fuel).toLocaleString() : '0') : '-';
-            const oldFuelOrderVal = oldOrder ? (parseInt(oldOrder.fuel_order) > 0 ? parseInt(oldOrder.fuel_order).toLocaleString() : '0') : '-';
-
-            // Đọc template từ settings
-            const templateSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_message_template'");
-            let template = templateSetting ? templateSetting.value : '';
-
-            if (!template || template.trim() === '') {
-              template = `{{status_change_title}}
-✈️ Chuyến bay: {{flight_no}} - {{ac_reg}}
-👥 Cặp tra nạp: {{crew_info}}
-🚛 Số xe nạp: {{truck_no}}
-📍 Vị trí đỗ: {{gate}}
-🛩️ Số hiệu tàu: {{ac_reg}} (Loại: {{ac_type}})
----------------------------
-⛽ Tải dầu Standby (CFP): {{standby_fuel}} kg
-⛽ Tải dầu Chính thức: {{fuel_order}} kg
-⏰ Giờ Tra nạp: {{time_fuel}}
-⏰ Giờ Hạ/Cất: Hạ {{time_arr}} | Cất {{time_dep}}
-📢 Giờ thông báo: {{notify_time}}`;
-            }
-
-            // Đảm bảo dòng Chuyến bay luôn có định dạng {{flight_no}} - {{ac_reg}} để nhận diện
-            if (template.includes('{{flight_no}}') && !template.includes('{{flight_no}} - {{ac_reg}}') && !template.includes('{{flight_no}}-{{ac_reg}}')) {
-              template = template.replace('{{flight_no}}', '{{flight_no}} - {{ac_reg}}');
-            }
-
-            // 1. Phân giải tag Zalo TỪNG NGƯỜI (Lái xe / NV tra nạp) — không map cả cặp
-            const rawDr = sched && sched.driver_name ? String(sched.driver_name).trim() : '';
-            const rawOp = sched && sched.operator_name ? String(sched.operator_name).trim() : '';
-            const stripAccents = (s) => String(s || '')
-              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-              .replace(/đ/g, 'd').replace(/Đ/g, 'D')
-              .toUpperCase().replace(/\s+/g, ' ').trim();
-            const drName = stripAccents(rawDr);
-            const opName = stripAccents(rawOp);
-
-            let driverCrewPart = rawDr || '-';
-            let operatorCrewPart = rawOp || '-';
-            let driverMentionInfo = null;
-            let operatorMentionInfo = null;
-
             try {
               const dbMappings = await db.all('SELECT schedule_name, zalo_uid, zalo_name FROM zalo_user_mappings');
-              // Map theo tên đầy đủ (chuẩn hóa) — mỗi người 1 mapping
               const mappingMap = {};
               dbMappings.forEach(m => {
                 const key = stripAccents(m.schedule_name);
                 if (key) {
-                  mappingMap[key] = {
-                    uid: m.zalo_uid,
-                    name: m.zalo_name || m.schedule_name
-                  };
+                  mappingMap[key] = { uid: m.zalo_uid, name: m.zalo_name || m.schedule_name };
                 }
               });
-
-              const resolveOne = (normKey, displayName) => {
+              const resolveOne = (normKey) => {
                 if (!normKey || normKey === '-') return null;
                 if (mappingMap[normKey]) return mappingMap[normKey];
-                // Khớp mềm: mapping là họ-tên đầy đủ chứa key, hoặc ngược lại
+                // Khớp token cuối (tên) + độ dài hợp lý
+                const tokens = normKey.split(' ').filter(Boolean);
+                const last = tokens[tokens.length - 1] || '';
                 for (const [k, v] of Object.entries(mappingMap)) {
+                  if (k === normKey) return v;
                   if (k.includes(normKey) || normKey.includes(k)) return v;
+                  const kt = k.split(' ').filter(Boolean);
+                  if (last && kt[kt.length - 1] === last && Math.abs(kt.length - tokens.length) <= 2) return v;
                 }
                 return null;
               };
-
               if (drName) {
-                const mapInfo = resolveOne(drName, rawDr);
+                const mapInfo = resolveOne(drName);
                 if (mapInfo) {
                   driverCrewPart = `@${mapInfo.name}`;
                   driverMentionInfo = { uid: mapInfo.uid, tagLabel: `@${mapInfo.name}` };
                 }
               }
               if (opName) {
-                const mapInfo = resolveOne(opName, rawOp);
+                const mapInfo = resolveOne(opName);
                 if (mapInfo) {
                   operatorCrewPart = `@${mapInfo.name}`;
                   operatorMentionInfo = { uid: mapInfo.uid, tagLabel: `@${mapInfo.name}` };
@@ -2042,239 +2032,213 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             } catch (mappingErr) {
               console.error('[Mapping Fetch Error]', mappingErr.message);
             }
+          }
 
-            // Hiển thị tách role trong tin nhắn
-            const crewInfoVal = (rawDr || rawOp)
-              ? [
-                  rawDr ? `Lái: ${driverCrewPart}` : null,
-                  rawOp ? `NV: ${operatorCrewPart}` : null
-                ].filter(Boolean).join(' | ')
-              : (sched ? (sched.crew_info || '-') : '-');
+          // Luôn hiển thị cả Lái + NV (tag nếu có mapping)
+          const crewInfoVal = (rawDr || rawOp)
+            ? [
+                rawDr ? `Lái: ${driverCrewPart}` : null,
+                rawOp ? `NV: ${operatorCrewPart}` : null
+              ].filter(Boolean).join(' | ')
+            : (sched ? (sched.crew_info || '-') : '-');
 
-            const formatNumber = (val) => {
-              const num = parseInt(val);
-              return isNaN(num) ? '0' : num.toLocaleString();
+          const formatNumber = (val) => {
+            const num = parseInt(String(val || '0').replace(/[^\d]/g, ''), 10);
+            return isNaN(num) ? '0' : num.toLocaleString('vi-VN');
+          };
+          const notifyTimeStr = getVietnamDateTimeStr();
+          const timeFuelStr = sched && sched.time_fuel ? sched.time_fuel : '-';
+
+          /**
+           * Tin nhắn THEO LOẠI SỰ KIỆN — chỉ field liên quan (không kèm field khác).
+           * new_fuel: chính thức mới → không standby/gate/xe
+           * gate: chỉ vị trí → không tải dầu
+           * ac: chỉ tàu → không tải/đỗ
+           */
+          const buildFocusedMessage = (eventType) => {
+            const lines = [];
+            const pushCrew = () => {
+              if (crewInfoVal && crewInfoVal !== '-') {
+                lines.push(`👥 Cặp: ${crewInfoVal}${timeFuelStr !== '-' ? ` | Giờ nạp: ${timeFuelStr}` : ''}`);
+              }
+            };
+            const pushAc = () => {
+              lines.push(`🛩️ Tàu bay: ${cleanACREG || '-'} (Loại: ${acTypeStr})`);
+            };
+            const pushFlight = (withAc = true) => {
+              lines.push(withAc
+                ? `✈️ Chuyến: ${cleanFltNo} - ${cleanACREG || '-'}`
+                : `✈️ Chuyến: ${cleanFltNo}`);
+            };
+            const pushFooter = () => {
+              lines.push(`📢 Giờ thông báo: ${notifyTimeStr}`);
             };
 
-            const replacements = {
-              status_change_title: title,
-              flight_no: cleanFltNo,
-              ac_reg: cleanACREG,
-              old_ac_reg: oldAcRegVal,
-              ac_type: flt.ACTYPE ? flt.ACTYPE.trim() : '-',
-              route: `${flt.DEP_AP_SCHED || ''}-${flt.ARR_AP_SCHED || ''}`,
-              gate: sched ? (sched.gate || '-') : '-',
-              old_gate: '-',
-              crew_info: crewInfoVal, // Chứa tag Zalo trực tiếp
-              truck_no: sched ? (sched.truck_no || '-') : '-',
-              standby_fuel: formatNumber(detail.standby_fuel),
-              old_standby_fuel: oldStandbyFuelVal,
-              fuel_order: formatNumber(detail.fuel_order),
-              old_fuel_order: oldFuelOrderVal,
-              time_fuel: sched && sched.time_fuel ? sched.time_fuel : '-',
-              time_arr: sched && sched.time_arr ? sched.time_arr : '-',
-              time_dep: sched && sched.time_dep ? sched.time_dep : '-',
-              notify_time: getVietnamDateTimeStr()
-            };
-
-            let msg = template;
-            // Nếu chỉ thay đổi giờ bay ETD, soạn tin nhắn theo đúng mẫu Khầy yêu cầu
-            if (isEtdChanged && !isNewStandby && !isNewFuelOrder && !isFuelChanged && !isAcRegChanged && !isGateChanged) {
-              const oldEtdVal = oldEtd || '-';
-              const newEtdVal = newEtd || '-';
-              const crewVal = crewInfoVal;
-              msg = `${title}
-✈️ Chuyến bay: ${cleanFltNo} - ${cleanACREG || '-'}
-⛽ Giờ bay ETD (dự kiến) cũ: ${oldEtdVal}'
-⛽ Giờ bay ETD (dự kiến) mới: ${newEtdVal}'
-Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
-📢 Giờ thông báo: ${replacements.notify_time}`;
-            } else {
-              // Đối với các trường hợp khác, dùng template soạn sẵn bình thường
-              for (const [key, value] of Object.entries(replacements)) {
-                const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
-                msg = msg.replace(regex, value);
-              }
-
-              // Tự động lọc dòng thông minh chi tiết (Fine-grained Smart Filtering)
-              const lines = msg.split('\n');
-              const processedLines = lines.map(line => {
-                const lower = line.toLowerCase();
-                
-                // Xử lý dòng vị trí đỗ
-                if (lower.includes('vị trí đỗ') || lower.includes('gate') || lower.includes('vị trí:')) {
-                  if (isGateChanged) {
-                    return line; // Giữ nguyên dòng đầy đủ nếu vị trí đỗ thực sự thay đổi
-                  }
-                  
-                  // Nếu vị trí đỗ không đổi, tìm xem dòng có ghép thông tin Tổ nạp/Cặp tra nạp không
-                  const crewKeywords = ['tổ nạp', 'cặp tra nạp', 'người trực', 'tổ trực'];
-                  let keywordIndex = -1;
-                  for (const kw of crewKeywords) {
-                    const idx = lower.indexOf(kw);
-                    if (idx !== -1) {
-                      keywordIndex = idx;
-                      break;
-                    }
-                  }
-                  
-                  if (keywordIndex !== -1) {
-                    // Cắt bỏ phần vị trí đỗ, chỉ giữ lại phần Tổ trực
-                    let crewPart = line.substring(keywordIndex);
-                    // Loại bỏ ngoặc đóng ở cuối dòng nếu có (do template viết dạng (Tổ nạp: ...))
-                    if (crewPart.endsWith(')')) {
-                      crewPart = crewPart.substring(0, crewPart.length - 1);
-                    }
-                    // Trả về dòng Tổ trực sạch sẽ
-                    return `👥 ${crewPart}`;
-                  }
-                  
-                  // Nếu không chứa tổ nạp, trả về chuỗi rỗng để bị filter loại bỏ
-                  return '';
-                }
-                
-                return line;
-              });
-
-              const filteredLines = processedLines.filter(line => {
-                if (!line) return false;
-                const lower = line.toLowerCase();
-                
-                // 1. Dòng chứa Số hiệu tàu cũ/mới: Chỉ hiển thị khi có đổi tàu
-                if (lower.includes('số hiệu tàu cũ') || lower.includes('old_ac_reg') || (lower.includes('tàu') && lower.includes('cũ') && lower.includes('mới'))) {
-                  return !!isAcRegChanged;
-                }
-                
-                // 2. Dòng chứa Tải dầu Standby cũ/mới: Chỉ hiển thị khi Standby thay đổi hoặc mới xuất hiện
-                if (lower.includes('tải dầu standby cũ') || lower.includes('old_standby_fuel') || (lower.includes('standby') && lower.includes('cũ') && lower.includes('mới'))) {
-                  return !!(isStandbyChanged || isNewStandby);
-                }
-                
-                // 3. Dòng chứa Tải dầu Chính thức cũ/mới: Chỉ hiển thị khi Chính thức thay đổi hoặc mới xuất hiện
-                if (lower.includes('tải dầu chính thức cũ') || lower.includes('old_fuel_order') || (lower.includes('chính thức') && lower.includes('cũ') && lower.includes('mới'))) {
-                  return !!(isNewFuelOrder || isFuelOrderChanged);
-                }
-
-                return true;
-              });
-
-              // Gom lại và dọn dẹp các dòng trống liên tiếp bị thừa ra
-              msg = filteredLines
-                .map(line => line.trimEnd())
-                .filter((line, index, arr) => {
-                  if (line === '' && index > 0 && arr[index - 1] === '') return false;
-                  return true;
-                })
-                .join('\n');
-
-              // Đảm bảo tin nhắn luôn có dòng Giờ thông báo ở cuối
-              if (!msg.includes('Giờ thông báo')) {
-                msg += `\n📢 Giờ thông báo: ${replacements.notify_time}`;
-              }
+            if (eventType === 'new_fuel') {
+              lines.push('⛽ [FMS BÁO TẢI DẦU CHÍNH THỨC MỚI]');
+              pushFlight(true);
+              pushCrew();
+              pushAc();
+              lines.push(`⛽ Chính thức: ${formatNumber(newFuelOrder)} kg`);
+              pushFooter();
+              return lines.join('\n');
             }
+            if (eventType === 'new_standby') {
+              lines.push('🔔 [FMS BÁO TẢI DẦU STANDBY MỚI]');
+              pushFlight(true);
+              pushCrew();
+              pushAc();
+              lines.push(`⛽ Standby: ${formatNumber(newStandby)} kg`);
+              pushFooter();
+              return lines.join('\n');
+            }
+            if (eventType === 'fuel_changed') {
+              lines.push('🔄 [FMS CẬP NHẬT TẢI DẦU CHÍNH THỨC]');
+              pushFlight(true);
+              pushCrew();
+              lines.push(`⛽ Chính thức: ${formatNumber(oldFuelOrder)} → ${formatNumber(newFuelOrder)} kg`);
+              pushFooter();
+              return lines.join('\n');
+            }
+            if (eventType === 'standby_changed') {
+              lines.push('🔄 [FMS CẬP NHẬT TẢI DẦU STANDBY]');
+              pushFlight(true);
+              pushCrew();
+              lines.push(`⛽ Standby: ${formatNumber(oldStandby)} → ${formatNumber(newStandby)} kg`);
+              pushFooter();
+              return lines.join('\n');
+            }
+            if (eventType === 'ac_changed') {
+              lines.push('🛩️ [FMS CẢNH BÁO THAY ĐỔI TÀU BAY]');
+              lines.push(`✈️ Chuyến: ${cleanFltNo}`);
+              pushCrew();
+              lines.push(`🛩️ Tàu cũ: ${String(oldOrder.ac_reg || '-').trim()}`);
+              lines.push(`🛩️ Tàu mới: ${cleanACREG || '-'} (Loại: ${acTypeStr})`);
+              pushFooter();
+              return lines.join('\n');
+            }
+            if (eventType === 'gate_changed') {
+              lines.push('📍 [FMS CẢNH BÁO THAY ĐỔI VỊ TRÍ ĐỖ]');
+              pushFlight(true);
+              pushCrew();
+              lines.push(`📍 Vị trí đỗ: ${oldGate || '-'} → ${newGate || '-'}`);
+              pushFooter();
+              return lines.join('\n');
+            }
+            if (eventType === 'etd_changed') {
+              lines.push('🔄 [FMS THAY ĐỔI GIỜ BAY ETD]');
+              pushFlight(true);
+              pushCrew();
+              lines.push(`⏰ ETD cũ: ${oldEtd || '-'}`);
+              lines.push(`⏰ ETD mới: ${newEtd || '-'}`);
+              lines.push(`Yêu cầu ĐIỀU HÀNH & Cặp tra nạp check chéo thông tin.`);
+              pushFooter();
+              return lines.join('\n');
+            }
+            return '';
+          };
 
-          // Lấy cấu hình gửi tin nhắn trực tiếp qua Bot SkyOne từ settings
-          const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
-          const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
-          
-          const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
-          const targetGroupId = groupSetting ? groupSetting.value : null;
-
-          if (isSkyOneEnabled) {
+          const sendOneZalo = async (msg) => {
+            if (!msg) return;
+            const notifySetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_notify_enabled'");
+            const groupSetting = await db.get("SELECT value FROM settings WHERE key = 'zalo_target_group_id'");
+            const isSkyOneEnabled = notifySetting ? (notifySetting.value === 'true') : false;
+            const targetGroupId = groupSetting ? groupSetting.value : null;
             const notifyType = sched ? (sched.notify_type || 1) : 1;
             const crewZaloUidsStr = sched ? (sched.crew_zalo_uids || '') : '';
             const uids = crewZaloUidsStr.split(',').map(uid => uid.trim()).filter(Boolean);
 
-            let msgGroup = msg;
-            let groupMentions = [];
-
-            // Nếu cần gửi vào nhóm (notifyType === 1 hoặc 3)
-            if ((notifyType === 1 || notifyType === 3) && targetGroupId) {
-              // Tìm vị trí tag Zalo của driver và operator trong thân tin nhắn
-              if (driverMentionInfo) {
-                const pos = msg.indexOf(driverMentionInfo.tagLabel);
-                if (pos !== -1) {
-                  groupMentions.push({
-                    pos: pos,
-                    uid: driverMentionInfo.uid,
-                    len: driverMentionInfo.tagLabel.length
-                  });
+            if (isSkyOneEnabled) {
+              if ((notifyType === 1 || notifyType === 3) && targetGroupId) {
+                const groupMentions = [];
+                if (driverMentionInfo) {
+                  const pos = msg.indexOf(driverMentionInfo.tagLabel);
+                  if (pos !== -1) {
+                    groupMentions.push({
+                      pos,
+                      uid: driverMentionInfo.uid,
+                      len: driverMentionInfo.tagLabel.length
+                    });
+                  }
+                }
+                if (operatorMentionInfo) {
+                  const pos = msg.indexOf(operatorMentionInfo.tagLabel);
+                  if (pos !== -1) {
+                    groupMentions.push({
+                      pos,
+                      uid: operatorMentionInfo.uid,
+                      len: operatorMentionInfo.tagLabel.length
+                    });
+                  }
+                }
+                // Fallback: nếu chưa map Zalo nhưng có tên — vẫn hiện chữ (đã trong msg)
+                const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
+                for (const id of groupIds) {
+                  try {
+                    await sendSkyEyesMessage(id, msg, groupMentions);
+                    log(`[SkyOne] ${cleanFltNo} → nhóm ${id} OK (mentions=${groupMentions.length})`);
+                  } catch (err) {
+                    console.error(`[SkyOne] Gửi nhóm ${id} thất bại:`, err.message);
+                  }
                 }
               }
-              
-              if (operatorMentionInfo) {
-                const pos = msg.indexOf(operatorMentionInfo.tagLabel);
-                if (pos !== -1) {
-                  groupMentions.push({
-                    pos: pos,
-                    uid: operatorMentionInfo.uid,
-                    len: operatorMentionInfo.tagLabel.length
-                  });
+              if ((notifyType === 2 || notifyType === 3) && uids.length > 0) {
+                for (const uid of uids) {
+                  try {
+                    await sendSkyEyesPrivateMessage(uid, msg);
+                  } catch (err) {
+                    console.error(`[SkyOne] Inbox ${uid}:`, err.message);
+                  }
                 }
               }
-
-              // Fallback: Nếu không tag được ai (chưa liên kết Zalo) và tin nhắn gốc không chứa thông tin cặp tra nạp
-              if (groupMentions.length === 0 && sched && sched.crew_info) {
-                const rawCrew = String(sched.crew_info).trim();
-                const hasCrewInMsg = rawCrew && msg.toUpperCase().includes(rawCrew.toUpperCase());
-                if (!hasCrewInMsg) {
-                  msgGroup = msg + `\n👥 Tổ trực: ${sched.crew_info}`;
-                }
-              }
-
-              const groupIds = String(targetGroupId).split(',').map(id => id.trim()).filter(Boolean);
-              groupIds.forEach(id => {
-                sendSkyEyesMessage(id, msgGroup, groupMentions)
-                  .then(() => log(`[SkyOne] Đã gửi thông báo trực tiếp cho chuyến bay ${cleanFltNo} tới nhóm ${id} thành công!`))
-                  .catch(err => console.error(`[SkyOne] Gửi tới nhóm ${id} thất bại:`, err.message));
-              });
             }
+            // Fallback webhook cũ
+            sendZaloNotification(msg).catch(err => console.error('[Zalo Bot cũ]', err.message));
+          };
 
-            // Nếu cần gửi inbox cá nhân riêng (notifyType === 2 hoặc 3)
-            if ((notifyType === 2 || notifyType === 3) && uids.length > 0) {
-              uids.forEach(uid => {
-                sendSkyEyesPrivateMessage(uid, msg)
-                  .then(() => log(`[SkyOne] Đã gửi tin nhắn riêng cho chuyến bay ${cleanFltNo} tới UID ${uid} thành công!`))
-                  .catch(err => console.error(`[SkyOne] Gửi tin nhắn riêng tới UID ${uid} thất bại:`, err.message));
-              });
+          if (shouldNotify) {
+            // Gửi TỪNG sự kiện 1 tin (không gộp field lạ vào 1 tin)
+            // Giới hạn 1 chu kỳ: tối đa 3 tin / chuyến để tránh bão
+            const toSend = eventQueue.slice(0, 3);
+            log(`[FMS Notify] ${cleanFltNo}: events=${toSend.join(',')} ac=${cleanACREG} fuel=${newFuelOrder} stby=${newStandby}`);
+            for (const ev of toSend) {
+              const msg = buildFocusedMessage(ev);
+              await sendOneZalo(msg);
             }
           }
 
-          // Gửi qua Webhook Bot Zalo cũ làm phương án dự phòng (fallback)
-          sendZaloNotification(msg).catch(err => console.error('[Zalo Bot cũ] Lỗi gửi thông báo:', err.message));
-          }
-
-          // Tính toán các giá trị cảnh báo mới
-          const oldWarnAcReg = oldOrder ? (oldOrder.warn_ac_reg || 0) : 0;
-          const oldWarnStandby = oldOrder ? (oldOrder.warn_standby || 0) : 0;
-          const oldWarnFuelOrder = oldOrder ? (oldOrder.warn_fuel_order || 0) : 0;
-          const oldWarnEtd = oldOrder ? (oldOrder.warn_etd || 0) : 0;
+          // Cờ đã báo (sticky — không reset khi FMS tạm 0)
+          const oldWarnAcReg = prevWarnedAc;
+          const oldWarnStandby = prevWarnedStandby;
+          const oldWarnFuelOrder = prevWarnedFuel;
+          const oldWarnEtd = prevWarnedEtd;
           const oldWarnUpdatedAt = oldOrder ? oldOrder.warn_updated_at : null;
 
-          const warnAcRegVal = isAcRegChanged ? 1 : oldWarnAcReg;
-          const warnStandbyVal = (isStandbyChanged || isNewStandby) ? 1 : oldWarnStandby;
-          const warnFuelOrderVal = (isFuelOrderChanged || isNewFuelOrder) ? 1 : oldWarnFuelOrder;
-          const warnEtdVal = isEtdChanged ? 1 : oldWarnEtd;
-          
+          const warnAcRegVal = (isAcRegChanged || triggerAcRegChanged) ? 1 : oldWarnAcReg;
+          const warnStandbyVal = (isStandbyChanged || isNewStandby || triggerNewStandby) ? 1 : oldWarnStandby;
+          const warnFuelOrderVal = (isFuelOrderChanged || isNewFuelOrder || triggerNewFuelOrder) ? 1 : oldWarnFuelOrder;
+          const warnEtdVal = (isEtdChanged || triggerEtdChanged) ? 1 : oldWarnEtd;
+
           let warnUpdatedAtVal = oldWarnUpdatedAt;
-          if (isAcRegChanged || isStandbyChanged || isNewStandby || isFuelOrderChanged || isNewFuelOrder || isEtdChanged) {
+          if (shouldNotify || isAcRegChanged || isStandbyChanged || isNewStandby || isFuelOrderChanged || isNewFuelOrder || isEtdChanged) {
             warnUpdatedAtVal = new Date().toISOString();
           }
 
-          // Trực quan hóa giá trị cũ để hiển thị trên UI
           const oldAcRegDb = oldOrder ? oldOrder.old_ac_reg : null;
           const oldStandbyDb = oldOrder ? oldOrder.old_standby_fuel : null;
           const oldFuelOrderDb = oldOrder ? oldOrder.old_fuel_order : null;
           const oldEtdDb = oldOrder ? oldOrder.old_etd : null;
 
-          // Khi có thay đổi thì lưu lại giá trị cũ (trước khi thay đổi)
-          // Nếu không đổi nhưng đang trong thời gian nhấp nháy, giữ lại giá trị cũ để render
           const finalOldAcReg = isAcRegChanged ? oldOrder.ac_reg : (warnAcRegVal === 1 ? oldAcRegDb : null);
           const finalOldStandby = isStandbyChanged ? oldOrder.standby_fuel : (warnStandbyVal === 1 ? oldStandbyDb : null);
           const finalOldFuelOrder = isFuelOrderChanged ? oldOrder.fuel_order : (warnFuelOrderVal === 1 ? oldFuelOrderDb : null);
           const finalOldEtd = isEtdChanged ? oldOrder.etd : (warnEtdVal === 1 ? oldEtdDb : null);
 
-          // Lưu hoặc cập nhật vào database SQLite
+          // Persist kg đã “bảo vệ” (newFuelOrder/newStandby có thể đã giữ số cũ)
+          const persistFuel = newFuelOrder;
+          const persistStandby = newStandby;
+          const persistStatus = (persistFuel > 0 || persistStandby > 0) ? 'Đã có số liệu' : status;
+
           await db.run(`
             INSERT INTO fms_fuel_orders (
               flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
@@ -2308,16 +2272,16 @@ Yêu cầu ĐIỀU HÀNH & Cặp tra nạp [${crewVal}] check chéo thông tin.
               updated_at = CURRENT_TIMESTAMP
           `, 
             cleanFltNo + '_' + targetDate,
-            flt.ACREG ? flt.ACREG.trim() : '',
-            flt.ACTYPE ? flt.ACTYPE.trim() : '',
+            cleanACREG,
+            acTypeStr === '-' ? '' : acTypeStr,
             `${flt.DEP_AP_SCHED || ''} - ${flt.ARR_AP_SCHED || ''}`,
-            detail.standby_fuel,
-            detail.fuel_order,
+            String(persistStandby),
+            String(persistFuel),
             detail.trip_fuel,
             detail.trip_time,
             detail.taxi_fuel,
             detail.alternate,
-            status,
+            persistStatus,
             warnAcRegVal,
             warnStandbyVal,
             warnFuelOrderVal,
