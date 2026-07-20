@@ -262,6 +262,7 @@ async function getDb() {
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN etd TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN old_etd TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN warn_etd INTEGER DEFAULT 0;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE fms_fuel_orders ADD COLUMN last_ac_notify_sig TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN truck_no TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN airline_name TEXT;`); } catch(e) {}
   try { await dbInstance.exec(`ALTER TABLE fms_flights_live ADD COLUMN unit_code TEXT DEFAULT 'BOTH';`); } catch(e) {}

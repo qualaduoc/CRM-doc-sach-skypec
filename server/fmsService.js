@@ -159,6 +159,117 @@ function isCancelWatchDate(targetDate) {
   return getCancelWatchDates().includes(String(targetDate || '').trim());
 }
 
+/** Mốc ca ops (phút trong ngày VN) */
+const SHIFT_M_0730 = 7 * 60 + 30;
+const SHIFT_M_1930 = 19 * 60 + 30;
+/** Chuyến đã qua giờ nạp/dep quá lâu → không spam đổi tàu/ETD/gate (phút) */
+const OPS_STALE_ALERT_MIN = 150; // 2.5 giờ
+
+/**
+ * Ca ops hiện tại theo giờ VN:
+ * - day: 07:30–19:29
+ * - evening_head: 19:30–23:59
+ * - evening_tail: 00:00–07:29 (đuôi ca tối)
+ */
+function getCurrentOpsShiftWindow() {
+  const now = getVietnamNowParts();
+  const m = now.minutes;
+  if (m >= SHIFT_M_0730 && m < SHIFT_M_1930) {
+    return { kind: 'day', today: now.ymd, yesterday: addDaysYmdStr(now.ymd, -1) };
+  }
+  if (m >= SHIFT_M_1930) {
+    return { kind: 'evening_head', today: now.ymd, yesterday: addDaysYmdStr(now.ymd, -1) };
+  }
+  return { kind: 'evening_tail', today: now.ymd, yesterday: addDaysYmdStr(now.ymd, -1) };
+}
+
+function parseScheduleMinutes(timeStr) {
+  const match = String(timeStr || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+/**
+ * Lọc lịch theo ca (an toàn, dùng chung auto + manual forceShift).
+ * @param {'day'|'evening'|'night'|'evening_head'|'evening_tail'} shiftKind
+ * @param {string} targetDate — ngày FMS đang quét
+ * @param {{today:string,yesterday:string}} ctx
+ */
+function scheduleMatchesOpsShift(s, shiftKind, targetDate, ctx) {
+  const timeStr = s.time_fuel || s.time_dep || s.time_arr || '';
+  const minutes = parseScheduleMinutes(timeStr);
+
+  // Không có giờ: chỉ cho ca tối (tránh lọt vào ca ngày)
+  if (minutes == null) {
+    return shiftKind === 'evening' || shiftKind === 'night'
+      || shiftKind === 'evening_head' || shiftKind === 'evening_tail';
+  }
+
+  if (shiftKind === 'day') {
+    return minutes >= SHIFT_M_0730 && minutes < SHIFT_M_1930;
+  }
+  if (shiftKind === 'evening' || shiftKind === 'night') {
+    // Manual full ca tối: 19:30–23:59 HOẶC 00:00–07:29
+    return minutes >= SHIFT_M_1930 || minutes < SHIFT_M_0730;
+  }
+  if (shiftKind === 'evening_head') {
+    // 19:30–23:59 cùng ngày FMS = hôm nay
+    return String(targetDate) === String(ctx.today) && minutes >= SHIFT_M_1930;
+  }
+  if (shiftKind === 'evening_tail') {
+    // Đuôi ca: tối hôm qua (≥19:30, fms_date=hôm qua) + sáng sớm hôm nay (<07:30, fms_date=hôm nay)
+    if (String(targetDate) === String(ctx.yesterday) && minutes >= SHIFT_M_1930) return true;
+    if (String(targetDate) === String(ctx.today) && minutes < SHIFT_M_0730) return true;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Auto mode (không forceShift): ngày quét + ca theo đồng hồ VN.
+ * Manual forceDate/forceShift: giữ nguyên hành vi cũ (caller tự xử lý).
+ */
+function resolveAutoScanPlan() {
+  const win = getCurrentOpsShiftWindow();
+  if (win.kind === 'day') {
+    return {
+      shiftKind: 'day',
+      targetDates: [win.today],
+      label: `ca ngày ${win.today} (07:30–19:29)`
+    };
+  }
+  if (win.kind === 'evening_head') {
+    return {
+      shiftKind: 'evening_head',
+      targetDates: [win.today],
+      label: `ca tối (đầu) ${win.today} (≥19:30)`
+    };
+  }
+  // evening_tail
+  const dates = [win.yesterday, win.today].filter((d) => d && (!MONITOR_EPOCH_DATE || d >= MONITOR_EPOCH_DATE));
+  return {
+    shiftKind: 'evening_tail',
+    targetDates: dates.length ? dates : [win.today],
+    label: `ca tối (đuôi) ${win.yesterday}≥19:30 + ${win.today}<07:30`
+  };
+}
+
+/**
+ * Chuyến đã quá giờ nạp/cất cánh lâu → không spam đổi tàu / ETD / gate.
+ * (Vẫn cho phép báo tải dầu mới nếu có — ops có thể nạp trễ.)
+ */
+function isOpsAlertStale(targetDate, sched) {
+  if (!sched) return false;
+  const t = sched.time_dep || sched.time_fuel || sched.time_arr || '';
+  const mins = minutesSinceFuelEvent(targetDate, t);
+  if (mins == null) return false;
+  return mins > OPS_STALE_ALERT_MIN;
+}
+
+function makeAcNotifySig(fromAc, toAc) {
+  return `${normalizeFmsAcReg(fromAc)}>${normalizeFmsAcReg(toAc)}`;
+}
+
 /**
  * Phút đã trôi từ (date + HH:MM giờ VN wall) đến hiện tại VN.
  * null nếu không parse được giờ nạp.
@@ -1852,6 +1963,10 @@ async function syncFMSData(forceDate = null, forceShift = null) {
     }
 
     let targetDates = [];
+    /** Ca đang áp dụng để lọc giờ lịch (null = không lọc — chỉ khi forceShift=all) */
+    let activeShiftKind = null;
+    let autoShiftCtx = getCurrentOpsShiftWindow();
+
     if (forceDate) {
       const selectedDateStr = String(forceDate).trim();
       // Ca tối (evening) / ca đêm (night): quét FMS ngày D + ngày D+1
@@ -1866,21 +1981,25 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           nextDayStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
         }
         targetDates = [selectedDateStr, nextDayStr];
-        log(`[Ca tối] Quét FMS 2 ngày: ${selectedDateStr} (19:30–23:59) + ${nextDayStr} (00:00–07:30)`);
+        activeShiftKind = forceShift === 'night' ? 'night' : 'evening';
+        log(`[Ca tối manual] Quét FMS 2 ngày: ${selectedDateStr} (19:30–23:59) + ${nextDayStr} (00:00–07:30)`);
       } else {
         targetDates = [selectedDateStr];
+        // Manual 1 ngày: chỉ lọc khi user chọn rõ ca; không truyền shift = quét full ngày (không đụng tay admin)
+        if (forceShift === 'day') activeShiftKind = 'day';
+        else if (forceShift === 'evening' || forceShift === 'night') activeShiftKind = forceShift;
+        else activeShiftKind = null; // forceShift null | all → full day
       }
     } else {
-      // Tự động: mọi fms_date đã gán khi import (ca ngày = D, ca tối sáng sớm = D+1)
-      const dateRows = await db.all('SELECT DISTINCT COALESCE(fms_date, date) as target_date FROM fms_schedules');
-      targetDates = dateRows.map(r => r.target_date).filter(Boolean);
-
-      if (targetDates.length === 0) {
-        targetDates = [todayDb];
-      }
+      // ── AUTO: chỉ quét đúng ca hiện tại (tránh VN243 05:00 lọt ca ngày) ──
+      const plan = resolveAutoScanPlan();
+      activeShiftKind = plan.shiftKind;
+      autoShiftCtx = getCurrentOpsShiftWindow();
+      targetDates = plan.targetDates.length ? plan.targetDates : [todayDb];
+      log(`[Auto ca] ${plan.label} → ngày FMS: ${targetDates.join(', ')}`);
     }
     
-    log(`Các ngày sẽ thực hiện quét FMS: ${targetDates.join(', ')}`);
+    log(`Các ngày sẽ thực hiện quét FMS: ${targetDates.join(', ')} | shiftFilter=${activeShiftKind || 'none'}`);
 
     // 2. Sử dụng cookie từ cache bộ nhớ, hoặc đọc từ DB, hoặc tiến hành đăng nhập mới
     let activeCookie = cachedFmsCookie;
@@ -1960,43 +2079,23 @@ async function syncFMSData(forceDate = null, forceShift = null) {
         continue;
       }
 
-      // Lọc theo ca — khớp nguyên tắc nghiệp vụ
-      // day: 07:30–19:30 | evening/night (ca tối): 19:30–23:59 HOẶC 00:00–07:30
+      // Lọc theo ca — auto (đồng hồ VN) hoặc manual forceShift
+      // day: 07:30–19:29 | evening: 19:30–23:59 + 00:00–07:29 (tách head/tail khi auto)
       let filteredSchedules = schedules;
-      if (forceShift && forceShift !== 'all') {
-        filteredSchedules = schedules.filter(s => {
-          const timeStr = s.time_fuel || s.time_dep || s.time_arr || '';
-          if (!timeStr || timeStr === '-') {
-            return forceShift === 'evening' || forceShift === 'night';
-          }
-          
+      if (activeShiftKind) {
+        const ctx = autoShiftCtx || getCurrentOpsShiftWindow();
+        filteredSchedules = schedules.filter((s) => {
           try {
-            const match = String(timeStr).match(/^(\d{1,2}):(\d{2})/);
-            if (!match) return forceShift === 'evening' || forceShift === 'night';
-            
-            const hour = parseInt(match[1], 10);
-            const minute = parseInt(match[2], 10);
-            const minutes = hour * 60 + minute;
-            
-            const m_0730 = 7 * 60 + 30;
-            const m_1930 = 19 * 60 + 30;
-            
-            if (forceShift === 'day') {
-              return minutes >= m_0730 && minutes < m_1930;
-            }
-            if (forceShift === 'evening' || forceShift === 'night') {
-              // Ca tối full: tối muộn cùng ngày + sáng sớm ngày FMS tiếp theo
-              return minutes >= m_1930 || minutes < m_0730;
-            }
+            return scheduleMatchesOpsShift(s, activeShiftKind, targetDate, ctx);
           } catch (e) {
             console.error('[Backend Shift Filter Error]', e.message);
+            return false;
           }
-          return false;
         });
       }
 
       if (filteredSchedules.length === 0) {
-        log(`[Ngày ${targetDate}] Không có chuyến bay nào khớp với ca trực ${forceShift}. Bỏ qua.`);
+        log(`[Ngày ${targetDate}] Không có chuyến khớp ca (${activeShiftKind || forceShift || 'all'}). Bỏ qua.`);
         continue;
       }
 
@@ -2085,10 +2184,23 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const hasOrder = parseInt(detail.fuel_order) > 0 || parseInt(detail.standby_fuel) > 0;
           const status = hasOrder ? 'Đã có số liệu' : 'Chờ cập nhật';
 
-          const oldOrder = await db.get('SELECT status, fuel_order, standby_fuel, ac_reg, gate, etd, warn_ac_reg, warn_standby, warn_fuel_order, warn_etd, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order, old_etd FROM fms_fuel_orders WHERE flight_no = ?', cleanFltNo + '_' + targetDate);
+          let oldOrder = null;
+          try {
+            oldOrder = await db.get(
+              'SELECT status, fuel_order, standby_fuel, ac_reg, gate, etd, warn_ac_reg, warn_standby, warn_fuel_order, warn_etd, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order, old_etd, last_ac_notify_sig FROM fms_fuel_orders WHERE flight_no = ?',
+              cleanFltNo + '_' + targetDate
+            );
+          } catch (_) {
+            oldOrder = await db.get(
+              'SELECT status, fuel_order, standby_fuel, ac_reg, gate, etd, warn_ac_reg, warn_standby, warn_fuel_order, warn_etd, warn_updated_at, old_ac_reg, old_standby_fuel, old_fuel_order, old_etd FROM fms_fuel_orders WHERE flight_no = ?',
+              cleanFltNo + '_' + targetDate
+            );
+          }
 
           // Lấy lịch trực để so sánh bến đỗ trước khi check thay đổi
           const sched = await db.get('SELECT crew_info, truck_no, gate, time_arr, time_dep, time_fuel, crew_zalo_uids, notify_type, driver_name, operator_name FROM fms_schedules WHERE flight_no = ? AND COALESCE(fms_date, date) = ?', cleanFltNo, targetDate);
+          // Chuyến đã quá giờ nạp/dep lâu (vd VN243 05:00 báo lúc 11:xx) → không spam ac/etd/gate
+          const opsStale = isOpsAlertStale(targetDate, sched);
 
           let cleanACREG = flt.ACREG ? String(flt.ACREG).trim() : '';
           const acTypeStr = flt.ACTYPE ? String(flt.ACTYPE).trim() : '-';
@@ -2145,6 +2257,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             !acRegsMatch(oldAcNorm, newAcNorm)
           );
           let isAcRegChanged = false;
+          let acNotifySig = null;
           if (isAcRegChangedRaw) {
             // Multi-leg cùng lúc có cả 2 tàu → không bao giờ báo đổi (đang nhiễu)
             const bothInSnapshot = siblingCount > 1 && siblingAcs.some(a => a === oldAcNorm || acRegsMatch(a, oldAcNorm))
@@ -2153,15 +2266,28 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               log(`[FMS Anti-flip] ${cleanFltNo}: snapshot còn CẢ ${oldOrder.ac_reg} và ${cleanACREG} → bỏ báo đổi tàu`);
               cleanACREG = String(oldOrder.ac_reg).trim();
               isAcRegChangedRaw = false;
+            } else if (opsStale) {
+              // Chuyến đã qua giờ nạp/dep lâu (ca khác) — cập nhật DB im lặng, không Zalo
+              log(`[FMS Stale] ${cleanFltNo}: đổi tàu ${oldOrder.ac_reg}→${cleanACREG} nhưng chuyến đã quá ${OPS_STALE_ALERT_MIN}p → không báo Zalo`);
+              isAcRegChanged = false;
+              // vẫn cho commit ac mới xuống DB (không spam)
             } else {
-              const confirmed = confirmStableValue(pendingAcRegConfirm, stableKey + '_ac', newAcNorm, FMS_STABLE_HITS);
-              if (confirmed) {
-                isAcRegChanged = true;
-                log(`[FMS Stable] ${cleanFltNo}: chốt đổi tàu ${oldOrder.ac_reg} → ${cleanACREG} (sau ${FMS_STABLE_HITS} chu kỳ)`);
+              acNotifySig = makeAcNotifySig(oldOrder.ac_reg, cleanACREG);
+              // Đã báo đúng cặp old→new trước đó (kể cả sau PM2 restart) → không lặp
+              const prevSig = oldOrder.last_ac_notify_sig || '';
+              if (prevSig && prevSig === acNotifySig && (oldOrder.warn_ac_reg || 0) === 1) {
+                log(`[FMS Dedupe] ${cleanFltNo}: đã báo đổi tàu ${acNotifySig} → bỏ lặp`);
+                isAcRegChanged = false;
+                // Giữ ac mới trên DB nếu FMS đang ở tàu mới
               } else {
-                // Chưa chốt: giữ ac cũ trên DB, không báo
-                log(`[FMS Stable] ${cleanFltNo}: nghi đổi tàu → ${cleanACREG}, chờ xác nhận (${FMS_STABLE_HITS} chu kỳ)`);
-                cleanACREG = String(oldOrder.ac_reg).trim();
+                const confirmed = confirmStableValue(pendingAcRegConfirm, stableKey + '_ac', newAcNorm, FMS_STABLE_HITS);
+                if (confirmed) {
+                  isAcRegChanged = true;
+                  log(`[FMS Stable] ${cleanFltNo}: chốt đổi tàu ${oldOrder.ac_reg} → ${cleanACREG} (sau ${FMS_STABLE_HITS} chu kỳ)`);
+                } else {
+                  log(`[FMS Stable] ${cleanFltNo}: nghi đổi tàu → ${cleanACREG}, chờ xác nhận (${FMS_STABLE_HITS} chu kỳ)`);
+                  cleanACREG = String(oldOrder.ac_reg).trim();
+                }
               }
             }
           } else {
@@ -2172,22 +2298,35 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           let isEtdChangedRaw = !!(oldOrder && oldEtd && newEtd && oldEtd !== String(newEtd).trim());
           let isEtdChanged = false;
           if (isEtdChangedRaw) {
-            const confirmedEtd = confirmStableValue(
-              pendingEtdConfirm,
-              stableKey + '_etd',
-              String(newEtd).trim(),
-              FMS_STABLE_HITS
-            );
-            if (confirmedEtd) {
-              isEtdChanged = true;
-              log(`[FMS Stable] ${cleanFltNo}: chốt đổi ETD ${oldEtd} → ${newEtd}`);
-            } else {
-              log(`[FMS Stable] ${cleanFltNo}: nghi đổi ETD → ${newEtd}, chờ xác nhận`);
-              newEtd = oldEtd; // giữ ETD cũ đến khi chốt
+            if (opsStale) {
+              log(`[FMS Stale] ${cleanFltNo}: đổi ETD ${oldEtd}→${newEtd} nhưng chuyến đã quá giờ → không báo Zalo`);
+              // vẫn commit ETD mới im lặng
               isEtdChanged = false;
+            } else {
+              const confirmedEtd = confirmStableValue(
+                pendingEtdConfirm,
+                stableKey + '_etd',
+                String(newEtd).trim(),
+                FMS_STABLE_HITS
+              );
+              if (confirmedEtd) {
+                isEtdChanged = true;
+                log(`[FMS Stable] ${cleanFltNo}: chốt đổi ETD ${oldEtd} → ${newEtd}`);
+              } else {
+                log(`[FMS Stable] ${cleanFltNo}: nghi đổi ETD → ${newEtd}, chờ xác nhận`);
+                newEtd = oldEtd; // giữ ETD cũ đến khi chốt
+                isEtdChanged = false;
+              }
             }
           } else {
             clearPendingIfMatch(pendingEtdConfirm, stableKey + '_etd', String(newEtd || '').trim());
+          }
+
+          // Gate: chuyến stale không báo đổi vị trí
+          let isGateChangedNotify = isGateChanged;
+          if (isGateChanged && opsStale) {
+            log(`[FMS Stale] ${cleanFltNo}: đổi gate nhưng chuyến đã quá giờ → không báo Zalo`);
+            isGateChangedNotify = false;
           }
 
           // --- Phát hiện sự kiện (RAW) ---
@@ -2203,7 +2342,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           let triggerStandbyChanged = isStandbyChanged && notifyStandbyChanged;
           let triggerFuelOrderChanged = isFuelOrderChanged && notifyFuelOrderChanged;
           let triggerAcRegChanged = isAcRegChanged && notifyAcRegChanged;
-          let triggerGateChanged = isGateChanged && notifyGateChanged;
+          let triggerGateChanged = isGateChangedNotify && notifyGateChanged;
           let triggerEtdChanged = isEtdChanged && notifyEtdChanged;
 
           // Lần import đầu (chưa có oldOrder): không bắn Zalo
@@ -2487,12 +2626,78 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           const finalOldFuelOrder = isFuelOrderChanged ? oldOrder.fuel_order : (warnFuelOrderVal === 1 ? oldFuelOrderDb : null);
           const finalOldEtd = isEtdChanged ? oldOrder.etd : (warnEtdVal === 1 ? oldEtdDb : null);
 
+          // Chữ ký đổi tàu đã báo (chống lặp sau PM2 restart)
+          const lastAcSigVal = (triggerAcRegChanged && acNotifySig)
+            ? acNotifySig
+            : (oldOrder && oldOrder.last_ac_notify_sig) || null;
+
           // Persist kg đã “bảo vệ” (newFuelOrder/newStandby có thể đã giữ số cũ)
           const persistFuel = newFuelOrder;
           const persistStandby = newStandby;
           const persistStatus = (persistFuel > 0 || persistStandby > 0) ? 'Đã có số liệu' : status;
 
-          await db.run(`
+          // Ghi last_ac_notify_sig nếu cột đã có; fallback nếu DB cũ
+          try {
+            await db.run(`
+              INSERT INTO fms_fuel_orders (
+                flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
+                trip_fuel, trip_time, taxi_fuel, alternate, status,
+                warn_ac_reg, warn_standby, warn_fuel_order, warn_etd, warn_updated_at,
+                old_ac_reg, old_standby_fuel, old_fuel_order, old_etd, gate, etd,
+                last_ac_notify_sig, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+              ON CONFLICT(flight_no) DO UPDATE SET
+                ac_reg = excluded.ac_reg,
+                ac_type = excluded.ac_type,
+                dep_arr = excluded.dep_arr,
+                standby_fuel = excluded.standby_fuel,
+                fuel_order = excluded.fuel_order,
+                trip_fuel = excluded.trip_fuel,
+                trip_time = excluded.trip_time,
+                taxi_fuel = excluded.taxi_fuel,
+                alternate = excluded.alternate,
+                status = excluded.status,
+                warn_ac_reg = excluded.warn_ac_reg,
+                warn_standby = excluded.warn_standby,
+                warn_fuel_order = excluded.warn_fuel_order,
+                warn_etd = excluded.warn_etd,
+                warn_updated_at = excluded.warn_updated_at,
+                old_ac_reg = excluded.old_ac_reg,
+                old_standby_fuel = excluded.old_standby_fuel,
+                old_fuel_order = excluded.old_fuel_order,
+                old_etd = excluded.old_etd,
+                gate = excluded.gate,
+                etd = excluded.etd,
+                last_ac_notify_sig = COALESCE(excluded.last_ac_notify_sig, fms_fuel_orders.last_ac_notify_sig),
+                updated_at = CURRENT_TIMESTAMP
+            `, 
+              cleanFltNo + '_' + targetDate,
+              cleanACREG,
+              acTypeStr === '-' ? '' : acTypeStr,
+              `${flt.DEP_AP_SCHED || ''} - ${flt.ARR_AP_SCHED || ''}`,
+              String(persistStandby),
+              String(persistFuel),
+              detail.trip_fuel,
+              detail.trip_time,
+              detail.taxi_fuel,
+              detail.alternate,
+              persistStatus,
+              warnAcRegVal,
+              warnStandbyVal,
+              warnFuelOrderVal,
+              warnEtdVal,
+              warnUpdatedAtVal,
+              finalOldAcReg,
+              finalOldStandby,
+              finalOldFuelOrder,
+              finalOldEtd,
+              newGate,
+              newEtd,
+              lastAcSigVal
+            );
+          } catch (insErr) {
+            // DB chưa có cột last_ac_notify_sig
+            await db.run(`
             INSERT INTO fms_fuel_orders (
               flight_no, ac_reg, ac_type, dep_arr, standby_fuel, fuel_order, 
               trip_fuel, trip_time, taxi_fuel, alternate, status,
@@ -2547,6 +2752,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
             newGate,
             newEtd
           );
+          }
         log(`[Hoàn tất quét] Chuyến bay ${cleanFltNo}: Fuel Order = ${detail.fuel_order} kg, Trạng thái = ${status}`);
       } catch (fltErr) {
         console.error(`[Lỗi quét] Chuyến bay ${cleanFltNo} thất bại:`, fltErr.message);
