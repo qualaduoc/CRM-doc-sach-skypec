@@ -344,14 +344,20 @@ function initApp() {
 function applyPermissionsUI() {
   const accountsTabBtn = document.querySelector('[data-tab="tab-accounts"]');
   const fmsTabBtn = document.getElementById('tab-btn-fms');
+  const statsTabBtn = document.getElementById('tab-btn-fms-stats');
   const geminiCard = document.getElementById('card-gemini-settings');
   const zaloCard = document.getElementById('card-zalo-settings');
+  const blockLmsSetting = document.getElementById('block-lms-setting');
+  const blockLmsKpiGrid = document.getElementById('block-lms-kpi-grid');
   
   const userRole = getUserRole();
 
   if (userRole === 'admin') {
     if (accountsTabBtn) accountsTabBtn.style.display = 'block';
     if (fmsTabBtn) fmsTabBtn.style.display = 'block';
+    if (statsTabBtn) statsTabBtn.style.display = 'block';
+    if (blockLmsSetting) blockLmsSetting.style.display = 'flex';
+    if (blockLmsKpiGrid) blockLmsKpiGrid.style.display = 'grid';
     if (geminiCard) geminiCard.style.display = 'none'; // OCR/Gemini đã gỡ
     if (zaloCard) zaloCard.style.display = 'flex';
     
@@ -375,33 +381,32 @@ function applyPermissionsUI() {
     return;
   }
 
-  if (userRole === 'dieu_hanh') {
-    // Ẩn tab quản lý tài khoản
-    if (accountsTabBtn) accountsTabBtn.style.display = 'none';
-    if (fmsTabBtn) fmsTabBtn.style.display = 'block';
-    
-    // Ẩn card Gemini API keys, hiện card Zalo
-    if (geminiCard) geminiCard.style.display = 'none';
-    if (zaloCard) zaloCard.style.display = 'flex';
-    
-    // Mặc định kích hoạt và hiển thị tab-fms cho Điều hành
-    const tabAccounts = document.getElementById('tab-accounts');
-    const tabFms = document.getElementById('tab-fms');
-    if (tabAccounts) tabAccounts.style.display = 'none';
-    if (tabFms) tabFms.style.display = 'grid';
-    
-    if (fmsTabBtn) {
-      fmsTabBtn.classList.add('active');
-      fmsTabBtn.style.color = 'var(--primary)';
-      fmsTabBtn.style.borderBottom = '2px solid var(--primary)';
-    }
-    
-    // Load dữ liệu FMS & Zalo cho Điều hành
-    loadFmsSchedules();
-    loadSkyEyesSettings();
-    startSkyEyesPolling();
-    return;
+  // Với Nhân viên Điều hành ca hoặc các user thông thường khác:
+  if (accountsTabBtn) accountsTabBtn.style.display = 'none';
+  if (fmsTabBtn) fmsTabBtn.style.display = 'block';
+  if (statsTabBtn) statsTabBtn.style.display = 'none'; // Ẩn Thống kê KPI
+  if (blockLmsSetting) blockLmsSetting.style.display = 'none'; // Ẩn Giới hạn chạy LMS song song
+  if (blockLmsKpiGrid) blockLmsKpiGrid.style.display = 'none'; // Ẩn Thống kê KPI Học viên LMS
+  
+  if (geminiCard) geminiCard.style.display = 'none';
+  if (zaloCard) zaloCard.style.display = 'flex';
+  
+  // Mặc định kích hoạt và hiển thị tab-fms cho Điều hành
+  const tabAccounts = document.getElementById('tab-accounts');
+  const tabFms = document.getElementById('tab-fms');
+  if (tabAccounts) tabAccounts.style.display = 'none';
+  if (tabFms) tabFms.style.display = 'grid';
+  
+  if (fmsTabBtn) {
+    fmsTabBtn.classList.add('active');
+    fmsTabBtn.style.color = 'var(--primary)';
+    fmsTabBtn.style.borderBottom = '2px solid var(--primary)';
   }
+  
+  // Load dữ liệu FMS & Zalo cho Điều hành
+  loadFmsSchedules();
+  loadSkyEyesSettings();
+  startSkyEyesPolling();
 }
 
 // Áp dụng ẩn hiện trên màn hình User (Nhân viên C1, C2 hoặc Admin/Điều hành xem hộ)
