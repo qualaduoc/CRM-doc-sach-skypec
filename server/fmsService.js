@@ -106,9 +106,9 @@ function isMonitorEpochDate(dateStr) {
   return !!d && d >= MONITOR_EPOCH_DATE;
 }
 
-/** Được phép TẠO monitor: >= epoch và nằm trong cửa sổ ngày đang theo dõi (hôm nay / đuôi ca tối) */
+/** Được phép TẠO monitor: >= epoch từ 19/07/2026 */
 function canCreateMonitorForDate(dateStr) {
-  return isMonitorEpochDate(dateStr) && isCancelWatchDate(dateStr);
+  return isMonitorEpochDate(dateStr);
 }
 
 // Lấy ngày giờ hiện tại dạng HH:MM DD/MM/YYYY theo múi giờ Việt Nam (GMT+7)

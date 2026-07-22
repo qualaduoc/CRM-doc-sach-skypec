@@ -3086,9 +3086,10 @@ app.get('/api/fms/temp-import-exports', authenticateToken, async (req, res) => {
     const db = await getDb();
     let rows = [];
     if (single_date === 'true') {
+      // Lấy các chuyến của ngày được chọn VÀ TẤT CẢ các chuyến NKT (TECHNICAL_HAN) hoặc đang bám sát (is_warned < 2) từ mốc epoch
       rows = await db.all(
         `SELECT * FROM fms_temp_import_exports
-         WHERE date = ? AND date >= ?
+         WHERE (date = ? OR monitor_type = 'TECHNICAL_HAN' OR is_warned < 2) AND date >= ?
          ORDER BY id DESC`,
         targetDate,
         MONITOR_EPOCH
