@@ -3246,7 +3246,14 @@ async function syncFmsSkypecLive(forceDate = null) {
                   )
                 : { id: 1 };
 
-              if (monitorType && !exists) {
+              const isAlreadyHandledInEvents = monitorType
+                ? await db.get(
+                    "SELECT id FROM fms_monitor_events WHERE ac_reg = ? AND event_date = ? AND old_flight_no = ? AND status != 'OPEN'",
+                    oldAcReg, flight.date, cleanFltNo
+                  )
+                : null;
+
+              if (monitorType && !exists && !isAlreadyHandledInEvents) {
                 log(`[FMS Skypec Live] Phát hiện đổi tàu chéo: Tàu ${oldAcReg} đã nạp ${oldFuelOrder} kg dầu cho chuyến ${cleanFltNo} (${oldRoute}) nhưng bị đổi. Kiểu giám sát: ${monitorType}`);
                 const insCh = await db.run(`
                   INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
@@ -3285,7 +3292,13 @@ async function syncFmsSkypecLive(forceDate = null) {
               "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ? AND monitor_type = 'TECHNICAL_HAN'",
               currentAcReg, flight.date, cleanFltNo
             );
-            if (!exists) {
+            // KHỐNG CHẾ: Nếu bản ghi này đã từng bị Xóa (DELETED) hoặc Đã xử lý (RESOLVED) trong fms_monitor_events → Không tự động tạo lại!
+            const isAlreadyHandledInEvents = await db.get(
+              "SELECT id FROM fms_monitor_events WHERE ac_reg = ? AND event_date = ? AND old_flight_no = ? AND status != 'OPEN'",
+              currentAcReg, flight.date, cleanFltNo
+            );
+
+            if (!exists && !isAlreadyHandledInEvents) {
               log(`[FMS Skypec Live] NKT HAN-HAN (${cleanFltNo}): Tàu ${currentAcReg} nạp ${currentFuel} kg date=${flight.date} → tạo bản ghi giám sát.`);
               const insNkt = await db.run(`
                 INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
