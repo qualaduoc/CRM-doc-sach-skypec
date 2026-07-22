@@ -3168,7 +3168,8 @@ app.post('/api/fms/temp-import-exports/confirm', authenticateToken, async (req, 
       );
       if (row) {
         await archiveFromLiveRow(db, { ...row, is_warned: 2 }, 'RESOLVED', {
-          resolved_note: 'Xác nhận đã xử lý thủ công trên UI'
+          resolved_note: 'Xác nhận đã xử lý thủ công trên UI',
+          forceStatus: true
         });
       }
       res.json({ success: true, message: 'Đã chuyển trạng thái sang Đã xử lý!' });
@@ -3187,7 +3188,8 @@ app.post('/api/fms/temp-import-exports/confirm', authenticateToken, async (req, 
     } else {
       if (row) {
         await archiveFromLiveRow(db, row, 'DELETED', {
-          resolved_note: 'Xóa theo dõi thủ công trên UI'
+          resolved_note: 'Xóa theo dõi thủ công trên UI',
+          forceStatus: true
         });
       }
       await db.run("DELETE FROM fms_temp_import_exports WHERE id = ?", id);
