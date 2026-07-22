@@ -3098,6 +3098,37 @@ app.get('/api/fms/temp-import-exports', authenticateToken, async (req, res) => {
         MONITOR_EPOCH
       );
     }
+
+    // ĐỒNG THỜI: Tải thêm các bản ghi đang 'OPEN' hoặc 'WARNED' từ kho fms_monitor_events nếu chưa có trong live
+    const openEvents = await db.all(
+      `SELECT * FROM fms_monitor_events 
+       WHERE status IN ('OPEN', 'WARNED') AND event_date >= ?
+       ORDER BY id DESC`,
+      MONITOR_EPOCH
+    );
+
+    const existingKeys = new Set((rows || []).map(r => `${r.ac_reg}_${r.old_flight_no}_${r.date || r.event_date}`));
+    for (const ev of (openEvents || [])) {
+      const key = `${ev.ac_reg}_${ev.old_flight_no}_${ev.event_date}`;
+      if (!existingKeys.has(key)) {
+        rows.push({
+          id: `m_${ev.id}`, // Đánh dấu ID từ kho monitor_events
+          event_id: ev.id,
+          date: ev.event_date,
+          ac_reg: ev.ac_reg,
+          monitor_type: ev.monitor_type,
+          old_flight_no: ev.old_flight_no,
+          old_route: ev.old_route,
+          old_time: ev.old_time,
+          fuel_order: ev.fuel_order,
+          new_flight_no: ev.new_flight_no,
+          new_route: ev.new_route,
+          is_warned: ev.status === 'WARNED' ? 1 : 0,
+          from_archive: true
+        });
+      }
+    }
+
     // Chỉ hiển thị giám sát chuyến VN — ẩn VU, 9G, hãng QT
     const vnOnly = (rows || []).filter(r => isVnAirlineFlightNo(r.old_flight_no));
     res.json({
@@ -3119,6 +3150,20 @@ app.post('/api/fms/temp-import-exports/confirm', authenticateToken, async (req, 
 
   try {
     const db = await getDb();
+    
+    // Xử lý bản ghi m_ từ fms_monitor_events
+    if (typeof id === 'string' && id.startsWith('m_')) {
+      const realId = id.replace('m_', '');
+      if (action === 'confirm') {
+        await db.run("UPDATE fms_monitor_events SET status = 'RESOLVED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", realId);
+      } else if (action === 'pending') {
+        await db.run("UPDATE fms_monitor_events SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?", realId);
+      } else {
+        await db.run("DELETE FROM fms_monitor_events WHERE id = ?", realId);
+      }
+      return res.json({ success: true, message: 'Đã cập nhật trạng thái giám sát thành công!' });
+    }
+
     const { archiveFromLiveRow } = require('./monitorArchive');
     const row = await db.get('SELECT * FROM fms_temp_import_exports WHERE id = ?', id);
 
@@ -3158,6 +3203,7 @@ app.post('/api/fms/temp-import-exports/confirm', authenticateToken, async (req, 
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // API lịch sử dài hạn giám sát (thống kê tháng) — không phụ thuộc bảng live
 app.get('/api/fms/monitor-events', authenticateToken, async (req, res) => {
