@@ -3085,24 +3085,13 @@ app.get('/api/fms/temp-import-exports', authenticateToken, async (req, res) => {
   try {
     const db = await getDb();
     let rows = [];
-    if (single_date === 'true') {
-      // Lấy các chuyến của ngày được chọn VÀ TẤT CẢ các chuyến NKT (TECHNICAL_HAN) hoặc đang bám sát (is_warned < 2) từ mốc epoch
-      rows = await db.all(
-        `SELECT * FROM fms_temp_import_exports
-         WHERE (date = ? OR monitor_type = 'TECHNICAL_HAN' OR is_warned < 2) AND date >= ?
-         ORDER BY id DESC`,
-        targetDate,
-        MONITOR_EPOCH
-      );
-    } else {
-      // Mặc định: Hiển thị TẤT CẢ các chuyến đang trong diện bám sát (active) từ mốc epoch
-      rows = await db.all(
-        `SELECT * FROM fms_temp_import_exports
-         WHERE date >= ?
-         ORDER BY id DESC`,
-        MONITOR_EPOCH
-      );
-    }
+    // Bảng Giám sát Live: CHỈ hiển thị các chuyến ĐANG TRONG DIỆN CẦN GIÁM SÁT (is_warned < 2)
+    rows = await db.all(
+      `SELECT * FROM fms_temp_import_exports
+       WHERE is_warned < 2 AND date >= ?
+       ORDER BY id DESC`,
+      MONITOR_EPOCH
+    );
 
     // ĐỒNG THỜI: Tải thêm các bản ghi đang 'OPEN' hoặc 'WARNED' từ kho fms_monitor_events nếu chưa có trong live
     const openEvents = await db.all(
