@@ -185,6 +185,8 @@ async function listMonitorEvents(db, { from, to, status, monitor_type, q } = {})
   if (status && status !== 'all') {
     clauses.push('status = ?');
     params.push(status);
+  } else {
+    clauses.push("status != 'DELETED'");
   }
   if (monitor_type && monitor_type !== 'all') {
     clauses.push('monitor_type = ?');
