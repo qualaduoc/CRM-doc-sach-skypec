@@ -2573,8 +2573,8 @@ async function fetchTempImportExportData() {
       const pendingClass = isResolved ? 'status-pill-inactive' : 'status-pill-pending active';
       const successClass = isResolved ? 'status-pill-success active' : 'status-pill-inactive';
       
-      const pendingClick = isResolved ? `onclick="confirmTempImportExport(${r.id}, 'pending')"` : '';
-      const successClick = isResolved ? '' : `onclick="confirmTempImportExport(${r.id}, 'confirm')"`;
+      const pendingClick = isResolved ? `onclick="confirmTempImportExport('${r.id}', 'pending')"` : '';
+      const successClick = isResolved ? '' : `onclick="confirmTempImportExport('${r.id}', 'confirm')"`;
 
       const statusHtml = `
         <div style="display: flex; align-items: center; gap: 6px; justify-content: center;">
@@ -2587,7 +2587,8 @@ async function fetchTempImportExportData() {
         </div>
       `;
 
-      const actionHtml = `<button onclick="confirmTempImportExport(${r.id}, 'delete')" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
+      const actionHtml = `<button onclick="confirmTempImportExport('${r.id}', 'delete')" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
+
       
       const nextCol = r.new_flight_no 
         ? `<span style="color: #fb923c; font-weight: bold;">✈️ ${r.new_flight_no}</span><br><span style="color: var(--text-muted); font-size: 0.72rem;">(${r.new_route})</span>` 
