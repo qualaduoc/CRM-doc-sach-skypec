@@ -2499,7 +2499,7 @@ async function fetchTempImportExportData() {
     const filterInput = document.getElementById('fms-filter-date');
     const selectedDate = filterInput ? filterInput.value : '';
     
-    const res = await fetch(`/api/fms/temp-import-exports?date=${selectedDate}`, {
+    const res = await fetch(`/api/fms/temp-import-exports`, {
       headers: { 'Authorization': `Bearer ${state.token}` }
     });
     const data = await res.json();
@@ -2576,19 +2576,19 @@ async function fetchTempImportExportData() {
       const pendingClick = isResolved ? `onclick="confirmTempImportExport('${r.id}', 'pending')"` : '';
       const successClick = isResolved ? '' : `onclick="confirmTempImportExport('${r.id}', 'confirm')"`;
 
-      const statusHtml = `
-        <div style="display: flex; align-items: center; gap: 6px; justify-content: center;">
+      const controlsHtml = `
+        <div style="display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap;">
           <button class="status-pill-btn ${pendingClass}" ${pendingClick} style="outline:none;">
             <i class="fa-solid fa-hourglass-half"></i> Chờ xử lý
           </button>
           <button class="status-pill-btn ${successClass}" ${successClick} style="outline:none;">
             <i class="fa-solid fa-circle-check"></i> Đã xử lý
           </button>
+          <button onclick="confirmTempImportExport('${r.id}', 'delete')" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; font-size: 0.7rem; padding: 4px 8px; border-radius: 20px; cursor: pointer; transition: all 0.2s; white-space: nowrap; height: 26px; display: inline-flex; align-items: center; gap: 4px;" title="Xóa bản ghi này">
+            <i class="fa-solid fa-trash-can" style="font-size: 0.68rem;"></i> Xóa
+          </button>
         </div>
       `;
-
-      const actionHtml = `<button onclick="confirmTempImportExport('${r.id}', 'delete')" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; transition: all 0.2s;">Xóa</button>`;
-
       
       const nextCol = r.new_flight_no 
         ? `<span style="color: #fb923c; font-weight: bold;">✈️ ${r.new_flight_no}</span><br><span style="color: var(--text-muted); font-size: 0.72rem;">(${r.new_route})</span>` 
@@ -2609,11 +2609,8 @@ async function fetchTempImportExportData() {
             <span style="color: var(--text-muted); font-size: 0.72rem;">${r.old_route} (${oldFuelVal.toLocaleString()} kg)</span>
           </td>
           <td style="padding: 10px 4px; vertical-align: middle;">${nextCol}</td>
-          <td style="padding: 10px 4px; text-align: center; vertical-align: middle;">
-            <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;">
-              ${statusHtml}
-              ${actionHtml}
-            </div>
+          <td style="padding: 10px 4px; text-align: center; vertical-align: middle; white-space: nowrap;">
+            ${controlsHtml}
           </td>
         </tr>
       `;
