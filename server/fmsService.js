@@ -2309,14 +2309,12 @@ async function syncFMSData(forceDate = null, forceShift = null) {
 
           // --- Multi-leg / sticky: nếu tàu cũ VẪN còn trong snapshot FMS → không nhảy tàu ---
           // (FMS có cả 601 và 603: sticky giữ tàu DB, chặn ping-pong)
-          if (oldAcNorm && siblingCount > 1 && siblingAcs.length) {
-            const oldStillPresent = siblingAcs.some(a => a === oldAcNorm || acRegsMatch(a, oldAcNorm));
-            if (oldStillPresent && newAcNorm !== oldAcNorm) {
-              log(`[FMS Sticky] ${cleanFltNo}: multi-leg còn tàu cũ ${oldOrder.ac_reg} → giữ, bỏ qua chân ${cleanACREG}`);
-              cleanACREG = String(oldOrder.ac_reg).trim();
-              // Giữ ETD cũ nếu có (chân khác mang ETD khác gây đảo giờ)
-              if (oldEtd) newEtd = oldEtd;
-            }
+          const bothInSnapshot = !!(oldAcNorm && siblingCount > 1 && siblingAcs.length && siblingAcs.some(a => a === oldAcNorm || acRegsMatch(a, oldAcNorm)));
+          if (bothInSnapshot && newAcNorm !== oldAcNorm) {
+            log(`[FMS Sticky] ${cleanFltNo}: multi-leg còn tàu cũ ${oldOrder.ac_reg} → giữ, bỏ qua chân ${cleanACREG}`);
+            cleanACREG = String(oldOrder.ac_reg).trim();
+            // Giữ ETD cũ nếu có (chân khác mang ETD khác gây đảo giờ)
+            if (oldEtd) newEtd = oldEtd;
           }
 
           // --- Ổn định đổi tàu: chỉ báo khi giá trị MỚI lặp ≥ FMS_STABLE_HITS chu kỳ ---
