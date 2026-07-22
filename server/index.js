@@ -3068,27 +3068,36 @@ app.post('/api/fms/zalo/mappings/cleanup', authenticateToken, async (req, res) =
   }
 });
 
-// API lấy danh sách giám sát Tạm nhập - Tái xuất — CHỈ theo ngày chọn, từ mốc 19/07/2026
+// API lấy danh sách giám sát Tạm nhập - Tái xuất — Luôn trả về TẤT CẢ các chuyến đang trong diện theo dõi từ mốc 19/07/2026
 app.get('/api/fms/temp-import-exports', authenticateToken, async (req, res) => {
   const { getVietnamDbDateStr } = require('./fmsService');
   const MONITOR_EPOCH = '2026-07-19';
-  const { date } = req.query;
+  const { date, single_date } = req.query;
   let targetDate = date ? String(date).trim() : getVietnamDbDateStr();
-  // Không cho xem / trả dữ liệu trước mốc epoch
   if (!targetDate || targetDate < MONITOR_EPOCH) {
     targetDate = MONITOR_EPOCH;
   }
 
   try {
     const db = await getDb();
-    // Chỉ đúng 1 ngày — không kéo is_warned < 2 của tháng cũ (NKT lịch sử)
-    const rows = await db.all(
-      `SELECT * FROM fms_temp_import_exports
-       WHERE date = ? AND date >= ?
-       ORDER BY id DESC`,
-      targetDate,
-      MONITOR_EPOCH
-    );
+    let rows = [];
+    if (single_date === 'true') {
+      rows = await db.all(
+        `SELECT * FROM fms_temp_import_exports
+         WHERE date = ? AND date >= ?
+         ORDER BY id DESC`,
+        targetDate,
+        MONITOR_EPOCH
+      );
+    } else {
+      // Mặc định: Hiển thị TẤT CẢ các chuyến đang trong diện bám sát (active) từ mốc epoch
+      rows = await db.all(
+        `SELECT * FROM fms_temp_import_exports
+         WHERE date >= ?
+         ORDER BY id DESC`,
+        MONITOR_EPOCH
+      );
+    }
     // Chỉ hiển thị giám sát chuyến VN — ẩn VU, 9G, hãng QT
     const vnOnly = (rows || []).filter(r => isVnAirlineFlightNo(r.old_flight_no));
     res.json({
@@ -3194,6 +3203,22 @@ app.get('/api/fms/monitor-events', authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// API xóa sự kiện trong kho lịch sử dài hạn (thống kê tháng)
+app.delete('/api/fms/monitor-events/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'Thiếu ID sự kiện cần xóa!' });
+  }
+  try {
+    const db = await getDb();
+    await db.run('DELETE FROM fms_monitor_events WHERE id = ?', id);
+    res.json({ success: true, message: 'Đã xóa sự kiện lịch sử giám sát thành công!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 // Xuất báo cáo DOCX lịch sử giám sát
 app.get('/api/fms/monitor-events/export', authenticateToken, async (req, res) => {

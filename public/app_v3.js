@@ -2709,7 +2709,7 @@ async function fetchMonitorHistory() {
       sumEl.innerHTML = chips.join('');
     }
     if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">Không có sự kiện trong khoảng đã chọn.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">Không có sự kiện trong khoảng đã chọn.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((r) => {
@@ -2725,15 +2725,47 @@ async function fetchMonitorHistory() {
         <td>${r.old_route || '-'} · ${kg} kg</td>
         <td>${next}</td>
         <td><span style="color:${monitorStatusColor(r.status)};font-weight:600;font-size:0.75rem;">${monitorStatusLabel(r.status)}</span></td>
-        <td style="font-size:0.75rem;max-width:280px;line-height:1.35;color:var(--text-muted);">${r.reason || r.resolved_note || '-'}</td>
+        <td style="font-size:0.75rem;max-width:260px;line-height:1.35;color:var(--text-muted);">${r.reason || r.resolved_note || '-'}</td>
+        <td style="text-align: center; vertical-align: middle;">
+          <button onclick="deleteMonitorHistoryEvent(${r.id})" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; font-size: 0.68rem; padding: 3px 8px; border-radius: 4px; cursor: pointer; transition: all 0.2s;" title="Xóa sự kiện nhận diện sai">
+            <i class="fa-solid fa-trash"></i> Xóa
+          </button>
+        </td>
       </tr>`;
     }).join('');
   } catch (e) {
     console.error('[Monitor history]', e);
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#f87171;padding:16px;">Lỗi: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#f87171;padding:16px;">Lỗi: ${e.message}</td></tr>`;
   }
 }
 window.fetchMonitorHistory = fetchMonitorHistory;
+
+// Hàm xóa một sự kiện lịch sử giám sát
+async function deleteMonitorHistoryEvent(id) {
+  if (!id) return;
+  if (!confirm('Khầy có chắc chắn muốn xóa bản ghi lịch sử giám sát này không?')) return;
+  try {
+    const res = await fetch(`/api/fms/monitor-events/${id}`, {
+      method: 'DELETE',
+      headers: { 
+        'Authorization': `Bearer ${state.token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Đã xóa bản ghi lịch sử giám sát thành công!', 'success');
+      fetchMonitorHistory();
+    } else {
+      showToast(data.error || 'Xóa bản ghi thất bại', 'error');
+    }
+  } catch (err) {
+    console.error('[Delete Monitor History]', err);
+    showToast('Lỗi kết nối khi xóa bản ghi!', 'error');
+  }
+}
+window.deleteMonitorHistoryEvent = deleteMonitorHistoryEvent;
+
 
 async function exportMonitorHistoryDocx() {
   initMonitorHistoryDefaults();
