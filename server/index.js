@@ -1749,7 +1749,9 @@ async function getPossibleNames(db, displayName) {
   names.add(upperDisplay);
   
   const cleanName = displayName.trim().replace(/\s+/g, ' ');
+  const cleanNameNoAccent = removeAccents(cleanName).toUpperCase();
   const parts = cleanName.split(' ');
+
   if (parts.length > 0) {
     const lastName = parts[parts.length - 1].toUpperCase();
     
@@ -1766,17 +1768,17 @@ async function getPossibleNames(db, displayName) {
     }
   }
   
-  // Truy vấn thêm từ bảng zalo_user_mappings để lấy các schedule_name tương ứng
+  // Truy vấn thêm từ bảng zalo_user_mappings để lấy các schedule_name tương ứng CHÍNH XÁC VỚI HỌ VÀ TÊN NÀY
   try {
     const mappings = await db.all('SELECT schedule_name, zalo_name FROM zalo_user_mappings');
-    const displayMain = removeAccents(parts[parts.length - 1]);
-    
     if (mappings) {
       for (const m of mappings) {
-        if (m.zalo_name && m.schedule_name) {
-          const zaloParts = m.zalo_name.trim().replace(/\s+/g, ' ').split(' ');
-          const zaloMain = removeAccents(zaloParts[zaloParts.length - 1]);
-          if (zaloMain === displayMain) {
+        if (m.schedule_name) {
+          const schedNoAccent = removeAccents(m.schedule_name.trim()).toUpperCase();
+          const zaloNoAccent = m.zalo_name ? removeAccents(m.zalo_name.trim()).toUpperCase() : '';
+          
+          // CHỈ LẤY NẾU KHỚP HỌ VÀ TÊN ĐẦY ĐỦ (Tuyệt đối không so sánh chỉ mỗi tên từ cuối cùng)
+          if (schedNoAccent === cleanNameNoAccent || zaloNoAccent === cleanNameNoAccent) {
             names.add(m.schedule_name.trim().toUpperCase());
           }
         }
@@ -1788,6 +1790,7 @@ async function getPossibleNames(db, displayName) {
   
   return Array.from(names);
 }
+
 
 // So khớp tên nhân viên FMS Skypec (hỗ trợ viết tắt hàng không)
 function matchFmsEmployee(displayName, fmsName, possibleNames = []) {
@@ -1827,10 +1830,10 @@ function matchAbbreviation(empName, fmsName) {
   const fmsLastName = fmsParts[fmsParts.length - 1];
   const empLastName = empParts[empParts.length - 1];
   
-  // Tên chính bắt buộc phải khớp hoàn toàn
+  // Tên chính bắt buộc phải khớp hoàn toàn (có dấu hoặc không dấu)
   if (removeAccents(fmsLastName) !== removeAccents(empLastName)) return false;
   
-  // Nếu FMS viết tắt đầy đủ (ví dụ C.K.ANH cho CAO KỲ ANH)
+  // Nếu FMS viết tắt từng ký tự (ví dụ N.V.TUAN cho NGUYEN VAN TUAN, H.M.TUAN cho HA MINH TUAN)
   if (fmsParts.length === empParts.length) {
     for (let i = 0; i < empParts.length - 1; i++) {
       const fmsChar = removeAccents(fmsParts[i]);
@@ -1844,16 +1847,17 @@ function matchAbbreviation(empName, fmsName) {
     return true;
   }
   
-  // Nếu FMS viết tắt ngắn hơn (ví dụ C.ANH cho CAO KỲ ANH)
-  // Chỉ cho phép nếu fmsParts có đúng 2 phần
+  // Nếu FMS viết tắt ngắn hơn dạng H.TUAN cho HA MINH TUAN (fmsParts.length == 2, empParts.length > 2)
   if (fmsParts.length === 2 && empParts.length > 2) {
     const fmsChar = removeAccents(fmsParts[0]);
-    const empChar = removeAccents(empParts[0][0]);
-    return fmsChar === empChar;
+    // fmsChar bắt buộc phải trùng với chữ cái đầu của HỌ (empParts[0][0])
+    const hoChar = removeAccents(empParts[0][0]);
+    return fmsChar === hoChar;
   }
   
   return false;
 }
+
 
 let lastLiveSyncTime = 0;
 
