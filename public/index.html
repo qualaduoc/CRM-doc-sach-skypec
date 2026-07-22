@@ -183,47 +183,66 @@
             </div>
           </header>
 
-          <!-- Cấu hình giới hạn nhanh -->
-          <div id="block-lms-setting" class="glass-panel" style="padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; background: rgba(255, 255, 255, 0.85);">
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <i class="fa-solid fa-sliders" style="font-size: 1.3rem; color: var(--primary);"></i>
-              <div>
-                <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700;">Giới hạn chạy LMS song song</h4>
-                <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted);">Thiết lập số lượng lớp học tự động chạy đồng thời của học viên</p>
+          <!-- Nút công tắc mở Cấu hình & Thống kê LMS -->
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+            <button id="btn-toggle-lms-overview" type="button" class="btn-secondary" style="font-size: 0.85rem; padding: 7px 16px; border-radius: 20px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.15); color: #cbd5e1; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease;">
+              <i class="fa-solid fa-sliders" style="color: var(--primary);"></i>
+              <span>Cấu hình & Thống kê LMS</span>
+              <i id="icon-lms-overview-chevron" class="fa-solid fa-chevron-down" style="transition: transform 0.3s ease;"></i>
+            </button>
+          </div>
+
+          <!-- Container Vùng 1: Cấu hình & Thống kê (Mặc định ẩn) -->
+          <div id="wrapper-lms-overview" style="display: none; flex-direction: column; gap: 15px; margin-bottom: 20px; transition: all 0.3s ease;">
+            <!-- Cấu hình giới hạn nhanh -->
+            <div id="block-lms-setting" class="glass-panel" style="padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; gap: 15px; flex-wrap: wrap; background: rgba(255, 255, 255, 0.85);">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <i class="fa-solid fa-sliders" style="font-size: 1.3rem; color: var(--primary);"></i>
+                <div>
+                  <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700;">Giới hạn chạy LMS song song</h4>
+                  <p style="margin: 0; font-size: 0.75rem; color: var(--text-muted);">Thiết lập số lượng lớp học tự động chạy đồng thời của học viên</p>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 0.85rem; font-weight: 600;">Lớp treo song song:</span>
+                <input type="number" id="setting-max-classes" min="1" max="10" value="3" style="width: 60px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: #ffffff; color: var(--text); text-align: center; font-weight: bold; outline: none;">
+                <button id="btn-save-settings" class="btn-glow" style="margin-top: 0; padding: 7px 15px; width: auto; font-size: 0.82rem; height: 32px;"><i class="fa-solid fa-floppy-disk"></i> Lưu</button>
               </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <span style="font-size: 0.85rem; font-weight: 600;">Lớp treo song song:</span>
-              <input type="number" id="setting-max-classes" min="1" max="10" value="3" style="width: 60px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: #ffffff; color: var(--text); text-align: center; font-weight: bold; outline: none;">
-              <button id="btn-save-settings" class="btn-glow" style="margin-top: 0; padding: 7px 15px; width: auto; font-size: 0.82rem; height: 32px;"><i class="fa-solid fa-floppy-disk"></i> Lưu</button>
+
+            <!-- KPI Grid -->
+            <div id="block-lms-kpi-grid" class="kpi-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; width: 100%;">
+              <div class="glass-panel kpi-card blue" style="background: rgba(255, 255, 255, 0.85);">
+                <span class="kpi-num" id="kpi-total-accounts" style="color: var(--primary);">0</span>
+                <span class="kpi-label">Tổng số tài khoản học viên</span>
+              </div>
+              <div class="glass-panel kpi-card green" style="background: rgba(255, 255, 255, 0.85);">
+                <span class="kpi-num" id="kpi-active-accounts" style="color: var(--success);">0</span>
+                <span class="kpi-label">Đang bật</span>
+              </div>
+              <div class="glass-panel kpi-card purple" style="background: rgba(255, 255, 255, 0.85);">
+                <span class="kpi-num" id="kpi-total-classes-admin" style="color: var(--warning);">0</span>
+                <span class="kpi-label">Tổng số lớp học quản lý</span>
+              </div>
             </div>
           </div>
-
-          <!-- KPI Grid -->
-          <div id="block-lms-kpi-grid" class="kpi-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; width: 100%;">
-            <div class="glass-panel kpi-card blue" style="background: rgba(255, 255, 255, 0.85);">
-              <span class="kpi-num" id="kpi-total-accounts" style="color: var(--primary);">0</span>
-              <span class="kpi-label">Tổng số tài khoản học viên</span>
-            </div>
-            <div class="glass-panel kpi-card green" style="background: rgba(255, 255, 255, 0.85);">
-              <span class="kpi-num" id="kpi-active-accounts" style="color: var(--success);">0</span>
-              <span class="kpi-label">Đang bật</span>
-            </div>
-            <div class="glass-panel kpi-card purple" style="background: rgba(255, 255, 255, 0.85);">
-              <span class="kpi-num" id="kpi-total-classes-admin" style="color: var(--warning);">0</span>
-              <span class="kpi-label">Tổng số lớp học quản lý</span>
-            </div>
-          </div>
-
-
 
           <!-- KHU VỰC CHỨA CÁC TAB CONTENT (SẼ RENDER TẠI ĐÂY) -->
           <div class="tab-contents-container" style="width: 100%;">
             <!-- TAB CONTENT 1: QUẢN LÝ HỌC VIÊN -->
       <div id="tab-accounts" class="admin-tab-content active-content">
-        <div class="section-title">
-          <h3>Danh sách Tài khoản Học viên</h3>
-          <div style="display: flex; gap: 10px;">
+        <div class="section-title" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <h3 style="margin: 0;">Danh sách Tài khoản Học viên</h3>
+            <button id="btn-toggle-lms-actions" type="button" class="btn-secondary" style="font-size: 0.8rem; padding: 5px 12px; border-radius: 20px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;" title="Bật/Tắt nhóm nút thao tác hệ thống">
+              <i class="fa-solid fa-user-gear"></i>
+              <span>Thao tác hệ thống</span>
+              <i id="icon-lms-actions-chevron" class="fa-solid fa-chevron-down" style="transition: transform 0.3s ease;"></i>
+            </button>
+          </div>
+
+          <!-- Container Vùng 2: Nhóm nút thao tác (Mặc định ẩn) -->
+          <div id="wrapper-lms-actions" style="display: none; align-items: center; gap: 10px; flex-wrap: wrap;">
             <button id="btn-start-all" class="btn-secondary" style="color: #34d399; border-color: rgba(16, 185, 129, 0.3);">
               <i class="fa-solid fa-play"></i> Chạy tất cả
             </button>

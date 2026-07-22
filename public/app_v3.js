@@ -608,6 +608,34 @@ function setupEventListeners() {
   // Lưu cấu hình Admin
   bindClick('btn-save-settings', saveSystemSettings);
 
+  // Toggle Vùng 1: Cấu hình & Thống kê LMS (Mặc định ẩn, bấm mới mở)
+  const btnToggleOverview = document.getElementById('btn-toggle-lms-overview');
+  if (btnToggleOverview) {
+    btnToggleOverview.addEventListener('click', () => {
+      const wrapper = document.getElementById('wrapper-lms-overview');
+      const icon = document.getElementById('icon-lms-overview-chevron');
+      if (wrapper) {
+        const isHidden = wrapper.style.display === 'none' || !wrapper.style.display;
+        wrapper.style.display = isHidden ? 'flex' : 'none';
+        if (icon) icon.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+      }
+    });
+  }
+
+  // Toggle Vùng 2: Thao tác hệ thống (Chạy tất cả, Dừng tất cả, Thêm tài khoản)
+  const btnToggleActions = document.getElementById('btn-toggle-lms-actions');
+  if (btnToggleActions) {
+    btnToggleActions.addEventListener('click', () => {
+      const wrapper = document.getElementById('wrapper-lms-actions');
+      const icon = document.getElementById('icon-lms-actions-chevron');
+      if (wrapper) {
+        const isHidden = wrapper.style.display === 'none' || !wrapper.style.display;
+        wrapper.style.display = isHidden ? 'flex' : 'none';
+        if (icon) icon.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+      }
+    });
+  }
+
   // Modal Thêm Tài Khoản (Admin)
   const modal = document.getElementById('add-account-modal');
   document.getElementById('btn-add-account').addEventListener('click', () => {
