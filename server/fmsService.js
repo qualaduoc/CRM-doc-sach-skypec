@@ -697,6 +697,9 @@ async function fetchFMSData(dateStr, authCookie) {
         }
         try {
           const json = JSON.parse(body);
+          if (json && (json.MessageCode === 4 || json.MessageDesc === 'Non Authorized' || !json.data)) {
+            return reject(new Error('Cookie FMS hết hạn hoặc không có quyền (Non Authorized)'));
+          }
           resolve(json.data || []);
         } catch (e) {
           reject(new Error(`Lỗi parse JSON danh sách chuyến bay: ${e.message}`));
@@ -726,6 +729,10 @@ async function fetchFlightDetail(legNo, authCookie) {
       res.on('end', () => {
         if (res.statusCode !== 200) {
           return reject(new Error(`Tải chi tiết chuyến bay ${legNo} thất bại, HTTP Code: ${res.statusCode}`));
+        }
+
+        if (body.includes('Non Authorized') || body.includes('"MessageCode":4')) {
+          return reject(new Error('Cookie FMS hết hạn hoặc không có quyền khi lấy chi tiết (Non Authorized)'));
         }
 
         try {
