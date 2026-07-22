@@ -3133,12 +3133,12 @@ app.get('/api/fms/temp-import-exports', authenticateToken, async (req, res) => {
       }
     }
 
-    // Chỉ hiển thị giám sát chuyến VN — ẩn VU, 9G, hãng QT
-    const vnOnly = (rows || []).filter(r => isVnAirlineFlightNo(r.old_flight_no));
+    // Giám sát đổi tàu chuyến VN + Giám sát NKT (TECHNICAL_HAN) của TẤT CẢ các hãng hàng không
+    const filteredRows = (rows || []).filter(r => r.monitor_type === 'TECHNICAL_HAN' || isVnAirlineFlightNo(r.old_flight_no));
     res.json({
       success: true,
-      data: vnOnly,
-      meta: { date: targetDate, epoch: MONITOR_EPOCH, count: vnOnly.length }
+      data: filteredRows,
+      meta: { date: targetDate, epoch: MONITOR_EPOCH, count: filteredRows.length }
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

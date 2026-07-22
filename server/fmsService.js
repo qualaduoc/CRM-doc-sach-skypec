@@ -1977,17 +1977,17 @@ async function syncFMSData(forceDate = null, forceShift = null) {
 
       // Chỉ giám sát tái xuất chuyến VN — xóa VU, 9G, hãng QT còn sót
       const allMonRows = await db.all(
-        'SELECT id, old_flight_no FROM fms_temp_import_exports'
+        'SELECT id, old_flight_no, monitor_type FROM fms_temp_import_exports'
       );
       let purgedNonVn = 0;
       for (const r of allMonRows || []) {
-        if (!isVnAirlineFlightNo(r.old_flight_no)) {
+        if (!isVnAirlineFlightNo(r.old_flight_no) && r.monitor_type !== 'TECHNICAL_HAN') {
           await db.run('DELETE FROM fms_temp_import_exports WHERE id = ?', r.id);
           purgedNonVn++;
         }
       }
       if (purgedNonVn > 0) {
-        log(`[Dọn dẹp DB] Đã xóa ${purgedNonVn} monitor không phải chuyến VN (VU/9G/hãng QT).`);
+        log(`[Dọn dẹp DB] Đã xóa ${purgedNonVn} monitor không phải chuyến VN (trừ NKT TECHNICAL_HAN của tất cả các hãng).`);
       }
 
       // Chỉ giữ cửa sổ ngày theo dõi (+ đã đóng gần đây); không ôm TECHNICAL vô hạn nhiều ngày
@@ -3279,16 +3279,14 @@ async function syncFmsSkypecLive(forceDate = null) {
           if (currentRoute === 'HAN-HAN' && currentFuel > 0 && flight.ac_reg) {
             const currentAcReg = String(flight.ac_reg).trim().toUpperCase();
             const cleanFltNo = String(flight.flight_no).trim().toUpperCase();
-            // Chỉ NKT chuyến VN — bỏ VU, 9G, hãng QT
-            if (!isVnAirlineFlightNo(cleanFltNo)) {
-              // skip silently
-            } else {
+            
+            // Theo dõi NKT HAN-HAN cho TẤT CẢ CÁC HÃNG HÀNG KHÔNG (VN, VJ, QH, VU, 9G, BSF, hãng ngoại...)
             const exists = await db.get(
               "SELECT id FROM fms_temp_import_exports WHERE ac_reg = ? AND date = ? AND old_flight_no = ? AND monitor_type = 'TECHNICAL_HAN'",
               currentAcReg, flight.date, cleanFltNo
             );
             if (!exists) {
-              log(`[FMS Skypec Live] NKT HAN-HAN: Tàu ${currentAcReg} nạp ${currentFuel} kg (${cleanFltNo}) date=${flight.date} → giám sát.`);
+              log(`[FMS Skypec Live] NKT HAN-HAN (${cleanFltNo}): Tàu ${currentAcReg} nạp ${currentFuel} kg date=${flight.date} → tạo bản ghi giám sát.`);
               const insNkt = await db.run(`
                 INSERT INTO fms_temp_import_exports (ac_reg, old_flight_no, old_route, fuel_order, date, monitor_type, old_time)
                 VALUES (?, ?, ?, ?, ?, 'TECHNICAL_HAN', ?)
@@ -3303,7 +3301,6 @@ async function syncFmsSkypecLive(forceDate = null) {
                 monitor_type: 'TECHNICAL_HAN',
                 old_time: flight.time_fuel || '-'
               }, 'OPEN');
-            }
             }
           }
         } catch (errDb) {
