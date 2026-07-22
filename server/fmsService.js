@@ -338,6 +338,43 @@ function convertUtcToVnTime(utcTimeStr) {
   return `${String(hour).padStart(2, '0')}:${minute}`;
 }
 
+/**
+ * Quy đổi Ngày cất cánh Việt Nam (GMT+7) từ SCHEDDEP (DD/MM/YYYY) và ETD (HH:MM UTC) từ FMS VNA.
+ * Vì FMS VNA lưu SCHEDDEP theo giờ UTC, nên các chuyến rạng sáng VN (ETD UTC >= 17:00, tức >= 00:00 VN)
+ * thực chất có ngày cất cánh Việt Nam là SCHEDDEP + 1 ngày.
+ */
+function calculateVnDateFromFmsFlight(flt) {
+  if (!flt) return null;
+  const schedDep = String(flt.SCHEDDEP || '').trim(); // dạng DD/MM/YYYY
+  if (!schedDep) return null;
+  const parts = schedDep.split('/');
+  if (parts.length !== 3) return null;
+  const day = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const year = parseInt(parts[2], 10);
+  
+  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+
+  const etdStr = String(flt.ETD || '').trim();
+  const etdMatch = etdStr.match(/^(\d{1,2}):(\d{2})/);
+  let hourUtc = 0;
+  if (etdMatch) {
+    hourUtc = parseInt(etdMatch[1], 10);
+  }
+
+  // Múi giờ UTC+7: Nếu ETD UTC >= 17:00 (ví dụ 22:00 UTC = 05:00 AM VN ngày tiếp theo)
+  const dateObj = new Date(Date.UTC(year, month, day));
+  if (hourUtc >= 17) {
+    dateObj.setUTCDate(dateObj.getUTCDate() + 1);
+  }
+
+  const vnYear = dateObj.getUTCFullYear();
+  const vnMonth = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+  const vnDay = String(dateObj.getUTCDate()).padStart(2, '0');
+  return `${vnYear}-${vnMonth}-${vnDay}`;
+}
+
+
 // Biến lưu cookie đăng nhập FMS trong bộ nhớ cache
 let cachedFmsCookie = null;
 let isFmsAlertSent = false;
@@ -2055,30 +2092,38 @@ async function syncFMSData(forceDate = null, forceShift = null) {
       // Lấy danh sách các chuyến bay cần theo dõi của ngày đang xét theo ngày bay thực tế FMS (fms_date)
       const schedules = await db.all('SELECT DISTINCT flight_no, time_fuel, time_dep, time_arr FROM fms_schedules WHERE COALESCE(fms_date, date) = ?', targetDate);
 
-      // Helper: tải FMS VNA cho ngày (dùng chung Cancel + quét fuel)
+      // Helper: tải FMS VNA cho ngày (dùng chung Cancel + quét fuel) - Đã chuẩn hóa múi giờ UTC+7 cho SCHEDDEP
       const loadVnaFlightsForDate = async () => {
         const targetFmsDateStr = convertDbDateToFmsDate(targetDate);
-        let list = [];
+        const prevDateYmd = addDaysYmdStr(targetDate, -1);
+        const prevFmsDateStr = convertDbDateToFmsDate(prevDateYmd);
+
+        let listToday = [];
+        let listPrev = [];
         try {
-          list = await fetchFMSData(targetFmsDateStr, activeCookie);
-          if (list.length === 0) {
-            log(`[Cảnh báo] Tải về 0 chuyến bay từ FMS cho ngày ${targetFmsDateStr}. Có khả năng cookie hết hạn âm thầm. Tiến hành đăng nhập lại để làm mới cookie...`);
-            await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
-            await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
-            cachedFmsCookie = null;
-            activeCookie = await loginFMS();
-            list = await fetchFMSData(targetFmsDateStr, activeCookie);
-          }
+          listToday = await fetchFMSData(targetFmsDateStr, activeCookie);
+          listPrev = await fetchFMSData(prevFmsDateStr, activeCookie);
         } catch (err) {
           log(`Cookie FMS bị lỗi hoặc hết hạn. Đang tiến hành đăng nhập lại... Chi tiết lỗi: ${err.message || JSON.stringify(err)}`);
           await db.run("DELETE FROM settings WHERE key = 'fms_cookie'");
           await db.run("DELETE FROM settings WHERE key = 'fms_cookie_created_at'");
           cachedFmsCookie = null;
           activeCookie = await loginFMS();
-          list = await fetchFMSData(targetFmsDateStr, activeCookie);
+          listToday = await fetchFMSData(targetFmsDateStr, activeCookie);
+          listPrev = await fetchFMSData(prevFmsDateStr, activeCookie);
         }
-        return list;
+
+        const combined = [...(listToday || []), ...(listPrev || [])];
+        
+        // Chuẩn hóa múi giờ GMT+7: Lọc duy nhất các chuyến có Ngày cất cánh VN (calculateVnDateFromFmsFlight) === targetDate
+        const filtered = combined.filter(f => {
+          const vnDate = calculateVnDateFromFmsFlight(f);
+          return vnDate === targetDate;
+        });
+
+        return filtered;
       };
+
 
       // Không có lịch SkyEyes: chỉ quét Cancel nếu trong cửa sổ “trong ngày”
       if (schedules.length === 0) {
@@ -2278,10 +2323,12 @@ async function syncFMSData(forceDate = null, forceShift = null) {
           let isAcRegChanged = false;
           let acNotifySig = null;
           if (isAcRegChangedRaw) {
-            // Multi-leg cùng lúc có cả 2 tàu → không bao giờ báo đổi (đang nhiễu)
-            const bothInSnapshot = siblingCount > 1 && siblingAcs.some(a => a === oldAcNorm || acRegsMatch(a, oldAcNorm))
-              && siblingAcs.some(a => a === newAcNorm || acRegsMatch(a, newAcNorm));
-            if (bothInSnapshot) {
+            // Kiểm tra: nếu Tàu mới FMS VNA đã TRÙNG với Tàu gán trên Lịch ca Skypec -> Cập nhật DB im lặng, KHÔNG BẮN ZALO BÁO ĐỔI TÀU
+            const schedAcNorm = sched ? normalizeFmsAcReg(sched.ac_reg) : '';
+            if (schedAcNorm && (newAcNorm === schedAcNorm || acRegsMatch(newAcNorm, schedAcNorm))) {
+              log(`[FMS Match Sched] ${cleanFltNo}: Tàu mới FMS ${cleanACREG} đã trùng với Tàu gán Lịch ca Skypec (${sched.ac_reg}) → Cập nhật DB, không báo Zalo`);
+              isAcRegChanged = false;
+            } else if (bothInSnapshot) {
               log(`[FMS Anti-flip] ${cleanFltNo}: snapshot còn CẢ ${oldOrder.ac_reg} và ${cleanACREG} → bỏ báo đổi tàu`);
               cleanACREG = String(oldOrder.ac_reg).trim();
               isAcRegChangedRaw = false;
@@ -2291,6 +2338,7 @@ async function syncFMSData(forceDate = null, forceShift = null) {
               isAcRegChanged = false;
               // vẫn cho commit ac mới xuống DB (không spam)
             } else {
+
               acNotifySig = makeAcNotifySig(oldOrder.ac_reg, cleanACREG);
               // Đã báo đúng cặp old→new trước đó (kể cả sau PM2 restart) → không lặp
               const prevSig = oldOrder.last_ac_notify_sig || '';
