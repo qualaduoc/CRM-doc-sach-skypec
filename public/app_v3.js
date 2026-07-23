@@ -811,6 +811,23 @@ function setupEventListeners() {
   // Quét FMS ngay lập tức
   document.getElementById('btn-fms-sync-now').addEventListener('click', handleSyncFmsNow);
 
+  // Đóng modal radar (Test Offline)
+  const btnCloseRadar = document.getElementById('btn-close-radar-modal');
+  const modalRadar = document.getElementById('radar-monitor-modal');
+  if (btnCloseRadar && modalRadar) {
+    btnCloseRadar.addEventListener('click', () => {
+      modalRadar.classList.remove('active');
+      setTimeout(() => { modalRadar.style.display = 'none'; }, 300);
+    });
+    // Đóng khi click ngoài thẻ card
+    modalRadar.addEventListener('click', (e) => {
+      if (e.target === modalRadar) {
+        modalRadar.classList.remove('active');
+        setTimeout(() => { modalRadar.style.display = 'none'; }, 300);
+      }
+    });
+  }
+
   // Sự kiện chạy test giả lập Tạm nhập - Tái xuất
   const testBtn = document.getElementById('btn-fms-test-import-export');
   const testPanel = document.getElementById('fms-test-scenarios-panel');
@@ -1190,6 +1207,18 @@ function setupEventListeners() {
   const fmsTbody = document.getElementById('fms-table-body');
   if (fmsTbody) {
     fmsTbody.addEventListener('click', (e) => {
+      // Xử lý click nút Radar Admin (Test Offline)
+      const radarBtn = e.target.closest('.btn-fms-radar');
+      if (radarBtn) {
+        console.log('[Radar Event Admin] Clicked radar button:', radarBtn.getAttribute('data-flight'));
+        e.stopPropagation();
+        const flightNo = radarBtn.getAttribute('data-flight');
+        const acReg = radarBtn.getAttribute('data-reg');
+        const timeFuel = radarBtn.getAttribute('data-time-fuel');
+        openRadarMonitorModal(flightNo, acReg, timeFuel);
+        return;
+      }
+
       const span = e.target.closest('.editable-gate');
       if (!span) return;
       if (span.querySelector('input')) return; // Đang trong chế độ sửa
@@ -1267,6 +1296,23 @@ function setupEventListeners() {
       });
     });
 
+  }
+
+  // Đăng ký Event Delegation cho bảng FMS User (Test Offline)
+  const userFmsTbody = document.getElementById('user-fms-table-body');
+  if (userFmsTbody) {
+    userFmsTbody.addEventListener('click', (e) => {
+      const radarBtn = e.target.closest('.btn-fms-radar');
+      if (radarBtn) {
+        console.log('[Radar Event User] Clicked radar button:', radarBtn.getAttribute('data-flight'));
+        e.stopPropagation();
+        const flightNo = radarBtn.getAttribute('data-flight');
+        const acReg = radarBtn.getAttribute('data-reg');
+        const timeFuel = radarBtn.getAttribute('data-time-fuel');
+        openRadarMonitorModal(flightNo, acReg, timeFuel);
+        return;
+      }
+    });
   }
 
   // Map Zalo + báo tin — 1 listener body duy nhất (Settings + FMS)
@@ -3513,6 +3559,11 @@ function renderFmsTable() {
         <td style="text-align: center;" class="${acRegTdClass}">${planeInfo}</td>
         <td style="text-align: center; font-weight: 700; color: #b45309; font-size: 1rem;">${gateHtml}</td>
         <td class="${etdTdClass}">${timesHtml}</td>
+        <td style="text-align: center;">
+          <button class="btn-fms-radar" data-flight="${r.flight_no}" data-reg="${r.ac_reg || ''}" data-time-fuel="${r.time_fuel || ''}" style="background: none; border: none; color: var(--primary); cursor: pointer; font-size: 1.1rem; transition: transform 0.2s;" title="Xem radar và dự báo ETA">
+            <i class="fa-solid fa-satellite-dish"></i>
+          </button>
+        </td>
         <td style="text-align: center; font-weight: 700; color: #15803d; transition: all 0.3s;" class="${standbyTdClass} ${standbyClass}">${standbyHtml}</td>
         <td style="text-align: center; font-weight: 800; color: #c2410c; transition: all 0.3s;" class="${fuelOrderTdClass} ${fuelOrderClass}">${orderHtml}</td>
         <td style="text-align: center; font-weight: 700; color: #1d4ed8;" class="hide-on-mobile">${tripVal}</td>
@@ -3682,6 +3733,11 @@ function renderUserFmsTable() {
             ${r.time_dep ? `<div><span style="color:var(--text-muted);">Cất</span> ${r.time_dep}</div>` : ''}
             ${r.time_fuel ? `<div><span style="color:var(--text-muted);">Nạp</span> <strong style="color:#c2410c;">${r.time_fuel}</strong></div>` : ''}
           </div>
+        </td>
+        <td style="text-align: center;">
+          <button class="btn-fms-radar" data-flight="${r.flight_no}" data-reg="${r.ac_reg || ''}" data-time-fuel="${r.time_fuel || ''}" style="background: none; border: none; color: var(--primary); cursor: pointer; font-size: 1.1rem; transition: transform 0.2s;" title="Xem radar và dự báo ETA">
+            <i class="fa-solid fa-satellite-dish"></i>
+          </button>
         </td>
         <td style="text-align: center; font-weight: 700; color: #15803d;">${r.standby_fuel ? parseInt(r.standby_fuel).toLocaleString() + ' kg' : '-'}</td>
         <td style="text-align: center; font-weight: 800; color: #c2410c; font-size: 1.05rem;">${r.fuel_order ? parseInt(r.fuel_order).toLocaleString() + ' kg' : '-'}</td>
@@ -6243,3 +6299,348 @@ function quickMapCrew(name) {
     }
   }, 300);
 }
+
+// --- MODAL MỞ GIÁM SÁT RADAR & DỰ BÁO ETA (TEST OFFLINE) ---
+async function openRadarMonitorModal(flightNo, acReg, timeFuel) {
+  console.log('[Radar Modal] Mở modal cho chuyến bay:', flightNo, 'Tàu:', acReg, 'TimeFuel:', timeFuel);
+  const modal = document.getElementById('radar-monitor-modal');
+  const body = document.getElementById('radar-modal-body');
+  if (!modal || !body) {
+    console.error('[Radar Modal Error] Không tìm thấy phần tử modal hoặc body trong DOM!');
+    return;
+  }
+
+  modal.style.display = 'flex';
+  setTimeout(() => modal.classList.add('active'), 10);
+  body.innerHTML = `
+    <div style="text-align: center; padding: 30px 20px;">
+      <i class="fa-solid fa-compact-disc fa-spin" style="font-size: 2.8rem; color: #00f2fe; text-shadow: 0 0 15px rgba(0, 242, 254, 0.4); animation-duration: 1.5s;"></i>
+      <div style="margin-top: 15px; font-weight: 500; font-size: 0.9rem; color: #9ca3af;">Đang kết nối radar vệ tinh và tính toán ETA...</div>
+    </div>
+  `;
+
+  try {
+    const res = await fetch(`/api/fms/check-radar?flightNo=${encodeURIComponent(flightNo)}&acReg=${encodeURIComponent(acReg)}&timeFuel=${encodeURIComponent(timeFuel)}`, {
+      headers: {
+        'Authorization': `Bearer ${state.token}`
+      }
+    });
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Lỗi kết nối máy chủ');
+    }
+
+    if (data.status === 'EN-ROUTE' || data.status === 'ARRIVED') {
+      const isRadar = ['live_radar', 'live_flight_details', 'live_flight_details_fallback', 'live_radar_fallback'].includes(data.source);
+      
+      // Bản đồ chuyển đổi mã sân bay IATA sang tên tiếng Việt
+      const iataMap = {
+        'SGN': 'SGN (Tân Sơn Nhất)',
+        'HAN': 'HAN (Nội Bài)',
+        'DAD': 'DAD (Đà Nẵng)',
+        'CXR': 'CXR (Cam Ranh)',
+        'VCL': 'VCL (Chu Lai)',
+        'HPH': 'HPH (Cát Bi)',
+        'VII': 'VII (Vinh)',
+        'PQC': 'PQC (Phú Quốc)',
+        'VCA': 'VCA (Cần Thơ)',
+        'UIH': 'UIH (Phù Cát)',
+        'HUI': 'HUI (Phú Bài)',
+        'BMV': 'BMV (Buôn Ma Thuột)',
+        'PXU': 'PXU (Pleiku)',
+        'TBB': 'TBB (Tuy Hòa)',
+        'VDH': 'VDH (Đồng Hới)',
+        'DIN': 'DIN (Điện Biên)',
+        'VCS': 'VCS (Côn Đảo)',
+        'VDO': 'VDO (Vân Đồn)',
+        'VKG': 'VKG (Rạch Giá)',
+        'CAH': 'CAH (Cà Mau)'
+      };
+      
+      const depNameActual = iataMap[data.depIata] || `${data.depIata || 'N/A'}`;
+      const arrNameActual = iataMap[data.arrIata] || `${data.arrIata || 'HAN'}`;
+
+      let diffWarningHtml = '';
+      if (data.isDifferentFlight) {
+        diffWarningHtml = `
+          <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.25); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 0.8rem; color: #fbbf24; text-align: left; display: flex; align-items: flex-start; gap: 8px;">
+            <i class="fa-solid fa-triangle-exclamation" style="margin-top: 2px; font-size: 0.95rem;"></i>
+            <div>
+              <strong>Phát hiện chuyến bay thực tế:</strong> Tàu bay <strong>${data.regNo}</strong> hiện đang bay chuyến <strong>${data.actualFlightNo}</strong> (thay vì số hiệu ${flightNo} trong lịch trực).
+            </div>
+          </div>
+        `;
+      }
+
+      let formattedReg = (data.regNo || acReg || '').replace(/\s+/g, '').toUpperCase();
+      if (formattedReg.startsWith('VN') && !formattedReg.includes('-')) {
+        formattedReg = 'VN-' + formattedReg.substring(2);
+      }
+      const fr24Url = `https://www.flightradar24.com/data/aircraft/${formattedReg.toLowerCase()}`;
+
+      body.innerHTML = `
+        ${diffWarningHtml}
+        <div style="background: rgba(57, 255, 20, 0.05); border: 1px solid rgba(57, 255, 20, 0.2); border-radius: 12px; padding: 16px; text-align: center; display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px;">Giờ hạ cánh dự kiến (ETA)</div>
+          <div style="font-size: 2.2rem; font-weight: 800; color: #39ff14; text-shadow: 0 0 15px rgba(57, 255, 20, 0.4); font-family: sans-serif;">${data.etaTime}</div>
+          <div style="font-size: 0.9rem; font-weight: 600; color: #f3f4f6;">Còn khoảng <span style="color: #39ff14;">${data.etaMinutes} phút</span> hạ cánh tại ${(data.arrIata && data.arrIata !== 'N/A') ? data.arrIata : 'HAN'}</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+          <div class="radar-stat-box">
+            <span class="label">Sân bay cất cánh</span>
+            <span class="val" style="color: #60a5fa;">${(data.depIata && data.depIata !== 'N/A') ? depNameActual : (data.depName || 'VCL')}</span>
+          </div>
+          <div class="radar-stat-box">
+            <span class="label">Sân bay hạ cánh</span>
+            <span class="val" style="color: #60a5fa;">${(data.arrIata && data.arrIata !== 'N/A') ? arrNameActual : (data.arrName || 'HAN')}</span>
+          </div>
+          <div class="radar-stat-box">
+            <span class="label">Số đăng ký tàu</span>
+            <span class="val">${data.regNo}</span>
+          </div>
+          <div class="radar-stat-box">
+            <span class="label">Tốc độ mặt đất</span>
+            <span class="val">${isRadar ? data.speed + ' km/h' : 'N/A (Lịch trình)'}</span>
+          </div>
+          <div class="radar-stat-box" style="grid-column: span 2;">
+            <span class="label">Khoảng cách tới ${(data.arrIata && data.arrIata !== 'N/A') ? data.arrIata : 'HAN'}</span>
+            <span class="val" style="color: #00f2fe;">${isRadar ? data.distance + ' km' : 'N/A (Ngoại suy)'}</span>
+          </div>
+        </div>
+
+        <div style="margin-top: 14px; padding: 10px; background: rgba(239, 68, 68, 0.1); border: 1px dashed rgba(239, 68, 68, 0.4); border-radius: 8px; text-align: center; color: #ef4444; font-size: 0.8rem; font-weight: 500;">
+          <i class="fa-solid fa-triangle-exclamation"></i> Hãy chú ý kiểm tra kỹ thông tin này, đây chỉ là thông tin tương đối!
+        </div>
+
+        <div style="font-size: 0.75rem; color: #9ca3af; text-align: center; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px;">
+          <i class="fa-solid fa-circle" style="color: #39ff14; font-size: 0.45rem; animation: pulse 1s infinite;"></i> Trạng thái: ${data.statusText}
+        </div>
+      `;
+    } else {
+      let formattedReg = acReg ? acReg.replace(/\s+/g, '').toUpperCase() : '';
+      if (formattedReg.startsWith('VN') && !formattedReg.includes('-')) {
+        formattedReg = 'VN-' + formattedReg.substring(2);
+      }
+      const fr24Url = formattedReg ? `https://www.flightradar24.com/data/aircraft/${formattedReg.toLowerCase()}` : '#';
+
+      body.innerHTML = `
+        <div style="text-align: center; padding: 24px 16px; display: flex; flex-direction: column; gap: 14px; align-items: center;">
+          <i class="fa-solid fa-triangle-exclamation" style="font-size: 3.2rem; color: #ff007f; text-shadow: 0 0 15px rgba(255, 0, 127, 0.35);"></i>
+          <div style="font-size: 1.1rem; font-weight: bold; color: #f3f4f6;">Ko phát hiện hoặc tàu chưa bay</div>
+          <p style="font-size: 0.85rem; color: #9ca3af; max-width: 300px; line-height: 1.4;">
+            Chuyến bay <strong>${flightNo}</strong> (Tàu ${acReg || 'N/A'}) hiện chưa cất cánh hoặc nằm ngoài vùng phủ sóng của radar.
+          </p>
+          <div style="margin-top: 10px; width: 100%;">
+            <a href="${fr24Url}" target="_blank" style="display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #374151, #1f2937); border: 1px solid rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; color: #f3f4f6; font-weight: bold; text-decoration: none; font-size: 0.85rem; transition: all 0.2s;">
+              <i class="fa-solid fa-magnifying-glass"></i> Kiểm tra tàu ${formattedReg} trên Flightradar24
+            </a>
+          </div>
+        </div>
+      `;
+    }
+  } catch (err) {
+    body.innerHTML = `
+      <div style="text-align: center; padding: 24px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center;">
+        <i class="fa-solid fa-triangle-exclamation" style="font-size: 2.8rem; color: #ef4444;"></i>
+        <div style="font-weight: bold;">Lỗi quét radar</div>
+        <div style="font-size: 0.8rem; color: #ef4444;">${err.message}</div>
+      </div>
+    `;
+  }
+}
+
+// --- QUẢN LÝ AIRLABS API KEY (ADMIN ONLY) ---
+document.addEventListener('DOMContentLoaded', () => {
+  const btnManageAirlabs = document.getElementById('btn-manage-airlabs');
+  const modalAirlabs = document.getElementById('airlabs-manager-modal');
+  const btnCloseAirlabs = document.getElementById('btn-close-airlabs-modal');
+  const btnAddKeys = document.getElementById('btn-add-airlabs-keys');
+  const btnCheckAll = document.getElementById('btn-check-all-airlabs');
+  
+  // Hiển thị nút nếu là admin
+  setInterval(() => {
+    if (btnManageAirlabs) {
+      if (typeof getUserRole === 'function' && getUserRole() === 'admin') {
+        btnManageAirlabs.style.display = 'inline-block';
+      } else {
+        btnManageAirlabs.style.display = 'none';
+      }
+    }
+  }, 1000);
+
+  if (btnManageAirlabs && modalAirlabs) {
+    btnManageAirlabs.addEventListener('click', () => {
+      modalAirlabs.style.display = 'flex';
+      setTimeout(() => modalAirlabs.classList.add('active'), 10);
+      loadAirlabsKeys();
+    });
+  }
+
+  // Click ra ngoài để đóng modal
+  if (modalAirlabs) {
+    modalAirlabs.addEventListener('click', (e) => {
+      if (e.target === modalAirlabs) {
+        modalAirlabs.classList.remove('active');
+        setTimeout(() => modalAirlabs.style.display = 'none', 300);
+      }
+    });
+  }
+
+  if (btnCloseAirlabs && modalAirlabs) {
+    btnCloseAirlabs.addEventListener('click', () => {
+      modalAirlabs.classList.remove('active');
+      setTimeout(() => modalAirlabs.style.display = 'none', 300);
+    });
+  }
+
+  if (btnAddKeys) {
+    btnAddKeys.addEventListener('click', async () => {
+      const keysStr = document.getElementById('airlabs-keys-input').value;
+      if (!keysStr.trim()) return showToast('Vui lòng nhập API Key', 'error');
+      
+      const originalHtml = btnAddKeys.innerHTML;
+      btnAddKeys.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang xử lý...';
+      btnAddKeys.disabled = true;
+
+      try {
+        const res = await fetch('/api/fms/airlabs-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.token}`
+          },
+          body: JSON.stringify({ keys: keysStr })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Đã thêm/cập nhật xong ${data.results.length} keys.`, 'success');
+          document.getElementById('airlabs-keys-input').value = '';
+          loadAirlabsKeys();
+        } else {
+          showToast(data.error || 'Lỗi thêm key', 'error');
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btnAddKeys.innerHTML = originalHtml;
+        btnAddKeys.disabled = false;
+      }
+    });
+  }
+
+  if (btnCheckAll) {
+    btnCheckAll.addEventListener('click', async () => {
+      const originalHtml = btnCheckAll.innerHTML;
+      btnCheckAll.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang check...';
+      btnCheckAll.disabled = true;
+
+      try {
+        const res = await fetch('/api/fms/airlabs-keys/check-all', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${state.token}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Đã kiểm tra xong toàn bộ key!', 'success');
+          loadAirlabsKeys();
+        } else {
+          showToast(data.error || 'Lỗi kiểm tra key', 'error');
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btnCheckAll.innerHTML = originalHtml;
+        btnCheckAll.disabled = false;
+      }
+    });
+  }
+});
+
+async function loadAirlabsKeys() {
+  const tbody = document.getElementById('airlabs-keys-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;"><i class="fa-solid fa-spinner fa-spin"></i> Đang tải danh sách...</td></tr>';
+
+  try {
+    const res = await fetch('/api/fms/airlabs-keys', {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (data.data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #9ca3af;">Chưa có API Key nào được quản lý.</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = data.data.map(k => {
+        let statusColor = '#9ca3af';
+        if (k.status === 'active') statusColor = '#39ff14';
+        else if (k.status === 'depleted') statusColor = '#fbbf24';
+        else if (k.status === 'error') statusColor = '#ef4444';
+
+        let statusText = k.status;
+        if (k.status === 'active') statusText = 'Hoạt động';
+        if (k.status === 'depleted') statusText = 'Cạn kiệt (Hết Limit)';
+        if (k.status === 'error') statusText = 'Lỗi/Die';
+
+        return `
+          <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;">
+            <td style="padding: 10px;">${k.id}</td>
+            <td style="padding: 10px; font-family: monospace; color: #00f2fe;">${k.api_key.substring(0, 15)}...</td>
+            <td style="padding: 10px; text-align: center; font-weight: bold; color: ${statusColor};">
+              ${k.status === 'active' ? '<i class="fa-solid fa-check-circle"></i>' : (k.status === 'depleted' ? '<i class="fa-solid fa-battery-empty"></i>' : '<i class="fa-solid fa-circle-exclamation"></i>')} ${statusText}
+            </td>
+            <td style="padding: 10px; text-align: center;">${k.remaining_request} / ${k.limits_total}</td>
+            <td style="padding: 10px; text-align: center;">
+              <button onclick="checkAirlabsKey(${k.id})" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-right: 4px;" title="Check Live"><i class="fa-solid fa-stethoscope"></i></button>
+              <button onclick="deleteAirlabsKey(${k.id})" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 4px 8px; border-radius: 4px; cursor: pointer;" title="Xóa"><i class="fa-solid fa-trash"></i></button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } else {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444;">${data.error}</td></tr>`;
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444;">Lỗi kết nối</td></tr>`;
+  }
+}
+
+window.checkAirlabsKey = async function(id) {
+  try {
+    const res = await fetch(`/api/fms/airlabs-keys/${id}/check`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Đã kiểm tra trạng thái Key thành công!', 'success');
+      loadAirlabsKeys();
+    } else {
+      showToast(data.error || 'Key bị lỗi hoặc Die', 'error');
+      loadAirlabsKeys();
+    }
+  } catch (err) {
+    showToast('Lỗi khi check: ' + err.message, 'error');
+  }
+};
+
+window.deleteAirlabsKey = async function(id) {
+  if (!confirm('Bạn có chắc chắn muốn xóa API Key này khỏi hệ thống không?')) return;
+  try {
+    const res = await fetch(`/api/fms/airlabs-keys/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Xóa Key thành công!', 'success');
+      loadAirlabsKeys();
+    } else {
+      showToast(data.error || 'Lỗi khi xóa', 'error');
+    }
+  } catch (err) {
+    showToast('Lỗi khi xóa: ' + err.message, 'error');
+  }
+};

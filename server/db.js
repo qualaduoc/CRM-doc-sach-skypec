@@ -220,6 +220,19 @@ async function getDb() {
       UNIQUE(flight_no, date)
     );
 
+    -- Bảng quản lý các API Key AirLabs
+    CREATE TABLE IF NOT EXISTS airlabs_keys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key TEXT UNIQUE NOT NULL,
+      type TEXT DEFAULT 'free',
+      expired_at TEXT,
+      limits_total INTEGER DEFAULT 1000,
+      remaining_request INTEGER DEFAULT 1000,
+      status TEXT DEFAULT 'active',
+      last_checked_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     INSERT OR IGNORE INTO settings (key, value) VALUES ('max_active_classes', '3');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_duration', '24h');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_import_export_group_id', '');
@@ -229,6 +242,26 @@ async function getDb() {
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_airline_alert_group_name', '');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_schedule_from_flights', 'true');
   `);
+
+  // Thêm API Key mặc định ban đầu nếu chưa có key nào
+  try {
+    const keyRow = await dbInstance.get('SELECT COUNT(*) as count FROM airlabs_keys');
+    if (keyRow && keyRow.count === 0) {
+      await dbInstance.run(
+        `INSERT INTO airlabs_keys (api_key, type, limits_total, remaining_request, status) 
+         VALUES (?, ?, ?, ?, ?)`,
+        '64eba143-2366-48dc-83dc-3fef646d8096',
+        'free',
+        1000,
+        916,
+        'active'
+      );
+      console.log('[DB] Đã chèn API Key mặc định của AirLabs vào bảng airlabs_keys');
+    }
+  } catch (e) {
+    console.error('[DB] Lỗi chèn API key mặc định:', e.message);
+  }
+
 
   // Di chuyển tự động cấu hình cột mới cho database đã tồn tại
   try {

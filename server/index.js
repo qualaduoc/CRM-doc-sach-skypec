@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const https = require('https');
+const axios = require('axios');
 const querystring = require('querystring');
 const path = require('path');
 const { getDb } = require('./db');
@@ -548,48 +549,77 @@ app.post('/api/auth/login', async (req, res) => {
 
     // 2. Nếu là nhân viên đăng nhập bằng tài khoản Skypec thật
     console.log(`[Auth] Đăng nhập tài khoản nhân viên: ${username}`);
-    const loginResult = await loginSkypec(username, password);
-    const accessToken = loginResult.access_token;
-
-    // Lấy thông tin cá nhân từ Skypec
+    let accessToken = null;
     let displayName = username;
     let department = 'Học viên Skypec';
+    let isOfflineLogin = false;
 
-    // Giải mã JWT token của Skypec để lấy tên thật làm dự phòng
     try {
-      const decoded = jwt.decode(accessToken);
-      if (decoded) {
-        displayName = decoded.fullname || decoded.displayname || username;
+      const loginResult = await loginSkypec(username, password);
+      accessToken = loginResult.access_token;
+
+      // Giải mã JWT token của Skypec để lấy tên thật làm dự phòng
+      try {
+        const decoded = jwt.decode(accessToken);
+        if (decoded) {
+          displayName = decoded.fullname || decoded.displayname || username;
+        }
+      } catch (jwtErr) {
+        console.warn(`[Auth Warning] Lỗi giải mã token Skypec cho ${username}:`, jwtErr.message);
       }
-    } catch (jwtErr) {
-      console.warn(`[Auth Warning] Lỗi giải mã token Skypec cho ${username}:`, jwtErr.message);
+
+      try {
+        const profileResult = await fetchSkypecProfile(accessToken, username);
+        const profile = profileResult.data || {};
+        displayName = profile.fullName || profile.employeeName || profile.hoTen || displayName;
+        department = profile.departmentName || 'Học viên Skypec';
+      } catch (profileErr) {
+        console.warn(`[Auth Warning] Không lấy được profile cho ${username}:`, profileErr.message);
+      }
+
+      // Lưu/Cập nhật tài khoản vào cơ sở dữ liệu nội bộ (mã hóa mật khẩu)
+      const encryptedPassword = encrypt(password);
+      await db.run(`
+        INSERT INTO accounts (username, password, display_name, department, access_token, status)
+        VALUES (?, ?, ?, ?, ?, 'active')
+        ON CONFLICT(username) DO UPDATE SET
+          password = excluded.password,
+          display_name = excluded.display_name,
+          department = excluded.department,
+          access_token = excluded.access_token,
+          status = 'active'
+      `, username, encryptedPassword, displayName, department, accessToken);
+
+      // Đồng bộ danh sách lớp học của nhân viên này (các năm gần đây)
+      try {
+        await syncUserClasses(username, accessToken);
+        await syncUserStats(username, accessToken);
+      } catch (syncErr) {
+        console.warn(`[Auth Warning] Lỗi đồng bộ lớp học/stats cho ${username}:`, syncErr.message);
+      }
+
+    } catch (onlineErr) {
+      console.warn(`[Auth Info] Đăng nhập online Skypec thất bại cho ${username}: ${onlineErr.message}. Thử kiểm tra offline DB...`);
+
+      // Tìm tài khoản trong database cục bộ
+      const userRow = await db.get('SELECT * FROM accounts WHERE username = ?', username);
+      if (userRow && userRow.status === 'active') {
+        const savedDecryptedPassword = decrypt(userRow.password);
+        if (password === savedDecryptedPassword) {
+          // Khớp mật khẩu offline!
+          isOfflineLogin = true;
+          accessToken = userRow.access_token || 'offline-dummy-token';
+          displayName = userRow.display_name || username;
+          department = userRow.department || 'Học viên Skypec (Offline)';
+          console.log(`[Auth Success] Đăng nhập offline thành công cho user: ${username}`);
+        } else {
+          throw new Error('Mật khẩu không đúng (Kiểm tra offline thất bại)');
+        }
+      } else {
+        // Nếu không có tài khoản offline trong DB và đăng nhập online cũng thất bại
+        throw onlineErr; // Ném lại lỗi online ban đầu
+      }
     }
-
-    try {
-      const profileResult = await fetchSkypecProfile(accessToken, username);
-      const profile = profileResult.data || {};
-      displayName = profile.fullName || profile.employeeName || profile.hoTen || displayName;
-      department = profile.departmentName || 'Học viên Skypec';
-    } catch (profileErr) {
-      console.warn(`[Auth Warning] Không lấy được profile cho ${username}:`, profileErr.message);
-    }
-
-    // Lưu/Cập nhật tài khoản vào cơ sở dữ liệu nội bộ (mã hóa mật khẩu)
-    const encryptedPassword = encrypt(password);
-    await db.run(`
-      INSERT INTO accounts (username, password, display_name, department, access_token, status)
-      VALUES (?, ?, ?, ?, ?, 'active')
-      ON CONFLICT(username) DO UPDATE SET
-        password = excluded.password,
-        display_name = excluded.display_name,
-        department = excluded.department,
-        access_token = excluded.access_token,
-        status = 'active'
-    `, username, encryptedPassword, displayName, department, accessToken);
-
-    // Đồng bộ danh sách lớp học của nhân viên này (các năm gần đây)
-    await syncUserClasses(username, accessToken);
-    await syncUserStats(username, accessToken);
 
     // Đọc phân quyền từ cơ sở dữ liệu
     const userRow = await db.get('SELECT perm_admin, perm_fms, perm_zalo, perm_gemini, perm_gate FROM accounts WHERE username = ?', username);
@@ -3443,6 +3473,669 @@ app.get('/api/fms/airline-alerts', authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// --- CÁC HÀM HELPER HỖ TRỢ XOAY VÒNG & KIỂM TRA API KEY AIRLABS ---
+async function getAvailableAirlabsApiKey(db) {
+  // Lấy key đang hoạt động đầu tiên có quota > 5
+  const row = await db.get(
+    "SELECT * FROM airlabs_keys WHERE status = 'active' AND remaining_request > 5 ORDER BY id ASC"
+  );
+  if (row) {
+    return row.api_key;
+  }
+  // Fallback: Nếu tất cả các key đều cạn kiệt, lấy key active bất kỳ có số remaining lớn nhất
+  const fallback = await db.get(
+    "SELECT * FROM airlabs_keys WHERE status = 'active' ORDER BY remaining_request DESC"
+  );
+  if (fallback) {
+    return fallback.api_key;
+  }
+  // Cùng lắm trả về key mặc định ban đầu
+  return '64eba143-2366-48dc-83dc-3fef646d8096';
+}
+
+async function updateAirlabsKeyQuota(db, apiKey, keyMeta) {
+  if (!keyMeta) return;
+  const remaining = keyMeta.limits_total !== undefined ? keyMeta.limits_total : 1000;
+  const status = remaining <= 5 ? 'depleted' : 'active';
+  
+  await db.run(
+    `UPDATE airlabs_keys 
+     SET type = ?, expired_at = ?, limits_total = ?, remaining_request = ?, status = ?, last_checked_at = CURRENT_TIMESTAMP 
+     WHERE api_key = ?`,
+    keyMeta.type || 'free',
+    keyMeta.expired || null,
+    keyMeta.limits_by_month || 1000,
+    remaining,
+    status,
+    apiKey
+  );
+  console.log(`[Radar API Key Quota] Đã cập nhật key ${apiKey.substring(0, 8)}... remaining: ${remaining}, status: ${status}`);
+}
+
+async function markAirlabsKeyFailed(db, apiKey, reason = 'error') {
+  await db.run(
+    `UPDATE airlabs_keys 
+     SET status = ?, last_checked_at = CURRENT_TIMESTAMP 
+     WHERE api_key = ?`,
+    reason,
+    apiKey
+  );
+  console.log(`[Radar API Key Monitor] Đã đánh dấu key ${apiKey.substring(0, 8)}... ở trạng thái lỗi: ${reason}`);
+}
+
+async function checkAirlabsKeyLiveStatus(apiKey) {
+  try {
+    const res = await axios.get('https://airlabs.co/api/v9/flights', {
+      params: { api_key: apiKey, limit: 1 },
+      timeout: 10000
+    });
+    if (res.data && res.data.request && res.data.request.key) {
+      const keyMeta = res.data.request.key;
+      return {
+        live: true,
+        type: keyMeta.type || 'free',
+        limits_by_month: keyMeta.limits_by_month || 1000,
+        limits_total: keyMeta.limits_total !== undefined ? keyMeta.limits_total : 1000,
+        expired_at: keyMeta.expired || null
+      };
+    }
+    if (res.data && res.data.error) {
+      return {
+        live: false,
+        error: res.data.error.message || 'Key không hợp lệ'
+      };
+    }
+    return {
+      live: false,
+      error: 'Phản hồi không đúng định dạng AirLabs API'
+    };
+  } catch (error) {
+    if (error.response && error.response.data && error.response.data.error) {
+      return {
+        live: false,
+        error: error.response.data.error.message || 'Lỗi từ AirLabs API'
+      };
+    }
+    return {
+      live: false,
+      error: error.message || 'Lỗi kết nối tới AirLabs'
+    };
+  }
+}
+
+// --- CÁC ENDPOINT QUẢN LÝ API KEY AIRLABS (ADMIN ONLY) ---
+app.get('/api/fms/airlabs-keys', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền quản lý API key' });
+  }
+  try {
+    const db = await getDb();
+    const keys = await db.all("SELECT * FROM airlabs_keys ORDER BY id DESC");
+    res.json({ success: true, data: keys });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/fms/airlabs-keys', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+  const { keys } = req.body;
+  if (!keys) return res.status(400).json({ success: false, error: 'Thiếu dữ liệu keys' });
+
+  let keyList = [];
+  if (Array.isArray(keys)) {
+    keyList = keys;
+  } else if (typeof keys === 'string') {
+    keyList = keys.split(/[\n,\s\t]+/).map(k => k.trim()).filter(k => k.length > 0);
+  }
+
+  if (keyList.length === 0) {
+    return res.status(400).json({ success: false, error: 'Không tìm thấy API key hợp lệ nào' });
+  }
+
+  const db = await getDb();
+  const results = [];
+
+  for (const key of keyList) {
+    try {
+      const checkResult = await checkAirlabsKeyLiveStatus(key);
+      if (checkResult.live) {
+        const status = checkResult.limits_total <= 5 ? 'depleted' : 'active';
+        await db.run(
+          `INSERT OR REPLACE INTO airlabs_keys (api_key, type, expired_at, limits_total, remaining_request, status, last_checked_at)
+           VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          key,
+          checkResult.type,
+          checkResult.expired_at,
+          checkResult.limits_by_month,
+          checkResult.limits_total,
+          status
+        );
+        results.push({ key, success: true, message: 'Đã thêm key hoạt động', details: checkResult });
+      } else {
+        await db.run(
+          `INSERT OR REPLACE INTO airlabs_keys (api_key, status, last_checked_at)
+           VALUES (?, ?, CURRENT_TIMESTAMP)`,
+          key,
+          'error'
+        );
+        results.push({ key, success: false, error: checkResult.error || 'Key không hoạt động' });
+      }
+    } catch (e) {
+      results.push({ key, success: false, error: e.message });
+    }
+  }
+
+  res.json({ success: true, results });
+});
+
+app.put('/api/fms/airlabs-keys/:id', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+  const { id } = req.params;
+  const { api_key, status } = req.body;
+  if (!api_key) return res.status(400).json({ success: false, error: 'Thiếu API Key' });
+
+  try {
+    const db = await getDb();
+    await db.run(
+      "UPDATE airlabs_keys SET api_key = ?, status = ?, last_checked_at = CURRENT_TIMESTAMP WHERE id = ?",
+      api_key,
+      status || 'active',
+      id
+    );
+    res.json({ success: true, message: 'Đã cập nhật API key' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/fms/airlabs-keys/:id', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+  const { id } = req.params;
+  try {
+    const db = await getDb();
+    await db.run("DELETE FROM airlabs_keys WHERE id = ?", id);
+    res.json({ success: true, message: 'Đã xóa API key thành công' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/fms/airlabs-keys/:id/check', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+  const { id } = req.params;
+  try {
+    const db = await getDb();
+    const keyRow = await db.get("SELECT * FROM airlabs_keys WHERE id = ?", id);
+    if (!keyRow) return res.status(404).json({ success: false, error: 'Không tìm thấy API Key' });
+
+    const checkResult = await checkAirlabsKeyLiveStatus(keyRow.api_key);
+    if (checkResult.live) {
+      const status = checkResult.limits_total <= 5 ? 'depleted' : 'active';
+      await db.run(
+        `UPDATE airlabs_keys 
+         SET type = ?, expired_at = ?, limits_total = ?, remaining_request = ?, status = ?, last_checked_at = CURRENT_TIMESTAMP 
+         WHERE id = ?`,
+        checkResult.type,
+        checkResult.expired_at,
+        checkResult.limits_by_month,
+        checkResult.limits_total,
+        status,
+        id
+      );
+      res.json({ success: true, live: true, data: { status, remaining_request: checkResult.limits_total } });
+    } else {
+      await db.run(
+        `UPDATE airlabs_keys SET status = 'error', last_checked_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        id
+      );
+      res.json({ success: true, live: false, error: checkResult.error });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/fms/airlabs-keys/check-all', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Không có quyền' });
+  }
+  try {
+    const db = await getDb();
+    const keys = await db.all("SELECT * FROM airlabs_keys");
+    const results = [];
+
+    for (const k of keys) {
+      const checkResult = await checkAirlabsKeyLiveStatus(k.api_key);
+      if (checkResult.live) {
+        const status = checkResult.limits_total <= 5 ? 'depleted' : 'active';
+        await db.run(
+          `UPDATE airlabs_keys 
+           SET type = ?, expired_at = ?, limits_total = ?, remaining_request = ?, status = ?, last_checked_at = CURRENT_TIMESTAMP 
+           WHERE id = ?`,
+          checkResult.type,
+          checkResult.expired_at,
+          checkResult.limits_by_month,
+          checkResult.limits_total,
+          status,
+          k.id
+        );
+        results.push({ id: k.id, api_key: k.api_key, live: true, status, remaining: checkResult.limits_total });
+      } else {
+        await db.run(
+          `UPDATE airlabs_keys SET status = 'error', last_checked_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          k.id
+        );
+        results.push({ id: k.id, api_key: k.api_key, live: false, status: 'error', error: checkResult.error });
+      }
+    }
+    res.json({ success: true, data: results });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+// --- QUÉT RADAR DỰ BÁO ETA HẠ CÁNH ---
+app.get('/api/fms/check-radar', authenticateToken, async (req, res) => {
+  const { flightNo, acReg, timeFuel } = req.query;
+
+  if (!flightNo) {
+    return res.status(400).json({ success: false, error: 'Thiếu số hiệu chuyến bay flightNo' });
+  }
+
+  const cleanFlightNo = flightNo.replace(/\s+/g, '').replace('/', '').toUpperCase();
+  const NOI_BAI_COORDS = { lat: 21.221222, lon: 105.806611 };
+
+  try {
+    const db = await getDb();
+    const todayDb = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const localDbRow = await db.get(`
+      SELECT s.status AS sched_status, fo.status AS fo_status, s.chock_in_time, s.dep_arr, s.time_arr 
+      FROM fms_schedules s 
+      LEFT JOIN fms_fuel_orders fo ON UPPER(s.flight_no || '_' || COALESCE(s.fms_date, s.date)) = UPPER(fo.flight_no)
+      WHERE REPLACE(REPLACE(UPPER(s.flight_no), ' ', ''), '-', '') = ? 
+      AND (s.date = ? OR s.fms_date = ?)
+      LIMIT 1
+    `, cleanFlightNo, todayDb, todayDb);
+
+    if (localDbRow) {
+      if (localDbRow.fo_status === 'Đã có số liệu' || localDbRow.sched_status === 'Hoàn thành' || localDbRow.chock_in_time) {
+        return res.json({
+          success: true,
+          source: 'local_database',
+          status: 'ARRIVED',
+          statusText: 'Chuyến bay đã hạ cánh (Dữ liệu nội bộ)',
+          flightNo: cleanFlightNo,
+          actualFlightNo: cleanFlightNo,
+          isDifferentFlight: false,
+          regNo: acReg || 'N/A',
+          etaTime: localDbRow.chock_in_time || localDbRow.time_arr || 'ARRIVED',
+          etaMinutes: 0,
+          distance: 0,
+          speed: 0,
+          depIata: localDbRow.dep_arr ? localDbRow.dep_arr.split('-')[0] : 'N/A',
+          arrIata: localDbRow.dep_arr ? localDbRow.dep_arr.split('-')[1] : 'N/A'
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Lỗi khi kiểm tra DB nội bộ trước khi gọi radar:', err.message);
+  }
+
+  function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  function getAirportCoords(iata) {
+    const dbCoords = {
+      'HAN': { lat: 21.221222, lon: 105.806611 },
+      'SGN': { lat: 10.818444, lon: 106.651778 },
+      'DAD': { lat: 16.043889, lon: 108.199444 },
+      'CXR': { lat: 11.998056, lon: 109.219444 },
+      'HUI': { lat: 16.401667, lon: 107.700556 },
+      'VII': { lat: 18.735278, lon: 105.670278 },
+      'BKK': { lat: 13.690000, lon: 100.750000 },
+      'DMK': { lat: 13.912500, lon: 100.606667 },
+      'KHH': { lat: 22.577167, lon: 120.350000 },
+      'TPE': { lat: 25.079722, lon: 121.234167 },
+      'ICN': { lat: 37.469167, lon: 126.450556 },
+      'NRT': { lat: 35.776667, lon: 140.386389 },
+      'HND': { lat: 35.549444, lon: 139.779722 },
+      'KIX': { lat: 34.434722, lon: 135.244167 },
+      'CAN': { lat: 23.392500, lon: 113.298889 },
+      'SIN': { lat: 1.364444, lon: 103.991111 },
+      'PNH': { lat: 11.546667, lon: 104.844167 },
+      'REP': { lat: 13.410556, lon: 103.812778 },
+      'VTE': { lat: 17.988333, lon: 102.563333 },
+      'VCL': { lat: 15.408333, lon: 108.702778 },
+      'HPH': { lat: 20.818889, lon: 106.724722 },
+      'BMV': { lat: 12.667500, lon: 108.120000 },
+      'PQC': { lat: 10.169167, lon: 103.990278 },
+      'VCA': { lat: 10.083889, lon: 105.711944 },
+      'UIH': { lat: 13.955278, lon: 109.043333 },
+      'TBB': { lat: 13.048889, lon: 109.336111 },
+      'PXU': { lat: 13.998333, lon: 108.016667 },
+      'DIN': { lat: 21.396944, lon: 103.007778 }
+    };
+    return dbCoords[iata.toUpperCase()] || null;
+  }
+
+  function processLiveFlightData(s, sourceName, fallbackReg = '') {
+    if (!s) return null;
+
+    const depIata = s.dep_iata || 'N/A';
+    const arrIata = s.arr_iata || 'HAN';
+    const activeReg = s.reg_number || fallbackReg || acReg || 'N/A';
+    const flightIata = s.flight_iata || s.flight_number || cleanFlightNo;
+
+    const arrCoordsForRadar = getAirportCoords(arrIata) || NOI_BAI_COORDS;
+    const distanceRadar = s.lat ? calculateDistance(s.lat, s.lng, arrCoordsForRadar.lat, arrCoordsForRadar.lon) : 0;
+
+    const depActualTs = s.dep_actual_ts || s.dep_estimated_ts || s.dep_time_ts;
+    const duration = s.duration || 100;
+
+    let estFlightDuration = duration;
+    if (duration > 90) estFlightDuration = Math.round(duration * 0.85);
+    else if (duration > 50) estFlightDuration = Math.round(duration * 0.90);
+
+    let finalDistance = distanceRadar;
+    let finalEtaMinutes = 0;
+    let isStaleRadar = false;
+
+    if (depActualTs && depIata !== 'N/A') {
+      const elapsedMinutes = (Date.now() - depActualTs * 1000) / 1000 / 60;
+
+      if (elapsedMinutes > 0) {
+        const depCoords = getAirportCoords(depIata);
+        const arrCoords = getAirportCoords(arrIata) || NOI_BAI_COORDS;
+
+        if (depCoords) {
+          const routeDistance = calculateDistance(depCoords.lat, depCoords.lon, arrCoords.lat, arrCoords.lon);
+          
+          let distanceTimeBased = routeDistance * (1 - (elapsedMinutes / estFlightDuration));
+          if (distanceTimeBased < 0) distanceTimeBased = 0;
+
+          if (distanceRadar > 0 && Math.abs(distanceRadar - distanceTimeBased) > 100 && elapsedMinutes > 15) {
+            isStaleRadar = true;
+            finalDistance = distanceTimeBased;
+            finalEtaMinutes = Math.max(0, Math.round(estFlightDuration - elapsedMinutes));
+          }
+        }
+      }
+    }
+
+    if (finalDistance <= 5) {
+      finalEtaMinutes = 0;
+      isStaleRadar = false;
+    } else if (!isStaleRadar) {
+      if (s.arr_estimated) {
+        if (s.arr_estimated_ts) {
+          finalEtaMinutes = Math.max(0, Math.round((s.arr_estimated_ts * 1000 - Date.now()) / 1000 / 60));
+        } else {
+          const estDate = new Date(s.arr_estimated.replace(/-/g, '/'));
+          finalEtaMinutes = Math.max(0, Math.round((estDate.getTime() - Date.now()) / 1000 / 60));
+        }
+      } else if (s.arr_time) {
+        if (s.arr_time_ts) {
+          finalEtaMinutes = Math.max(0, Math.round((s.arr_time_ts * 1000 - Date.now()) / 1000 / 60));
+        } else {
+          const arrDate = new Date(s.arr_time.replace(/-/g, '/'));
+          finalEtaMinutes = Math.max(0, Math.round((arrDate.getTime() - Date.now()) / 1000 / 60));
+        }
+      } else if (distanceRadar > 0) {
+        const speedKmh = s.speed || 700;
+        const altMeters = s.alt || 5000;
+        let rawTimeMinutes = (distanceRadar / speedKmh) * 60;
+        let correctionFactor = 1.15;
+        if (altMeters > 6000) correctionFactor = 1.30;
+        else if (altMeters > 3000) correctionFactor = 1.20;
+        else if (altMeters > 1000) correctionFactor = 1.10;
+
+        finalEtaMinutes = Math.round(rawTimeMinutes * correctionFactor);
+      }
+    }
+
+    const etaTimestamp = Date.now() + (finalEtaMinutes * 60 * 1000);
+    const etaDate = new Date(etaTimestamp);
+    const etaStr = etaDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+
+    let statusText = isStaleRadar 
+      ? `Đang bay chuyến ${flightIata} (Radar trễ)`
+      : (sourceName === 'live_flight_details' ? 'Đang bay (Radar live)' : `Đang bay chuyến ${flightIata} (Quét theo Tàu)`);
+
+    return {
+      success: true,
+      source: sourceName,
+      status: 'EN-ROUTE',
+      statusText: statusText,
+      flightNo: cleanFlightNo,
+      actualFlightNo: flightIata,
+      isDifferentFlight: (flightIata.replace(/\s+/g, '').toUpperCase() !== cleanFlightNo.replace(/\s+/g, '').toUpperCase()),
+      icao24: s.hex || 'N/A',
+      regNo: activeReg,
+      lat: s.lat || null,
+      lng: s.lng || null,
+      alt: s.alt || null,
+      speed: s.speed || 600,
+      dir: s.dir || 0,
+      distance: Math.round(finalDistance * 10) / 10,
+      etaMinutes: finalEtaMinutes,
+      etaTime: etaStr,
+      depIata: depIata,
+      arrIata: arrIata
+    };
+  }
+
+  function processFallbackFlightData(f, sourceName, actualFlight, cleanReg) {
+    const fallbackArrIata = f.arr_iata || 'HAN';
+    const arrCoordsForRadar = getAirportCoords(fallbackArrIata) || NOI_BAI_COORDS;
+    const distanceRadar = f.lat ? calculateDistance(f.lat, f.lng, arrCoordsForRadar.lat, arrCoordsForRadar.lon) : 0;
+    const speedKmh = f.speed || 700;
+    let finalEtaMinutes = 0;
+    if (distanceRadar <= 5) {
+      finalEtaMinutes = 0;
+    } else if (distanceRadar > 0) {
+      finalEtaMinutes = Math.round((distanceRadar / speedKmh) * 60 * 1.15);
+    }
+    const etaTimestamp = Date.now() + (finalEtaMinutes * 60 * 1000);
+    const etaDate = new Date(etaTimestamp);
+    const etaStr = etaDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+
+    return {
+      success: true,
+      source: sourceName,
+      status: 'EN-ROUTE',
+      statusText: `Đang bay chuyến ${actualFlight} (Tàu ${cleanReg})`,
+      flightNo: cleanFlightNo,
+      actualFlightNo: actualFlight,
+      isDifferentFlight: true,
+      icao24: f.hex || 'N/A',
+      regNo: cleanReg,
+      lat: f.lat || null,
+      lng: f.lng || null,
+      alt: f.alt || null,
+      speed: speedKmh,
+      dir: f.dir || 0,
+      distance: Math.round(distanceRadar * 10) / 10,
+      etaMinutes: finalEtaMinutes,
+      etaTime: etaStr,
+      depIata: f.dep_iata || 'N/A',
+      arrIata: f.arr_iata || 'HAN'
+    };
+  }
+
+  try {
+    const db = await getDb();
+    
+    // --- LẤY API KEY ĐANG HOẠT ĐỘNG VÀ KHAI BÁO WRAPPER GỌI API AN TOÀN ---
+    let currentApiKey = await getAvailableAirlabsApiKey(db);
+
+    async function callAirlabsApi(endpoint, params, retryCount = 0) {
+      try {
+        console.log(`[Radar API] Thực thi gọi AirLabs /${endpoint} bằng key: ${currentApiKey.substring(0, 8)}... (Lần thử: ${retryCount})`);
+        const response = await axios.get(`https://airlabs.co/api/v9/${endpoint}`, {
+          params: { ...params, api_key: currentApiKey },
+          timeout: 10000
+        });
+
+        if (response.data && response.data.error) {
+          throw new Error(`AIRLABS_ERROR: ${response.data.error.message || 'Lỗi không xác định'}`);
+        }
+
+        if (response.data && response.data.request && response.data.request.key) {
+          await updateAirlabsKeyQuota(db, currentApiKey, response.data.request.key);
+        }
+
+        return response.data;
+      } catch (err) {
+        console.error(`[Radar API Error] Key ${currentApiKey.substring(0, 8)}... gặp lỗi:`, err.message);
+        
+        let failReason = 'error';
+        if (err.message.includes('limit') || err.message.includes('quota') || err.message.includes('429') || err.message.includes('Too Many Requests')) {
+          failReason = 'depleted';
+        } else if (err.message.includes('key') || err.message.includes('Unauthorized') || err.message.includes('invalid_api_key')) {
+          failReason = 'error';
+        }
+
+        await markAirlabsKeyFailed(db, currentApiKey, failReason);
+
+        if (retryCount < 3) {
+          currentApiKey = await getAvailableAirlabsApiKey(db);
+          console.log(`[Radar API Retry] Tự động thử lại với key mới: ${currentApiKey.substring(0, 8)}...`);
+          return callAirlabsApi(endpoint, params, retryCount + 1);
+        }
+        throw err;
+      }
+    }
+
+    let finalResult = null;
+
+    // Bước 1: Thử gọi /flight chi tiết theo chuyến bay
+    try {
+      const flightDetail = await callAirlabsApi('flight', { flight_iata: cleanFlightNo });
+      const s = flightDetail.response;
+      if (s && s.status === 'en-route') {
+        finalResult = processLiveFlightData(s, 'live_flight_details');
+      }
+    } catch (err) {
+      console.error('Lỗi khi truy vấn radar /flight trực tiếp:', err.message);
+    }
+
+    // Bước 2: Nếu chưa tìm thấy, thử fallback quét theo số đăng ký tàu bay (reg_number)
+    if (!finalResult && acReg) {
+      let cleanReg = acReg.replace(/\s+/g, '').toUpperCase();
+      if (cleanReg.startsWith('VN') && !cleanReg.includes('-')) {
+        cleanReg = 'VN-' + cleanReg.substring(2);
+      }
+      try {
+        const flightsResponse = await callAirlabsApi('flights', { reg_number: cleanReg });
+        const regData = flightsResponse.response || [];
+
+        if (regData.length > 0) {
+          const f = regData[0];
+          const actualFlightNo = f.flight_iata || f.flight_number || f.flight_icao || cleanFlightNo;
+
+          try {
+            const actualDetail = await callAirlabsApi('flight', { flight_iata: actualFlightNo });
+            const s2 = actualDetail.response;
+            if (s2 && s2.status === 'en-route') {
+              finalResult = processLiveFlightData(s2, 'live_flight_details_fallback', actualFlightNo);
+            }
+          } catch (err) {
+            console.error('Lỗi khi gọi API /flight chi tiết fallback:', err.message);
+          }
+
+          if (!finalResult) {
+            finalResult = processFallbackFlightData(f, 'live_radar_fallback', actualFlightNo, cleanReg);
+          }
+        }
+      } catch (err) {
+        console.error('Lỗi khi truy vấn radar theo reg_number:', err.message);
+      }
+    }
+
+    if (finalResult) {
+      return res.json(finalResult);
+    }
+
+    // Bước 3: Thử lấy lịch trình chuyến bay en-route
+    try {
+      const flightDetail = await callAirlabsApi('flight', { flight_iata: cleanFlightNo });
+      const s = flightDetail.response;
+
+      if (s && s.status === 'en-route') {
+        const depActualStr = s.dep_actual || s.dep_estimated;
+        if (depActualStr) {
+          const depParts = depActualStr.split(' ');
+          const dateParts = depParts[0].split('-');
+          const timeParts = depParts[1].split(':');
+          const depDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], timeParts[0], timeParts[1]);
+          const durationMinutes = s.duration || 85;
+
+          const etaDate = new Date(depDate.getTime() + (durationMinutes * 60 * 1000));
+          const remainingMs = etaDate.getTime() - Date.now();
+          const remainingMinutes = Math.max(0, Math.round(remainingMs / 1000 / 60));
+          const etaStr = etaDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+
+          return res.json({
+            success: true,
+            source: 'schedule_extrapolated',
+            status: 'EN-ROUTE',
+            statusText: 'Đang bay (Lịch trình)',
+            flightNo: cleanFlightNo,
+            icao24: 'N/A',
+            regNo: s.reg_number || acReg || 'N/A',
+            lat: null,
+            lng: null,
+            alt: null,
+            speed: null,
+            dir: null,
+            distance: null,
+            etaMinutes: remainingMinutes,
+            etaTime: etaStr,
+            depActual: depActualStr,
+            duration: durationMinutes,
+            depName: s.dep_name || 'N/A',
+            arrName: s.arr_name || 'N/A'
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi lấy lịch trình trích xuất:', err.message);
+    }
+
+    return res.json({
+      success: true,
+      status: 'NOT-FOUND',
+      statusText: 'Ko phát hiện hoặc tàu chưa bay',
+      flightNo: cleanFlightNo,
+      regNo: acReg || 'N/A'
+    });
+
+  } catch (error) {
+    console.error('Lỗi khi truy vấn AirLabs tổng thể:', error.message);
+    res.status(500).json({ success: false, error: 'Lỗi kết nối API AirLabs' });
+  }
+});
+
 
 app.post('/api/fms/airline-alerts/confirm', authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin' && req.user.perm_admin !== 1 && req.user.perm_fms !== 1) {
