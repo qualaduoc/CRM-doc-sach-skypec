@@ -3196,7 +3196,7 @@ async function syncFmsSkypecLive(forceDate = null) {
         // TRƯỚC KHI LƯU: So sánh với bản ghi cũ để phát hiện đổi tàu bay đã nạp dầu thực tế
         try {
           const oldFlight = await db.get(
-            "SELECT ac_reg, fuel_order, time_fuel, route FROM fms_flights_live WHERE UPPER(flight_no) = UPPER(?) AND date = ?",
+            "SELECT ac_reg, fuel_order, time_fuel, route, truck_no FROM fms_flights_live WHERE UPPER(flight_no) = UPPER(?) AND date = ?",
             flight.flight_no, flight.date
           );
 
@@ -3205,8 +3205,13 @@ async function syncFmsSkypecLive(forceDate = null) {
             
             const oldAcReg = String(oldFlight.ac_reg).trim().toUpperCase();
             const oldFuelOrder = parseInt(oldFlight.fuel_order) || 0;
+            const oldTruck = String(oldFlight.truck_no || '').trim();
             
-            if (oldFuelOrder > 0) {
+            // Chỉ coi là đổi tàu chéo khi chuyến cũ đã được tra nạp thực tế (có số xe nạp truck_no)
+            // Tránh trường hợp chỉ mới lên kế hoạch/nhiên liệu yêu cầu nhưng đổi tàu trước khi nạp
+            const hasRefueled = oldTruck && oldTruck !== '' && oldTruck !== '-' && oldTruck.toUpperCase() !== 'NAFSC';
+            
+            if (oldFuelOrder > 0 && hasRefueled) {
               const oldRoute = String(oldFlight.route || '').trim().toUpperCase().replace(/\s+/g, '');
               // Route không hợp lệ (VD chỉ "HAN") → không tạo monitor đổi tàu
               const routeOk = oldRoute && oldRoute !== '-' && oldRoute.includes('-');
