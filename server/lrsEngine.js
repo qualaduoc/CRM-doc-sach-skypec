@@ -264,12 +264,83 @@ function startLearning(account, classItem) {
       }
 
       // Đọc lại thông tin class mới nhất để lấy learningId & contentId (vì syncUserClasses hoặc checkAndAutoSubmitReview có thể đã cập nhật lại)
-      const updatedClass = await db.get('SELECT * FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
-      const learningId = updatedClass ? updatedClass.learning_id : null;
-      const contentId = updatedClass ? updatedClass.content_id : null;
+      let updatedClass = await db.get('SELECT * FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
+      let learningId = updatedClass ? updatedClass.learning_id : null;
+      let contentId = updatedClass ? updatedClass.content_id : null;
+
+      // NẾU CHƯA CÓ learning_id HOẶC content_id -> TỰ ĐỘNG KHỞI TẠO VỚI MÁY CHỦ SKYPEC
+      if (!learningId || !contentId) {
+        console.log(`[Engine] Lớp ${classId} của ${account.username} chưa có learningId/contentId. Đang tự động khởi tạo với máy chủ Skypec...`);
+        try {
+          // 1. Tìm contentId của bài học đầu tiên nếu chưa có
+          if (!contentId) {
+            const contentsList = await new Promise((resList) => {
+              const req = https.request({
+                hostname: HOST, port: 443,
+                path: `/skypec2.lms.api/api/v1/LmsClassContent/frGetByClassId/${classId}`,
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${token}`, 'Accept-Encoding': 'identity' }
+              }, (res) => {
+                let body = '';
+                res.on('data', chunk => body += chunk);
+                res.on('end', () => {
+                  if (res.statusCode === 200) {
+                    try {
+                      const json = JSON.parse(body);
+                      const items = json.data || [];
+                      const validItem = items.find(i => {
+                        const t = (i.type && i.type.title) ? i.type.title.toLowerCase() : '';
+                        const title = i.title ? i.title.toLowerCase() : '';
+                        return !t.includes('khảo sát') && !t.includes('thi') && !t.includes('kiểm tra') && !title.includes('khảo sát') && !title.includes('kiểm tra');
+                      }) || items[0];
+                      resList(validItem ? validItem.id : null);
+                    } catch (e) { resList(null); }
+                  } else resList(null);
+                });
+              });
+              req.on('error', () => resList(null));
+              req.end();
+            });
+            contentId = contentsList;
+          }
+
+          if (contentId && actualClassUserId) {
+            // 2. Gửi gói POST LmsClassUserLearning khởi tạo phiên học lên Skypec
+            const initPayload = {
+              id: "00000000-0000-0000-0000-000000000000",
+              classUserId: actualClassUserId,
+              classContentId: contentId,
+              isFinish: false,
+              isPassed: false,
+              learnTime: 0,
+              times: 1,
+              lastUpdatedDate: new Date().toISOString(),
+              lastUpdatedUserId: actualUserId || currentAcc.username,
+              classContent: { id: contentId, classId: classId }
+            };
+
+            await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', initPayload);
+
+            // 3. Tải lại tiến độ FrUserJoinClassNew để lấy mã learningId mới sinh từ Skypec
+            const newProgress = await fetchActualProgress(token, classId);
+            if (newProgress && newProgress.status && newProgress.data && newProgress.data.lmsClassUserLearning && newProgress.data.lmsClassUserLearning.length > 0) {
+              const matchedHist = newProgress.data.lmsClassUserLearning.find(l => l.classContentId === contentId) || newProgress.data.lmsClassUserLearning[0];
+              learningId = matchedHist ? matchedHist.id : null;
+            }
+          }
+
+          // 4. Cập nhật lại CSDL Local để các phiên sau không phải khởi tạo lại
+          if (learningId || contentId) {
+            await db.run('UPDATE classes SET learning_id = ?, content_id = ? WHERE id = ? AND account_username = ?', learningId, contentId, classId, account.username);
+            console.log(`[Engine] Đã tự động khởi tạo THÀNH CÔNG cho ${account.username} - Lớp ${classId}: learningId=${learningId}, contentId=${contentId}`);
+          }
+        } catch (initErr) {
+          console.error(`[Engine Error] Lỗi tự động khởi tạo learningId cho ${account.username}:`, initErr.message);
+        }
+      }
 
       if (!learningId) {
-        console.log(`[Engine] Lớp ${classId} không có learningId. Không thể kết nối WebSocket treo đọc sách.`);
+        console.log(`[Engine] Lớp ${classId} của ${account.username} không thể lấy learningId. Tự động thử lại sau.`);
         connectionObj.stop();
         return;
       }

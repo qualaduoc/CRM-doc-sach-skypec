@@ -907,11 +907,12 @@ app.get('/api/accounts', authenticateToken, async (req, res) => {
     });
 
     // Cập nhật lại số kết nối đang chạy thực tế
-    const dbClasses = await db.all('SELECT id, account_username FROM classes WHERE auto_learn = 1');
+    const dbClasses = await db.all('SELECT id, account_username FROM classes WHERE auto_learn = 1 AND is_finish = 0');
     const runningMap = {};
     dbClasses.forEach(c => {
       const connectionKey = `${c.account_username}_${c.id}`;
-      if (activeConnections.has(connectionKey)) {
+      // Tính là đang treo máy nếu có kết nối WebSocket hoặc công tắc auto_learn đang bật
+      if (activeConnections.has(connectionKey) || c.id) {
         runningMap[c.account_username] = (runningMap[c.account_username] || 0) + 1;
       }
     });
