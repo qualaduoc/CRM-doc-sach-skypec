@@ -177,6 +177,7 @@ function startLearning(account, classItem) {
   let ws = null;
   let pingInterval = null;
   let videoInterval = null;
+  let httpHeartbeatInterval = null;
   let videoTimeSeconds = Math.round((classItem.learn_time || 0) * 60) + 10;
   let invocationId = 1;
   let reconnectTimeout = null;
@@ -198,6 +199,7 @@ function startLearning(account, classItem) {
   function stopTimers() {
     if (pingInterval) clearInterval(pingInterval);
     if (videoInterval) clearInterval(videoInterval);
+    if (httpHeartbeatInterval) clearInterval(httpHeartbeatInterval);
   }
 
   async function connect() {
@@ -356,6 +358,21 @@ function startLearning(account, classItem) {
               }
             }
           }, 10000);
+        }
+
+        // Gửi nhịp tim HTTP GET dự phòng mỗi 60 giây để đảm bảo tích lũy số phút (đặc biệt đối với tài liệu dạng sách/PDF)
+        if (actualClassUserId) {
+          console.log(`[Engine] Khởi chạy nhịp tim HTTP GET dự phòng cho ${account.username} - Lớp: ${classId}`);
+          httpHeartbeatInterval = setInterval(async () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              try {
+                const heartRes = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsClassContent/frUserUpdateViewNew/${actualClassUserId}`);
+                console.log(`[Engine HTTP Heartbeat] [${account.username}] Lớp ${classId} - HTTP Status: ${heartRes.statusCode}`);
+              } catch (heartErr) {
+                console.error(`[Engine HTTP Heartbeat Error] [${account.username}] Lớp ${classId}:`, heartErr.message);
+              }
+            }
+          }, 60000);
         }
       });
 
