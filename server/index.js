@@ -2081,32 +2081,55 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
     }
     const lastMonthStr = formatMonth(lastMonthYear, lastMonth);
 
-    // 3. Lấy toàn bộ chuyến bay trong database thuộc 3 mốc thời gian này
+    // 3. Lấy toàn bộ chuyến bay trong database thuộc 3 mốc thời gian này (kết hợp fms_schedules & fms_flights_live)
     const rows = await db.all(`
       SELECT 
-        id,
-        flight_no,
-        ac_type,
-        ac_reg,
-        route,
-        time_arr,
-        time_dep,
-        time_fuel,
-        gate,
-        '' as truck_no,
-        driver_name,
-        operator_name,
-        (driver_name || ' - ' || operator_name) as crew_info,
-        date as date_str,
-        status,
-        fuel_order,
-        standby_fuel
-      FROM fms_flights_live
-      WHERE date = ?
-        OR strftime('%Y-%m', date) = ?
-        OR strftime('%Y-%m', date) = ?
-      ORDER BY date DESC, id ASC
-    `, todayStr, thisMonthStr, lastMonthStr);
+        COALESCE(fs.id, fl.id) as id,
+        COALESCE(fs.flight_no, fl.flight_no) as flight_no,
+        COALESCE(fs.ac_type, fl.ac_type, '') as ac_type,
+        COALESCE(fs.ac_reg, fl.ac_reg, '') as ac_reg,
+        COALESCE(fs.route, fl.route, '') as route,
+        COALESCE(fs.time_arr, fl.time_arr, '') as time_arr,
+        COALESCE(fs.time_dep, fl.time_dep, '') as time_dep,
+        COALESCE(fs.time_fuel, fl.time_fuel, '') as time_fuel,
+        COALESCE(fs.gate, fl.gate, '') as gate,
+        COALESCE(fs.truck_no, fl.truck_no, '') as truck_no,
+        COALESCE(NULLIF(fs.driver_name, ''), NULLIF(fl.driver_name, ''), '') as driver_name,
+        COALESCE(NULLIF(fs.operator_name, ''), NULLIF(fl.operator_name, ''), '') as operator_name,
+        COALESCE(fs.crew_info, (fl.driver_name || ' - ' || fl.operator_name), '') as crew_info,
+        COALESCE(fs.date, fs.fms_date, fl.date) as date_str,
+        COALESCE(fl.status, 'Đã có số liệu') as status,
+        COALESCE(fl.fuel_order, '') as fuel_order,
+        COALESCE(fl.standby_fuel, '') as standby_fuel
+      FROM fms_schedules fs
+      LEFT JOIN fms_flights_live fl ON (REPLACE(REPLACE(UPPER(fs.flight_no), ' ', ''), '-', '') = REPLACE(REPLACE(UPPER(fl.flight_no), ' ', ''), '-', '') AND COALESCE(fs.date, fs.fms_date) = fl.date)
+      WHERE COALESCE(fs.date, fs.fms_date, fl.date) = ?
+         OR strftime('%Y-%m', COALESCE(fs.date, fs.fms_date, fl.date)) = ?
+         OR strftime('%Y-%m', COALESCE(fs.date, fs.fms_date, fl.date)) = ?
+      UNION
+      SELECT 
+        fl.id,
+        fl.flight_no,
+        fl.ac_type,
+        fl.ac_reg,
+        fl.route,
+        fl.time_arr,
+        fl.time_dep,
+        fl.time_fuel,
+        fl.gate,
+        fl.truck_no,
+        fl.driver_name,
+        fl.operator_name,
+        (fl.driver_name || ' - ' || fl.operator_name) as crew_info,
+        fl.date as date_str,
+        fl.status,
+        fl.fuel_order,
+        fl.standby_fuel
+      FROM fms_flights_live fl
+      WHERE (fl.driver_name != '' OR fl.operator_name != '')
+        AND (fl.date = ? OR strftime('%Y-%m', fl.date) = ? OR strftime('%Y-%m', fl.date) = ?)
+      ORDER BY date_str DESC, id ASC
+    `, todayStr, thisMonthStr, lastMonthStr, todayStr, thisMonthStr, lastMonthStr);
 
     // 4. Duyệt qua từng tài khoản nhân viên để tính số chuyến bay tương ứng
     const fmsStats = [];
