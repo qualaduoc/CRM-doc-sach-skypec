@@ -296,7 +296,7 @@ function startLearning(account, classItem) {
           }
         }, 15000);
 
-        // Gửi VIDEO_TIME_UPDATE giả lập mỗi 10 giây
+        // Gửi VIDEO_TIME_UPDATE giả lập mỗi 10 giây cho kênh WebSocket (Video)
         if (contentId) {
           videoInterval = setInterval(async () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -318,62 +318,104 @@ function startLearning(account, classItem) {
                 ws.send(message);
                 videoTimeSeconds += 10;
                 invocationId++;
-
-                // Tăng số phút học tập tạm thời ở local mỗi 10 giây (10 giây = 1/60 phút = ~0.167 phút) để hiển thị mượt mà trên giao diện
-                const localDb = await getDb();
-                await localDb.run('UPDATE classes SET learn_time = learn_time + (10.0 / 60.0), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND account_username = ?', classId, account.username);
-
-                // Cứ mỗi 30 giây, tự động đồng bộ và kiểm tra số phút thực tế trực tiếp từ máy chủ Skypec
-                if (videoTimeSeconds % 30 === 0) {
-                  try {
-                    const progress = await fetchActualProgress(token, classId);
-                    if (progress && progress.status && progress.data) {
-                      let actualTime = progress.data.totalTime || 0;
-                      const learningHistories = progress.data.lmsClassUserLearning || [];
-                      if (learningHistories.length > 0) {
-                        learningHistories.forEach(h => {
-                          if (h.learnTime && h.learnTime > actualTime) {
-                            actualTime = h.learnTime;
-                          }
-                        });
-                      }
-                      const isFinish = (progress.data.isFinish === 1 || progress.data.isFinish === true) ? 1 : 0;
-                      
-                      await localDb.run('UPDATE classes SET learn_time = ?, is_finish = ? WHERE id = ? AND account_username = ?', actualTime, isFinish, classId, account.username);
-                      
-                      // Kiểm tra xem đã đạt thời gian yêu cầu tối thiểu chưa
-                      const currentClassInfo = await localDb.get('SELECT min_time_required, class_title FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
-                      if (currentClassInfo && currentClassInfo.min_time_required && actualTime >= currentClassInfo.min_time_required) {
-                        console.log(`[Engine] Lớp học "${currentClassInfo.class_title}" của ${account.username} đã đạt thời gian yêu cầu tối thiểu (${currentClassInfo.min_time_required} phút). Tự động dừng học ngầm.`);
-                        await localDb.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, account.username);
-                        connectionObj.stop();
-                      }
-                    }
-                  } catch (syncErr) {
-                    console.warn(`[Engine Warning] Không thể tự động đồng bộ thực tế lớp ${classId} của ${account.username}:`, syncErr.message);
-                  }
-                }
               } catch (err) {
-                console.error(`[Engine] Lỗi gửi nhịp tim lớp ${classId}:`, err.message);
+                console.error(`[Engine WS] Lỗi gửi nhịp tim WebSocket lớp ${classId}:`, err.message);
               }
             }
           }, 10000);
         }
 
-        // Gửi nhịp tim HTTP GET dự phòng mỗi 60 giây để đảm bảo tích lũy số phút (đặc biệt đối với tài liệu dạng sách/PDF)
+        // Gửi nhịp tim HTTP GET dự phòng mỗi 60 giây để tăng lượt xem (times)
         if (actualClassUserId) {
-          console.log(`[Engine] Khởi chạy nhịp tim HTTP GET dự phòng cho ${account.username} - Lớp: ${classId}`);
           httpHeartbeatInterval = setInterval(async () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
               try {
                 const heartRes = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsClassContent/frUserUpdateViewNew/${actualClassUserId}`);
-                console.log(`[Engine HTTP Heartbeat] [${account.username}] Lớp ${classId} - HTTP Status: ${heartRes.statusCode}`);
+                console.log(`[Engine HTTP GET] [${account.username}] Lớp ${classId} - Status: ${heartRes.statusCode}`);
               } catch (heartErr) {
-                console.error(`[Engine HTTP Heartbeat Error] [${account.username}] Lớp ${classId}:`, heartErr.message);
+                console.error(`[Engine HTTP GET Error] [${account.username}] Lớp ${classId}:`, heartErr.message);
               }
             }
           }, 60000);
         }
+
+        // KÊNH SÁCH/PDF KHOA HỌC: Gửi gói LmsClassUserLearning HTTP POST tích lũy phút học thực tế mỗi 125 giây (2 phút 5 giây - an toàn chống spam)
+        let lrsPostInterval = setInterval(async () => {
+          if (ws && ws.readyState === WebSocket.OPEN && contentId && actualClassUserId) {
+            try {
+              const localDb = await getDb();
+              // Lấy tiến độ mới nhất từ Skypec server
+              const progressRes = await fetchActualProgress(token, classId);
+              let currentActualTime = 0;
+              let currentHistories = [];
+              if (progressRes && progressRes.status && progressRes.data) {
+                currentActualTime = progressRes.data.totalTime || 0;
+                currentHistories = progressRes.data.lmsClassUserLearning || [];
+                currentHistories.forEach(h => {
+                  if (h.learnTime && h.learnTime > currentActualTime) {
+                    currentActualTime = h.learnTime;
+                  }
+                });
+              }
+
+              // Tính phút cộng dồn mới (+2 phút cho mỗi chu kỳ 125s)
+              const nextLearnTime = +(currentActualTime + 2.0).toFixed(2);
+              const oldLearning = currentHistories.find(l => l.classContentId === contentId) || {};
+              
+              const learningPayload = {
+                id: oldLearning.id || "00000000-0000-0000-0000-000000000000",
+                classUserId: actualClassUserId,
+                classContentId: contentId,
+                isFinish: false,
+                isPassed: false,
+                learnTime: nextLearnTime,
+                times: (oldLearning.times || 1) + 1,
+                lastUpdatedDate: new Date().toISOString(),
+                lastUpdatedUserId: actualUserId || currentAcc.username,
+                classContent: {
+                  id: contentId,
+                  classId: classId
+                }
+              };
+
+              const postRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', learningPayload);
+              console.log(`[Engine LRS POST] [${account.username}] Lớp ${classId} - Cập nhật ${nextLearnTime} phút - Status: ${postRes.statusCode}`);
+
+              // Lấy lại tiến độ thực tế xác nhận từ Skypec sau khi POST
+              const syncCheck = await fetchActualProgress(token, classId);
+              if (syncCheck && syncCheck.status && syncCheck.data) {
+                let confirmedTime = syncCheck.data.totalTime || 0;
+                const syncHistories = syncCheck.data.lmsClassUserLearning || [];
+                syncHistories.forEach(h => {
+                  if (h.learnTime && h.learnTime > confirmedTime) {
+                    confirmedTime = h.learnTime;
+                  }
+                });
+                const isFinish = (syncCheck.data.isFinish === 1 || syncCheck.data.isFinish === true) ? 1 : 0;
+                
+                // Cập nhật CSDL local ĐÚNG THEO XÁC NHẬN CỦA SKYPEC SERVER (100% THỰC TẾ)
+                await localDb.run('UPDATE classes SET learn_time = ?, is_finish = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND account_username = ?', confirmedTime, isFinish, classId, account.username);
+
+                // Kiểm tra xem đã đạt thời gian yêu cầu tối thiểu chưa
+                const currentClassInfo = await localDb.get('SELECT min_time_required, class_title FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
+                if (currentClassInfo && currentClassInfo.min_time_required && confirmedTime >= currentClassInfo.min_time_required) {
+                  console.log(`[Engine] Lớp học "${currentClassInfo.class_title}" của ${account.username} đã đạt thời gian yêu cầu tối thiểu (${currentClassInfo.min_time_required} phút). Tự động dừng học ngầm.`);
+                  await localDb.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, account.username);
+                  connectionObj.stop();
+                }
+              }
+            } catch (postErr) {
+              console.error(`[Engine LRS POST Error] [${account.username}] Lớp ${classId}:`, postErr.message);
+            }
+          }
+        }, 125000); // 125 giây (2 phút 5 giây) - khoảng thời gian an toàn chống bị hệ thống coi là spam
+
+        // Cập nhật hàm stopTimers để dọn dẹp lrsPostInterval
+        const originalStop = stopTimers;
+        stopTimers = () => {
+          originalStop();
+          if (lrsPostInterval) clearInterval(lrsPostInterval);
+        };
       });
 
       ws.on('message', (data) => {
