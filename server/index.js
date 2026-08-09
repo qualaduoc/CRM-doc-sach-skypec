@@ -2102,6 +2102,16 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
     const currentYear = vnTime.getUTCFullYear();
     const currentMonth = vnTime.getUTCMonth() + 1;
     const formatMonth = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+    const thisMonthStr = formatMonth(currentYear, currentMonth);
+
+    let lastMonthYear = currentYear;
+    let lastMonth = currentMonth - 1;
+    if (lastMonth === 0) {
+      lastMonth = 12;
+      lastMonthYear -= 1;
+    }
+    const lastMonthStr = formatMonth(lastMonthYear, lastMonth);
+
     const thisMonthYmd = `${thisMonthStr}%`;
     const thisMonthDmy = `%/0${currentMonth}/${currentYear}%`;
     const lastMonthYmd = `${lastMonthStr}%`;
