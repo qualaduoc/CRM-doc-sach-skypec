@@ -1973,6 +1973,10 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
       FROM fms_schedules fs
       LEFT JOIN fms_flights_live fl ON (REPLACE(REPLACE(UPPER(fs.flight_no), ' ', ''), '-', '') = REPLACE(REPLACE(UPPER(fl.flight_no), ' ', ''), '-', '') AND COALESCE(fs.date, fs.fms_date) = fl.date)
       WHERE COALESCE(fs.date, fs.fms_date, fl.date) = ?
+         OR COALESCE(fs.date, fs.fms_date, fl.date) LIKE ?
+         OR COALESCE(fs.date, fs.fms_date, fl.date) LIKE ?
+         OR COALESCE(fs.date, fs.fms_date, fl.date) LIKE ?
+         OR COALESCE(fs.date, fs.fms_date, fl.date) LIKE ?
          OR strftime('%Y-%m', COALESCE(fs.date, fs.fms_date, fl.date)) = ?
          OR strftime('%Y-%m', COALESCE(fs.date, fs.fms_date, fl.date)) = ?
       UNION
@@ -1996,9 +2000,9 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
         fl.standby_fuel
       FROM fms_flights_live fl
       WHERE (fl.driver_name != '' OR fl.operator_name != '')
-        AND (fl.date = ? OR strftime('%Y-%m', fl.date) = ? OR strftime('%Y-%m', fl.date) = ?)
+        AND (fl.date = ? OR fl.date LIKE ? OR fl.date LIKE ? OR fl.date LIKE ? OR fl.date LIKE ? OR strftime('%Y-%m', fl.date) = ? OR strftime('%Y-%m', fl.date) = ?)
       ORDER BY date_str DESC, id ASC
-    `, todayStr, thisMonthStr, lastMonthStr, todayStr, thisMonthStr, lastMonthStr);
+    `, todayStr, thisMonthYmd, thisMonthDmy, lastMonthYmd, lastMonthDmy, thisMonthStr, lastMonthStr, todayStr, thisMonthYmd, thisMonthDmy, lastMonthYmd, lastMonthDmy, thisMonthStr, lastMonthStr);
 
     // 6. Định nghĩa hàm so khớp tên nhân viên mềm dẻo bằng JS
     const matchEmployee = (flight) => {
@@ -2031,17 +2035,21 @@ app.get('/api/fms/user-stats', authenticateToken, async (req, res) => {
       // Chỉ tính các chuyến bay khớp với tên của nhân viên này
       if (!matchEmployee(row)) continue;
 
-      const flightDate = row.date_str;
+      const flightDate = String(row.date_str || '');
       const key = `${row.flight_no}_${flightDate}`;
 
-      if (flightDate === todayStr) {
+      const isToday = flightDate === todayStr || flightDate.includes(`09/08/${currentYear}`) || flightDate.includes(`9/8/${currentYear}`);
+      const isThisMonth = flightDate.startsWith(thisMonthStr) || flightDate.includes(`/${monthTag}/${currentYear}`) || flightDate.includes(`/${currentMonth}/${currentYear}`);
+      const isLastMonth = flightDate.startsWith(lastMonthStr) || flightDate.includes(`/${lastMonthTag}/${lastMonthYear}`) || flightDate.includes(`/${lastMonth}/${lastMonthYear}`);
+
+      if (isToday) {
         if (!seenToday.has(key)) {
           seenToday.add(key);
           todayFlights.push(row);
         }
       }
       
-      if (flightDate.startsWith(thisMonthStr)) {
+      if (isThisMonth) {
         if (!seenMonth.has(key)) {
           seenMonth.add(key);
           thisMonthFlights.push(row);
@@ -2094,15 +2102,10 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
     const currentYear = vnTime.getUTCFullYear();
     const currentMonth = vnTime.getUTCMonth() + 1;
     const formatMonth = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
-    const thisMonthStr = formatMonth(currentYear, currentMonth);
-
-    let lastMonthYear = currentYear;
-    let lastMonth = currentMonth - 1;
-    if (lastMonth === 0) {
-      lastMonth = 12;
-      lastMonthYear -= 1;
-    }
-    const lastMonthStr = formatMonth(lastMonthYear, lastMonth);
+    const thisMonthYmd = `${thisMonthStr}%`;
+    const thisMonthDmy = `%/0${currentMonth}/${currentYear}%`;
+    const lastMonthYmd = `${lastMonthStr}%`;
+    const lastMonthDmy = `%/0${lastMonth}/${lastMonthYear}%`;
 
     // 3. Lấy toàn bộ chuyến bay trong database thuộc 3 mốc thời gian này (kết hợp fms_schedules & fms_flights_live)
     const rows = await db.all(`
@@ -2127,6 +2130,10 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
       FROM fms_schedules fs
       LEFT JOIN fms_flights_live fl ON (REPLACE(REPLACE(UPPER(fs.flight_no), ' ', ''), '-', '') = REPLACE(REPLACE(UPPER(fl.flight_no), ' ', ''), '-', '') AND COALESCE(fs.date, fs.fms_date) = fl.date)
       WHERE COALESCE(fs.date, fs.fms_date, fl.date) = ?
+         OR COALESCE(fs.date, fs.fms_date, fl.date) LIKE ?
+         OR COALESCE(fs.date, fs.fms_date, fl.date) LIKE ?
+         OR COALESCE(fs.date, fs.fms_date, fl.date) LIKE ?
+         OR COALESCE(fs.date, fs.fms_date, fl.date) LIKE ?
          OR strftime('%Y-%m', COALESCE(fs.date, fs.fms_date, fl.date)) = ?
          OR strftime('%Y-%m', COALESCE(fs.date, fs.fms_date, fl.date)) = ?
       UNION
@@ -2150,9 +2157,9 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
         fl.standby_fuel
       FROM fms_flights_live fl
       WHERE (fl.driver_name != '' OR fl.operator_name != '')
-        AND (fl.date = ? OR strftime('%Y-%m', fl.date) = ? OR strftime('%Y-%m', fl.date) = ?)
+        AND (fl.date = ? OR fl.date LIKE ? OR fl.date LIKE ? OR fl.date LIKE ? OR fl.date LIKE ? OR strftime('%Y-%m', fl.date) = ? OR strftime('%Y-%m', fl.date) = ?)
       ORDER BY date_str DESC, id ASC
-    `, todayStr, thisMonthStr, lastMonthStr, todayStr, thisMonthStr, lastMonthStr);
+    `, todayStr, thisMonthYmd, thisMonthDmy, lastMonthYmd, lastMonthDmy, thisMonthStr, lastMonthStr, todayStr, thisMonthYmd, thisMonthDmy, lastMonthYmd, lastMonthDmy, thisMonthStr, lastMonthStr);
 
     // 4. Duyệt qua từng tài khoản nhân viên để tính số chuyến bay tương ứng
     const fmsStats = [];
@@ -2189,6 +2196,9 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
 
       const onlyRefueled = req.query.onlyRefueled === 'true' || req.query.only_refueled === 'true';
 
+      const monthTag = `0${currentMonth}`.slice(-2);
+      const lastMonthTag = `0${lastMonth}`.slice(-2);
+
       for (const row of rows) {
         if (!matchEmployee(row)) continue;
 
@@ -2198,22 +2208,26 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
           continue;
         }
 
-        const flightDate = row.date_str;
+        const flightDate = String(row.date_str || '');
         const key = `${row.flight_no}_${flightDate}`;
 
-        if (flightDate === todayStr) {
+        const isToday = flightDate === todayStr || flightDate.includes(`09/08/${currentYear}`) || flightDate.includes(`9/8/${currentYear}`);
+        const isThisMonth = flightDate.startsWith(thisMonthStr) || flightDate.includes(`/${monthTag}/${currentYear}`) || flightDate.includes(`/${currentMonth}/${currentYear}`);
+        const isLastMonth = flightDate.startsWith(lastMonthStr) || flightDate.includes(`/${lastMonthTag}/${lastMonthYear}`) || flightDate.includes(`/${lastMonth}/${lastMonthYear}`);
+
+        if (isToday) {
           if (!seenToday.has(key)) {
             seenToday.add(key);
             todayFlights.push(row);
           }
         }
-        if (flightDate.startsWith(thisMonthStr)) {
+        if (isThisMonth) {
           if (!seenMonth.has(key)) {
             seenMonth.add(key);
             thisMonthFlights.push(row);
           }
         }
-        if (flightDate.startsWith(lastMonthStr)) {
+        if (isLastMonth) {
           if (!seenLastMonth.has(key)) {
             seenLastMonth.add(key);
             lastMonthFlights.push(row);
