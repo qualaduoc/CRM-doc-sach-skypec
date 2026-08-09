@@ -2187,8 +2187,16 @@ app.get('/api/fms/admin-stats', authenticateToken, async (req, res) => {
       const seenMonth = new Set();
       const seenLastMonth = new Set();
 
+      const onlyRefueled = req.query.onlyRefueled === 'true' || req.query.only_refueled === 'true';
+
       for (const row of rows) {
         if (!matchEmployee(row)) continue;
+
+        // Loại bỏ chuyến Hủy chuyến hoặc Bỏ nạp nếu có yêu cầu lọc mẻ nạp thực tế
+        const statusStr = String(row.status || '').toLowerCase();
+        if (onlyRefueled && (statusStr.includes('hủy') || statusStr.includes('huỷ') || statusStr.includes('cancel') || statusStr.includes('bỏ nạp'))) {
+          continue;
+        }
 
         const flightDate = row.date_str;
         const key = `${row.flight_no}_${flightDate}`;
