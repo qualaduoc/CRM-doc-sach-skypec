@@ -3503,27 +3503,43 @@ async function syncFmsSkypecHistory() {
   console.log('[FMS Skypec Live] Hoàn tất cào dữ liệu lịch sử 40 ngày!');
 }
 
-// Khởi chạy tiến trình quét ngầm định kỳ
+// Khởi chạy tiến trình quét ngầm định kỳ theo hàng đợi tuần tự (Sequential Task Queue)
 let workerInterval = null;
+let isSchedulerRunning = false;
+
+async function runSequentialFmsWorker() {
+  if (isSchedulerRunning) return;
+  isSchedulerRunning = true;
+  try {
+    // 1. Đồng bộ FMS Skypec Live
+    await syncFmsSkypecLive().catch(err => console.error('[FMS Live Worker Error]', err.message));
+    // Delay 2.5s giữa các tác vụ để giải phóng tài nguyên
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    // 2. Đồng bộ Tải dầu VNA FuelOrder
+    await syncFMSData().catch(err => console.error('[FMS VNA Worker Error]', err.message));
+  } catch (e) {
+    console.error('[FMS Worker Queue Error]', e.message);
+  } finally {
+    isSchedulerRunning = false;
+  }
+}
+
 function startFmsWorker(intervalMs = 3 * 60 * 1000) { // Mặc định quét mỗi 3 phút
   if (workerInterval) {
     clearInterval(workerInterval);
   }
   
-  // Chạy lần đầu tiên
+  // Chạy lần đầu tiên sau 5 giây khi server ready
   setTimeout(() => {
-    syncFMSData();
-    syncFmsSkypecLive().catch(err => console.error('[FMS Skypec Live Worker Error]', err.message));
-    // Tự động kích hoạt cào ngầm dữ liệu lịch sử 40 ngày gần đây
+    runSequentialFmsWorker();
     syncFmsSkypecHistory().catch(err => console.error('[FMS Skypec History Error]', err.message));
   }, 5000);
 
   workerInterval = setInterval(() => {
-    syncFMSData();
-    syncFmsSkypecLive().catch(err => console.error('[FMS Skypec Live Worker Error]', err.message));
+    runSequentialFmsWorker();
   }, intervalMs);
   
-  log(`Đã khởi chạy tiến trình quét ngầm FMS (Chu kỳ: ${intervalMs / 1000}s)`);
+  log(`Đã khởi chạy tiến trình quét ngầm Hàng đợi Tuần tự FMS (Chu kỳ: ${intervalMs / 1000}s)`);
 }
 
 module.exports = {

@@ -301,19 +301,21 @@ export class Listener extends EventEmitter {
                 if (cmd == 602 && subCmd == 0) {
                     const parsedData = (await decodeEventData(parsed, this.cipherKey)).data;
                     const { actions } = parsedData;
-                    for (const action of actions) {
-                        const data = JSON.parse(`{${action.data}}`);
-                        if (action.act_type == "typing") {
-                            if (action.act == "typing") {
-                                const typingObject = new UserTyping(data);
-                                this.emit("typing", typingObject);
-                            }
-                            else if (action.act == "gtyping") {
-                                // 26/02/2025
-                                // For a group with only two people, Zalo doesn't send a typing event.
-                                const typingObject = new GroupTyping(data);
-                                this.emit("typing", typingObject);
-                            }
+                    if (Array.isArray(actions)) {
+                        for (const action of actions) {
+                            try {
+                                const data = JSON.parse(`{${action.data}}`);
+                                if (action.act_type == "typing") {
+                                    if (action.act == "typing") {
+                                        const typingObject = new UserTyping(data);
+                                        this.emit("typing", typingObject);
+                                    }
+                                    else if (action.act == "gtyping") {
+                                        const typingObject = new GroupTyping(data);
+                                        this.emit("typing", typingObject);
+                                    }
+                                }
+                            } catch (_) { /* ignore malformed typing payload */ }
                         }
                     }
                 }
