@@ -14,6 +14,12 @@ async function getDb() {
     driver: sqlite3.Database
   });
 
+  // Khởi tạo SQLite WAL mode và busy timeout
+  await dbInstance.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = 10000;
+  `);
+
   // Khởi tạo các bảng
   await dbInstance.exec(`
     CREATE TABLE IF NOT EXISTS admin (
