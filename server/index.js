@@ -1035,12 +1035,13 @@ app.get('/api/classes/:classId/contents', authenticateToken, async (req, res) =>
       if (typeTitle.toLowerCase().includes('khảo sát')) {
         statusText = isDone ? 'Đã đánh giá ✅' : 'Chưa làm ⚪';
       } else if (isExam) {
+        const attemptsAllowed = item.attempts || 2;
         if (isDone && hist && hist.score !== undefined && hist.score !== null) {
-          statusText = `Đạt ${hist.score}đ ✅ (${hist.times || 1}/${item.attempts || 2} lần)`;
+          statusText = `Đạt ${hist.score}đ ✅`;
         } else if (isDone) {
-          statusText = `Đã nộp bài ✅ (${hist.times || 1}/${item.attempts || 2} lần)`;
+          statusText = `Đã hoàn thành ✅`;
         } else {
-          statusText = `Chưa làm ⚪ (${hist ? (hist.times || 0) : 0}/${item.attempts || 2} lần)`;
+          statusText = `Chưa làm ⚪ (Tối đa ${attemptsAllowed} lần)`;
         }
       }
 
