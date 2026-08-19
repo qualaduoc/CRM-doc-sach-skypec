@@ -354,22 +354,27 @@ async function autoTakeExam({ token, username, classId, classContentId, onProgre
 
             if (bestMatch && maxSim >= 0.5) {
               let bestChoiceMatch = null;
-              let maxChoiceSim = 0;
+              let maxChoiceSim = -1;
+
               for (const choice of choices) {
                 const cText = choice.content || choice.title || '';
+                // 1. So khớp chính xác văn bản tuyệt đối sau khi chuẩn hóa
+                if (normalizeText(cText) === normalizeText(bestMatch.correct_choice_text)) {
+                  bestChoiceMatch = choice;
+                  maxChoiceSim = 1.0;
+                  break;
+                }
+                // 2. So khớp mờ độ tương đồng cao nhất
                 const cSim = stringSimilarity(cText, bestMatch.correct_choice_text);
                 if (cSim > maxChoiceSim) {
                   maxChoiceSim = cSim;
                   bestChoiceMatch = choice;
                 }
               }
-              if (bestChoiceMatch && maxChoiceSim >= 0.6) {
+
+              if (bestChoiceMatch) {
                 selectedChoiceId = bestChoiceMatch.id;
                 selectedChoiceText = bestChoiceMatch.content || bestChoiceMatch.title || '';
-              } else if (bestMatch.correct_choice_index && choices.length >= bestMatch.correct_choice_index) {
-                const fb = choices[bestMatch.correct_choice_index - 1];
-                selectedChoiceId = fb.id;
-                selectedChoiceText = fb.content || fb.title || '';
               }
             }
 
