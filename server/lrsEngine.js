@@ -15,7 +15,26 @@ function isReadingContent(item) {
   const itemTitle = (item.title || '').toLowerCase();
   const isSurvey = typeTitle.includes('khảo sát') || typeTitle.includes('survey') || itemTitle.includes('khảo sát');
   const isTest = typeTitle.includes('test') || typeTitle.includes('thi') || typeTitle.includes('kiểm tra') || itemTitle.includes('kiểm tra') || itemTitle.includes('bài thi');
-  return !isSurvey && !isTest;
+  const hasChildren = (item.childrens && item.childrens.length > 0) || (item.children && item.children.length > 0);
+  return !isSurvey && !isTest && !item.isFolder && !hasChildren;
+}
+
+function flattenClassContents(items, parentTitle = '', parentId = null) {
+  let result = [];
+  (items || []).forEach(item => {
+    const children = item.childrens || item.children || [];
+    if (children.length > 0) {
+      result = result.concat(flattenClassContents(children, item.title, item.id));
+    } else {
+      result.push({
+        ...item,
+        parentTitle: parentTitle || '',
+        parentId: item.parentId || parentId,
+        displayTitle: parentTitle ? `${parentTitle} › ${item.title}` : item.title
+      });
+    }
+  });
+  return result;
 }
 
 function fetchAllClassContents(token, classId) {
@@ -33,7 +52,7 @@ function fetchAllClassContents(token, classId) {
         if (res.statusCode === 200) {
           try {
             const json = JSON.parse(body);
-            resolve(json.data || []);
+            resolve(flattenClassContents(json.data || []));
           } catch (e) { resolve([]); }
         } else resolve([]);
       });
@@ -733,39 +752,14 @@ function fetchClassContentDetail(token, classContentId) {
 async function checkAndAutoSubmitSurveys(token, classId, classUserId, userId, displayName, username, learningHistories) {
   return new Promise(async (resolve) => {
     try {
-      // 1. Tải danh sách bài học của lớp học
-      const listOptions = {
-        hostname: HOST, port: 443,
-        path: `/skypec2.lms.api/api/v1/LmsClassContent/frGetByClassId/${classId}`,
-        method: 'GET',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Accept-Encoding': 'identity'
-        }
-      };
-      
-      const contentsList = await new Promise((resList) => {
-        const req = https.request(listOptions, (res) => {
-          let body = '';
-          res.on('data', (chunk) => body += chunk);
-          res.on('end', () => {
-            if (res.statusCode === 200) {
-              try {
-                const json = JSON.parse(body);
-                resList(json.data || []);
-              } catch (e) { resList([]); }
-            } else { resList([]); }
-          });
-        });
-        req.on('error', () => resList([]));
-        req.end();
-      });
+      // 1. Tải danh sách tất cả bài học (đã phẳng hóa cây đa môn học)
+      const contentsList = await fetchAllClassContents(token, classId);
 
       // Lọc ra các bài học là khảo sát
       const surveys = contentsList.filter(item => {
         const typeTitle = (item.type && item.type.title) ? item.type.title.toLowerCase() : '';
         const itemTitle = item.title ? item.title.toLowerCase() : '';
-        return typeTitle.includes('khảo sát') || itemTitle.includes('khảo sát') || item.typeId === '7bd609d4-33bb-43e2-8c1d-c5bf008780bf';
+        return typeTitle.includes('khảo sát') || itemTitle.includes('survey') || item.typeId === '7bd609d4-33bb-43e2-8c1d-c5bf008780bf';
       });
 
       if (surveys.length === 0) {
@@ -1041,5 +1035,6 @@ module.exports = {
   checkAndAutoSubmitReview,
   surveyStatuses,
   learningStatuses,
-  fetchAllClassContents
+  fetchAllClassContents,
+  flattenClassContents
 };

@@ -1627,7 +1627,7 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
 
   <!-- ================= MODAL CHI TIẾT CÁC BÀI HỌC CON (MULTI-CONTENT MODAL) ================= -->
   <div id="class-contents-modal" class="modal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0, 0, 0, 0.65); backdrop-filter: blur(8px); justify-content: center; align-items: center;">
-    <div class="glass-panel modal-card" style="background: var(--panel-bg, #111827); border: 1px solid rgba(56, 189, 248, 0.3); box-shadow: 0 0 35px rgba(56, 189, 248, 0.2); width: 95%; max-width: 720px; max-height: 85vh; border-radius: 16px; overflow-y: auto; animation: modalFadeIn 0.25s ease; color: var(--text, #f3f4f6); font-family: sans-serif;">
+    <div class="glass-panel modal-card" style="background: var(--panel-bg, #111827); border: 1px solid rgba(56, 189, 248, 0.3); box-shadow: 0 0 35px rgba(56, 189, 248, 0.2); width: 95%; max-width: 760px; max-height: 88vh; border-radius: 16px; overflow-y: auto; animation: modalFadeIn 0.25s ease; color: var(--text, #f3f4f6); font-family: sans-serif;">
       <div class="modal-header" style="padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.01);">
         <h3 id="class-contents-modal-title" style="font-size: 1.08rem; font-weight: 700; color: #38bdf8; margin: 0; display: flex; align-items: center; gap: 8px;">
           <i class="fa-solid fa-list-check" style="color: #38bdf8;"></i> CHI TIẾT BÀI HỌC / CÁC TẬP
@@ -1637,6 +1637,49 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
       
       <div class="modal-body" id="class-contents-modal-body" style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
         <!-- Dữ liệu render bằng JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden Excel Input for uploading answer keys -->
+  <input type="file" id="excel-answer-file-input" accept=".xlsx,.xls" style="display: none;" />
+
+  <!-- ================= MODAL XÁC NHẬN TỰ ĐỘNG LÀM BÀI KIỂM TRA ================= -->
+  <div id="confirm-auto-test-modal" class="modal" style="display: none; position: fixed; z-index: 10000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0, 0, 0, 0.75); backdrop-filter: blur(10px); justify-content: center; align-items: center;">
+    <div class="glass-panel modal-card" style="background: #0f172a; border: 1px solid rgba(234, 179, 8, 0.4); box-shadow: 0 0 40px rgba(234, 179, 8, 0.25); width: 95%; max-width: 520px; border-radius: 16px; overflow: hidden; animation: modalFadeIn 0.25s ease; color: #f8fafc; font-family: sans-serif;">
+      <div style="padding: 20px; text-align: center; background: linear-gradient(180deg, rgba(234, 179, 8, 0.15), transparent); border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
+        <div style="width: 54px; height: 54px; margin: 0 auto 12px; background: rgba(234, 179, 8, 0.2); border: 2px solid #eab308; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: #eab308; box-shadow: 0 0 15px rgba(234, 179, 8, 0.3);">
+          <i class="fa-solid fa-graduation-cap"></i>
+        </div>
+        <h3 style="font-size: 1.15rem; font-weight: 700; color: #facc15; margin: 0 0 6px;">XÁC NHẬN TỰ ĐỘNG LÀM BÀI THI</h3>
+        <p style="font-size: 0.85rem; color: #94a3b8; margin: 0;">Bạn có chắc chắn muốn SkyEyes tự động làm bài thi không?</p>
+      </div>
+
+      <div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; font-size: 0.88rem;">
+        <div style="background: rgba(255, 255, 255, 0.03); padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.06);">
+          <div style="color: #94a3b8; font-size: 0.78rem; margin-bottom: 4px;">TÊN BÀI KIỂM TRA:</div>
+          <div id="confirm-test-title" style="font-weight: 700; color: #38bdf8;">Bài kiểm tra cuối khóa</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div style="background: rgba(255, 255, 255, 0.03); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06);">
+            <div style="color: #94a3b8; font-size: 0.75rem;">Thời gian giả lập:</div>
+            <div style="font-weight: 600; color: #a3e635; margin-top: 2px;"><i class="fa-regular fa-clock"></i> ~3 - 5 phút</div>
+          </div>
+          <div style="background: rgba(255, 255, 255, 0.03); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06);">
+            <div style="color: #94a3b8; font-size: 0.75rem;">Điểm mục tiêu:</div>
+            <div style="font-weight: 600; color: #38bdf8; margin-top: 2px;"><i class="fa-solid fa-star"></i> 100/100 Điểm</div>
+          </div>
+        </div>
+
+        <div style="background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; padding: 10px 12px; border-radius: 6px; font-size: 0.8rem; color: #bae6fd; line-height: 1.4;">
+          <i class="fa-solid fa-shield-halved"></i> <b>Cơ chế an toàn:</b> SkyEyes tự động so khớp ngân hàng đáp án, chọn phương án đúng và nộp bài hoàn tất lên Skypec LMS.
+        </div>
+      </div>
+
+      <div style="padding: 16px 20px; background: rgba(0, 0, 0, 0.2); border-top: 1px solid rgba(255, 255, 255, 0.06); display: flex; justify-content: flex-end; gap: 10px;">
+        <button id="btn-cancel-auto-test" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); color: #cbd5e1; padding: 9px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.85rem;">Hủy bỏ</button>
+        <button id="btn-start-auto-test-confirmed" style="background: linear-gradient(135deg, #eab308, #ca8a04); border: none; color: #0f172a; padding: 9px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; box-shadow: 0 0 15px rgba(234, 179, 8, 0.4);"><i class="fa-solid fa-bolt"></i> Chắc chắn, bắt đầu làm ngay</button>
       </div>
     </div>
   </div>

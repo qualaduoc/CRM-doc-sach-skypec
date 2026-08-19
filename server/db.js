@@ -158,6 +158,21 @@ async function getDb() {
       UNIQUE(flight_no, date)
     );
 
+    CREATE TABLE IF NOT EXISTS exam_question_banks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      class_content_id TEXT,
+      exam_code TEXT,
+      exam_title TEXT,
+      question_text TEXT NOT NULL,
+      correct_choice_index INTEGER,
+      correct_choice_text TEXT NOT NULL,
+      choices_json TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_exam_qb_content ON exam_question_banks(class_content_id);
+    CREATE INDEX IF NOT EXISTS idx_exam_qb_code ON exam_question_banks(exam_code);
+
     CREATE TABLE IF NOT EXISTS fms_temp_import_exports (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       ac_reg TEXT NOT NULL,

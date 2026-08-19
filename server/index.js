@@ -10,6 +10,8 @@ const querystring = require('querystring');
 const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses, learningStatuses, fetchAllClassContents } = require('./lrsEngine');
+const { parseExcelQuestionBank, saveQuestionBankToDb, getAnswerBankStatus, autoTakeExam } = require('./examEngine');
+const fs = require('fs');
 const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute, isVnAirlineFlightNo } = require('./fmsService');
 const { evaluateAirlineMismatch, listAirlineMappings } = require('./airlineCodes');
 const {
@@ -993,7 +995,7 @@ app.get('/api/classes', authenticateToken, async (req, res) => {
   }
 });
 
-// Lấy danh sách chi tiết các bài con / các tập trong một lớp học (bài giảng, giáo trình, khảo sát...)
+// Lấy danh sách chi tiết các bài con / các tập trong một lớp học (bài giảng, giáo trình, khảo sát, bài kiểm tra...)
 app.get('/api/classes/:classId/contents', authenticateToken, async (req, res) => {
   const { classId } = req.params;
   const { username } = req.query;
@@ -1016,31 +1018,55 @@ app.get('/api/classes/:classId/contents', authenticateToken, async (req, res) =>
     const connectionKey = `${targetUsername}_${classId}`;
     const liveStatus = learningStatuses.get(connectionKey);
 
-    const contents = (allContents || []).map((item, idx) => {
+    const contents = await Promise.all((allContents || []).map(async (item, idx) => {
       const typeTitle = (item.type && item.type.title) ? item.type.title : (item.typeId || 'Tài liệu');
       const hist = histories.find(h => h.classContentId === item.id);
       const isDone = hist && (hist.isFinish === true || hist.isFinish === 1);
       const learnTime = hist ? (hist.learnTime || 0) : 0;
       const isCurrent = liveStatus && liveStatus.activeTitle === item.title;
+      const isExam = typeTitle.toLowerCase().includes('thi') || typeTitle.toLowerCase().includes('kiểm tra') || (item.title && item.title.toLowerCase().includes('kiểm tra'));
+
+      let answersBank = { count: 0, examCode: null };
+      if (isExam) {
+        answersBank = await getAnswerBankStatus(db, item.id, null, item.title);
+      }
 
       let statusText = isDone ? 'Đã xong ✅' : (isCurrent ? 'Đang đọc ⏳' : 'Chưa học ⚪');
       if (typeTitle.toLowerCase().includes('khảo sát')) {
         statusText = isDone ? 'Đã đánh giá ✅' : 'Chưa làm ⚪';
-      } else if (typeTitle.toLowerCase().includes('thi') || typeTitle.toLowerCase().includes('kiểm tra')) {
-        statusText = isDone ? 'Đã nộp bài ✅' : 'Chưa làm ⚪';
+      } else if (isExam) {
+        if (isDone && hist && hist.score !== undefined && hist.score !== null) {
+          statusText = `Đạt ${hist.score}đ ✅ (${hist.times || 1}/${item.attempts || 2} lần)`;
+        } else if (isDone) {
+          statusText = `Đã nộp bài ✅ (${hist.times || 1}/${item.attempts || 2} lần)`;
+        } else {
+          statusText = `Chưa làm ⚪ (${hist ? (hist.times || 0) : 0}/${item.attempts || 2} lần)`;
+        }
       }
 
       return {
         id: item.id,
         index: idx + 1,
         title: item.title,
+        parentTitle: item.parentTitle || '',
+        displayTitle: item.displayTitle || item.title,
         typeTitle: typeTitle,
+        isExam: isExam ? 1 : 0,
+        attempts: item.attempts || 2,
+        mincore: item.mincore || 80,
+        weightScore: item.weightScore || null,
+        times: hist ? (hist.times || 0) : 0,
+        score: hist ? hist.score : null,
+        isPassed: hist ? (hist.isPassed ? 1 : 0) : 0,
         learnTime: +(learnTime.toFixed(1)),
         isFinish: isDone ? 1 : 0,
         isCurrent: isCurrent ? 1 : 0,
-        statusText: statusText
+        statusText: statusText,
+        hasAnswers: answersBank.count > 0 ? 1 : 0,
+        answersCount: answersBank.count,
+        examCode: answersBank.examCode
       };
-    });
+    }));
 
     res.json({
       success: true,
@@ -1051,6 +1077,65 @@ app.get('/api/classes/:classId/contents', authenticateToken, async (req, res) =>
     });
   } catch (err) {
     console.error('[API class contents error]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Upload file Excel ngân hàng đáp án cho bài thi
+app.post('/api/exam-answers/upload', authenticateToken, express.json({ limit: '15mb' }), async (req, res) => {
+  try {
+    const { classContentId, examCode, examTitle, base64 } = req.body;
+    const db = await getDb();
+
+    if (!base64) {
+      return res.status(400).json({ success: false, error: 'Không nhận được dữ liệu base64 của file Excel!' });
+    }
+
+    const fileBuffer = Buffer.from(base64, 'base64');
+    const parsed = parseExcelQuestionBank(fileBuffer, examCode || '');
+    
+    await saveQuestionBankToDb(db, {
+      classContentId: classContentId || null,
+      examCode: examCode || parsed.examCode || null,
+      examTitle: examTitle || 'Ngân hàng đáp án',
+      questions: parsed.questions
+    });
+
+    res.json({
+      success: true,
+      message: `Đã nạp thành công ${parsed.totalQuestions} câu hỏi vào ngân hàng đáp án!`,
+      totalQuestions: parsed.totalQuestions,
+      examCode: examCode || parsed.examCode
+    });
+  } catch (err) {
+    console.error('[Upload exam answers error]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Tự động làm bài kiểm tra cho học viên
+app.post('/api/classes/:classId/auto-test/:classContentId', authenticateToken, async (req, res) => {
+  const { classId, classContentId } = req.params;
+  const { username } = req.body;
+  const targetUsername = (req.user.role === 'admin' && username) ? username : req.user.username;
+
+  try {
+    const db = await getDb();
+    const account = await db.get('SELECT access_token FROM accounts WHERE username = ?', targetUsername);
+    if (!account || !account.access_token) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản hoặc token' });
+    }
+
+    const result = await autoTakeExam({
+      token: account.access_token,
+      username: targetUsername,
+      classId,
+      classContentId
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('[Auto take exam error]', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -4495,10 +4580,58 @@ function startScheduleWarningWorker() {
   }, 30000);
 }
 
+// Tự động nạp ngân hàng đề thi mẫu nếu có file Excel
+async function seedDefaultExamBanks() {
+  try {
+    const db = await getDb();
+    const seedFiles = [
+      { code: 'QC20', name: 'Đáp án QC20.xlsx', title: 'Bài kiểm tra cuối khóa (QC20)' },
+      { code: 'HD01', name: 'Đáp án HD01.xlsx', title: 'Bài kiểm tra HD01' }
+    ];
+
+    const searchDirs = [
+      path.join(__dirname, '../../doc-sach-skypec'),
+      path.join(__dirname, '../'),
+      path.join(__dirname, '../../'),
+      '/root/doc-sach-skypec',
+      'D:\\Nodejs\\doc-sach-skypec'
+    ];
+
+    for (const item of seedFiles) {
+      const existing = await db.get('SELECT COUNT(*) as c FROM exam_question_banks WHERE exam_code = ?', item.code);
+      if (existing && existing.c > 0) continue;
+
+      let foundPath = null;
+      for (const d of searchDirs) {
+        const p = path.join(d, item.name);
+        if (fs.existsSync(p)) {
+          foundPath = p;
+          break;
+        }
+      }
+
+      if (foundPath) {
+        const parsed = parseExcelQuestionBank(foundPath, item.code);
+        await saveQuestionBankToDb(db, {
+          examCode: item.code,
+          examTitle: item.title,
+          questions: parsed.questions
+        });
+        console.log(`[ExamEngine] Đã tự động nạp ${parsed.totalQuestions} câu hỏi ngân hàng ${item.code} từ ${item.name}`);
+      }
+    }
+  } catch (e) {
+    console.warn('[ExamEngine] Lỗi tự động nạp ngân hàng câu hỏi ban đầu:', e.message);
+  }
+}
+
 // --- KHỞI ĐỘNG HỆ THỐNG ---
 app.listen(PORT, async () => {
   console.log(`[LMS] Máy chủ đang chạy tại: http://localhost:${PORT}`);
   
+  // Khởi tạo CSDL và tự động nạp ngân hàng đáp án Excel
+  await seedDefaultExamBanks();
+
   // Khởi chạy bộ máy học tập chạy ngầm cho các tài khoản đang bật sẵn
   await initEngine();
 

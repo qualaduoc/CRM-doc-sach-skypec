@@ -2034,6 +2034,10 @@ async function triggerSyncProgress(username) {
   }
 }
 
+// Biến tạm lưu ca thi đang chờ xác nhận
+let pendingAutoTest = null;
+let pendingUploadContent = null;
+
 // Mở modal hiển thị danh sách các bài học con / các tập trong lớp học (Multi-Content Modal)
 async function openClassContentsModal(classId, username, classTitle) {
   const modal = document.getElementById('class-contents-modal');
@@ -2068,7 +2072,21 @@ async function openClassContentsModal(classId, username, classTitle) {
       return;
     }
 
-    const listHtml = contents.map(item => {
+    // Gom nhóm theo parentTitle nếu có cấu trúc nhiều Môn học
+    let lastParentTitle = null;
+    let listHtml = '';
+
+    contents.forEach((item, idx) => {
+      // Nếu chuyển sang Môn học / Chuyên đề mới -> render Header phân nhóm
+      if (item.parentTitle && item.parentTitle !== lastParentTitle) {
+        lastParentTitle = item.parentTitle;
+        listHtml += `
+          <div style="margin-top: 12px; margin-bottom: 6px; padding: 8px 12px; background: rgba(56, 189, 248, 0.1); border-left: 4px solid #38bdf8; border-radius: 6px; font-weight: 700; color: #38bdf8; font-size: 0.88rem; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-folder-open"></i> ${item.parentTitle}
+          </div>
+        `;
+      }
+
       let badgeBg = 'rgba(255, 255, 255, 0.05)';
       let badgeColor = 'var(--text-muted)';
       let badgeBorder = 'rgba(255, 255, 255, 0.1)';
@@ -2084,29 +2102,62 @@ async function openClassContentsModal(classId, username, classTitle) {
       }
 
       const icon = item.typeTitle.toLowerCase().includes('khảo sát') ? 'fa-square-poll-vertical' :
-                   (item.typeTitle.toLowerCase().includes('thi') || item.typeTitle.toLowerCase().includes('kiểm tra')) ? 'fa-pen-to-square' : 'fa-book-open';
+                   item.isExam ? 'fa-pen-to-square' : 'fa-book-open';
 
-      return `
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; gap: 10px;">
-          <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
-            <span style="font-weight: 700; color: #38bdf8; font-size: 0.95rem; width: 22px;">${item.index}.</span>
-            <div>
-              <div style="font-weight: 600; color: var(--text); font-size: 0.9rem;">
-                <i class="fa-solid ${icon}" style="color: var(--text-muted); margin-right: 4px;"></i> ${item.title}
-              </div>
-              <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 3px;">
-                Loại: <span style="color: var(--primary);">${item.typeTitle}</span> ${item.learnTime > 0 ? `· Đã học: <strong style="color: var(--text);">${item.learnTime} phút</strong>` : ''}
+      // Nút & Badge bổ trợ cho Bài kiểm tra
+      let examControlsHtml = '';
+      if (item.isExam) {
+        const answersBadge = item.hasAnswers
+          ? `<span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; white-space: nowrap;"><i class="fa-solid fa-check"></i> Đã nạp ${item.answersCount} câu đáp án</span>`
+          : `<span style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-muted); font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">Chưa có đáp án</span>`;
+
+        const uploadBtn = `
+          <button onclick="triggerUploadAnswer('${item.id}', '${item.title.replace(/'/g, "\\'")}', '${classId}', '${targetUser}', '${(classTitle || '').replace(/'/g, "\\'")}')" style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Nạp file Excel đáp án cho bài kiểm tra này">
+            <i class="fa-solid fa-cloud-arrow-up"></i> Nạp Excel đáp án
+          </button>
+        `;
+
+        const autoTestBtn = (item.hasAnswers && item.isFinish !== 1) ? `
+          <button onclick="openConfirmAutoTestModal('${classId}', '${item.id}', '${item.title.replace(/'/g, "\\'")}', '${targetUser}', '${(classTitle || '').replace(/'/g, "\\'")}')" style="background: linear-gradient(135deg, #eab308, #ca8a04); border: none; color: #0f172a; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 10px rgba(234, 179, 8, 0.3);">
+            <i class="fa-solid fa-bolt"></i> Tự động làm bài
+          </button>
+        ` : '';
+
+        examControlsHtml = `
+          <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+            ${answersBadge}
+            ${uploadBtn}
+            ${autoTestBtn}
+          </div>
+        `;
+      }
+
+      listHtml += `
+        <div style="display: flex; flex-direction: column; padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+              <span style="font-weight: 700; color: #38bdf8; font-size: 0.95rem; width: 22px;">${item.index}.</span>
+              <div>
+                <div style="font-weight: 600; color: var(--text); font-size: 0.9rem;">
+                  <i class="fa-solid ${icon}" style="color: var(--text-muted); margin-right: 4px;"></i> ${item.title}
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 3px;">
+                  Loại: <span style="color: var(--primary);">${item.typeTitle}</span>
+                  ${item.learnTime > 0 ? `· Đã học: <strong style="color: var(--text);">${item.learnTime} phút</strong>` : ''}
+                  ${item.isExam ? `· Tối đa: <strong style="color: var(--text);">${item.attempts} lần</strong> · Điểm đạt: <strong style="color: #38bdf8;">${item.mincore}/100</strong>` : ''}
+                </div>
               </div>
             </div>
+            <div>
+              <span style="display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder};">
+                ${item.statusText}
+              </span>
+            </div>
           </div>
-          <div>
-            <span style="display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder};">
-              ${item.statusText}
-            </span>
-          </div>
+          ${examControlsHtml}
         </div>
       `;
-    }).join('');
+    });
 
     bodyEl.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; font-size: 0.85rem; color: var(--text);">
@@ -2115,7 +2166,7 @@ async function openClassContentsModal(classId, username, classTitle) {
           ${data.isFinish === 1 ? '✅ Đã hoàn thành toàn bộ lớp' : '⏳ Đang trong tiến trình học'}
         </span>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 8px; max-height: 450px; overflow-y: auto; margin-top: 8px;">
+      <div style="display: flex; flex-direction: column; gap: 8px; max-height: 500px; overflow-y: auto; margin-top: 8px;">
         ${listHtml}
       </div>
     `;
@@ -2126,6 +2177,123 @@ async function openClassContentsModal(classId, username, classTitle) {
         <i class="fa-solid fa-triangle-exclamation"></i> Lỗi tải danh sách bài con: ${err.message}
       </div>
     `;
+  }
+}
+
+// Kích hoạt hộp thoại chọn file Excel đáp án
+function triggerUploadAnswer(contentId, contentTitle, classId, targetUser, classTitle) {
+  pendingUploadContent = { contentId, contentTitle, classId, targetUser, classTitle };
+  const fileInput = document.getElementById('excel-answer-file-input');
+  if (fileInput) {
+    fileInput.value = '';
+    fileInput.click();
+  }
+}
+
+// Lắng nghe sự kiện chọn file Excel
+document.addEventListener('DOMContentLoaded', () => {
+  const fileInput = document.getElementById('excel-answer-file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file || !pendingUploadContent) return;
+
+      const { contentId, contentTitle, classId, targetUser, classTitle } = pendingUploadContent;
+      showToast(`Đang phân tích và nạp đáp án từ "${file.name}"...`, 'info', 'Đang xử lý');
+
+      try {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64 = reader.result.split(',')[1];
+          const res = await fetch('/api/exam-answers/upload', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({
+              classContentId: contentId,
+              examTitle: contentTitle,
+              base64: base64
+            })
+          });
+
+          const data = await res.json();
+          if (data.success) {
+            showToast(data.message || `Đã nạp thành công ${data.totalQuestions} câu hỏi đáp án!`, 'success', 'Nạp đáp án thành công');
+            // Tải lại nội dung modal bài con
+            openClassContentsModal(classId, targetUser, classTitle);
+          } else {
+            showToast(data.error || 'Nạp đáp án thất bại', 'error', 'Lỗi');
+          }
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        showToast('Lỗi đọc file: ' + err.message, 'error', 'Lỗi');
+      }
+    });
+  }
+
+  // Sự kiện cho Modal Xác nhận tự động làm bài thi
+  const confirmModal = document.getElementById('confirm-auto-test-modal');
+  const btnCancelTest = document.getElementById('btn-cancel-auto-test');
+  const btnConfirmTest = document.getElementById('btn-start-auto-test-confirmed');
+
+  if (btnCancelTest && confirmModal) {
+    btnCancelTest.addEventListener('click', () => {
+      confirmModal.style.display = 'none';
+      confirmModal.classList.remove('active');
+      pendingAutoTest = null;
+    });
+  }
+
+  if (btnConfirmTest && confirmModal) {
+    btnConfirmTest.addEventListener('click', async () => {
+      if (!pendingAutoTest) return;
+      const { classId, classContentId, contentTitle, targetUser, classTitle } = pendingAutoTest;
+
+      confirmModal.style.display = 'none';
+      confirmModal.classList.remove('active');
+
+      showToast(`SkyEyes đang tự động làm bài "${contentTitle}"...`, 'info', 'Đang làm bài thi');
+
+      try {
+        const res = await fetch(`/api/classes/${classId}/auto-test/${classContentId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.token}`
+          },
+          body: JSON.stringify({ username: targetUser })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          showToast(`🎉 ${data.message || `Hoàn thành bài thi! Điểm số: ${data.score}/100 điểm`}`, 'success', 'Thi thành công!');
+          // Tải lại modal bài con và dashboard
+          openClassContentsModal(classId, targetUser, classTitle);
+          loadUserDashboard(targetUser);
+        } else {
+          showToast(data.error || 'Không thể tự động hoàn thành bài thi', 'error', 'Lỗi làm bài thi');
+        }
+      } catch (err) {
+        showToast('Lỗi khi làm bài thi: ' + err.message, 'error', 'Lỗi');
+      } finally {
+        pendingAutoTest = null;
+      }
+    });
+  }
+});
+
+// Mở Modal Popup xác nhận tự động làm bài kiểm tra
+function openConfirmAutoTestModal(classId, classContentId, contentTitle, targetUser, classTitle) {
+  pendingAutoTest = { classId, classContentId, contentTitle, targetUser, classTitle };
+  const modal = document.getElementById('confirm-auto-test-modal');
+  const titleEl = document.getElementById('confirm-test-title');
+  if (titleEl) titleEl.textContent = contentTitle || 'Bài kiểm tra';
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.classList.add('active');
   }
 }
 
