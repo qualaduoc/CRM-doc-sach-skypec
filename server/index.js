@@ -9,7 +9,7 @@ const axios = require('axios');
 const querystring = require('querystring');
 const path = require('path');
 const { getDb } = require('./db');
-const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses } = require('./lrsEngine');
+const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses, learningStatuses, fetchAllClassContents } = require('./lrsEngine');
 const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute, isVnAirlineFlightNo } = require('./fmsService');
 const { evaluateAirlineMismatch, listAirlineMappings } = require('./airlineCodes');
 const {
@@ -706,13 +706,16 @@ async function syncUserClasses(username, token) {
           });
         }
 
-        // Lấy thời gian yêu cầu tối thiểu thực tế từ API GetById
+        // Lấy thời gian yêu cầu tối thiểu thực tế từ API GetById (nếu không có thì mặc định 0 - hoàn thành theo bài)
         try {
           const classDetails = await fetchClassDetails(token, classId);
-          if (classDetails && classDetails.status && classDetails.data) {
-            minTimeRequired = classDetails.data.minTimeRequired || null;
+          if (classDetails && classDetails.status && classDetails.data && classDetails.data.minTimeRequired != null) {
+            minTimeRequired = classDetails.data.minTimeRequired;
+          } else {
+            minTimeRequired = 0;
           }
         } catch (e) {
+          minTimeRequired = 0;
           console.warn(`[Sync Warning] Không lấy được minTimeRequired cho lớp ${classId}:`, e.message);
         }
 
@@ -971,18 +974,83 @@ app.get('/api/classes', authenticateToken, async (req, res) => {
       rows = await db.all('SELECT * FROM classes WHERE account_username = ?', req.user.username);
     }
 
-    // Gắn thêm trạng thái kết nối WebSocket thực tế từ bộ máy Engine và tiến trình khảo sát
+    // Gắn thêm trạng thái kết nối WebSocket thực tế từ bộ máy Engine và tiến trình khảo sát / đa bài giảng
     const result = rows.map(c => {
       const connectionKey = `${c.account_username}_${c.id}`;
+      const lStatus = learningStatuses.get(connectionKey);
       return {
         ...c,
         isRunning: activeConnections.has(connectionKey),
-        surveyStatus: surveyStatuses.get(connectionKey) || null
+        surveyStatus: surveyStatuses.get(connectionKey) || null,
+        learningStatus: lStatus || null,
+        stepText: lStatus ? lStatus.stepText : null
       };
     });
 
     res.json({ success: true, classes: result });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy danh sách chi tiết các bài con / các tập trong một lớp học (bài giảng, giáo trình, khảo sát...)
+app.get('/api/classes/:classId/contents', authenticateToken, async (req, res) => {
+  const { classId } = req.params;
+  const { username } = req.query;
+  const targetUsername = (req.user.role === 'admin' && username) ? username : req.user.username;
+
+  try {
+    const db = await getDb();
+    const account = await db.get('SELECT access_token FROM accounts WHERE username = ?', targetUsername);
+    if (!account || !account.access_token) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản hoặc token' });
+    }
+
+    const token = account.access_token;
+    const [allContents, joinData] = await Promise.all([
+      fetchAllClassContents(token, classId),
+      fetchActualProgress(token, classId)
+    ]);
+
+    const histories = (joinData && joinData.data && joinData.data.lmsClassUserLearning) ? joinData.data.lmsClassUserLearning : [];
+    const connectionKey = `${targetUsername}_${classId}`;
+    const liveStatus = learningStatuses.get(connectionKey);
+
+    const contents = (allContents || []).map((item, idx) => {
+      const typeTitle = (item.type && item.type.title) ? item.type.title : (item.typeId || 'Tài liệu');
+      const hist = histories.find(h => h.classContentId === item.id);
+      const isDone = hist && (hist.isFinish === true || hist.isFinish === 1);
+      const learnTime = hist ? (hist.learnTime || 0) : 0;
+      const isCurrent = liveStatus && liveStatus.activeTitle === item.title;
+
+      let statusText = isDone ? 'Đã xong ✅' : (isCurrent ? 'Đang đọc ⏳' : 'Chưa học ⚪');
+      if (typeTitle.toLowerCase().includes('khảo sát')) {
+        statusText = isDone ? 'Đã đánh giá ✅' : 'Chưa làm ⚪';
+      } else if (typeTitle.toLowerCase().includes('thi') || typeTitle.toLowerCase().includes('kiểm tra')) {
+        statusText = isDone ? 'Đã nộp bài ✅' : 'Chưa làm ⚪';
+      }
+
+      return {
+        id: item.id,
+        index: idx + 1,
+        title: item.title,
+        typeTitle: typeTitle,
+        learnTime: +(learnTime.toFixed(1)),
+        isFinish: isDone ? 1 : 0,
+        isCurrent: isCurrent ? 1 : 0,
+        statusText: statusText
+      };
+    });
+
+    res.json({
+      success: true,
+      classId: classId,
+      totalTime: joinData && joinData.data ? +(joinData.data.totalTime || 0).toFixed(1) : 0,
+      isFinish: joinData && joinData.data && (joinData.data.isFinish === 1 || joinData.data.isFinish === true) ? 1 : 0,
+      contents: contents
+    });
+  } catch (err) {
+    console.error('[API class contents error]', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

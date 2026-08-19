@@ -828,6 +828,22 @@ function setupEventListeners() {
     });
   }
 
+  // Đóng modal chi tiết bài con (Multi-Content Modal)
+  const btnCloseClassContents = document.getElementById('btn-close-class-contents-modal');
+  const modalClassContents = document.getElementById('class-contents-modal');
+  if (btnCloseClassContents && modalClassContents) {
+    btnCloseClassContents.addEventListener('click', () => {
+      modalClassContents.classList.remove('active');
+      setTimeout(() => { modalClassContents.style.display = 'none'; }, 300);
+    });
+    modalClassContents.addEventListener('click', (e) => {
+      if (e.target === modalClassContents) {
+        modalClassContents.classList.remove('active');
+        setTimeout(() => { modalClassContents.style.display = 'none'; }, 300);
+      }
+    });
+  }
+
   // Sự kiện chạy test giả lập Tạm nhập - Tái xuất
   const testBtn = document.getElementById('btn-fms-test-import-export');
   const testPanel = document.getElementById('fms-test-scenarios-panel');
@@ -1886,8 +1902,9 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
       const hasRequiredTime = c.min_time_required && c.min_time_required > 0;
       const percent = hasRequiredTime ? Math.min(100, Math.max(0, (c.learn_time / c.min_time_required) * 100)) : (c.is_finish === 1 ? 100 : 0);
       const isCompleted = c.is_finish === 1 || (hasRequiredTime && percent >= 100);
-      const statusText = isCompleted ? 'Hoàn thành' : 'Đang học';
+      const statusText = isCompleted ? 'Hoàn thành' : (c.isRunning ? 'Đang đọc...' : 'Đang học');
       const statusClass = isCompleted ? 'finished' : 'studying';
+      const requiredTimeText = hasRequiredTime ? `${c.min_time_required} ph (${percent.toFixed(0)}%)` : 'Đạt điều kiện bài học';
       
       const isChecked = c.auto_learn === 1 ? 'checked' : '';
 
@@ -1895,11 +1912,20 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
         <tr>
           <td style="font-weight: 500;">
             ${c.class_title}
-            <div style="margin-top: 4px; font-size: 0.8rem; color: var(--text-muted);">
-              ID Lớp: <code>${c.id}</code>
+            <div style="margin-top: 4px; font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <span>ID Lớp: <code>${c.id}</code></span>
+              <button type="button" class="btn-secondary" style="margin-top: 0; padding: 2px 8px; font-size: 0.75rem; border-radius: 4px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);" onclick="openClassContentsModal('${c.id}', '${c.account_username || ''}', '${(c.class_title || '').replace(/'/g, "\\'")}')">
+                <i class="fa-solid fa-list-check"></i> Chi tiết bài con
+              </button>
             </div>
+            ${c.stepText ? `
+            <div class="learning-step-indicator" style="margin-top: 6px; font-size: 0.8rem; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-book-open fa-fade"></i>
+              <span>${c.stepText}</span>
+            </div>
+            ` : ''}
             ${c.surveyStatus ? `
-            <div class="survey-status-indicator" style="margin-top: 6px; font-size: 0.82rem; font-weight: 600; color: #f97316; display: flex; align-items: center; gap: 6px;">
+            <div class="survey-status-indicator" style="margin-top: 6px; font-size: 0.8rem; font-weight: 600; color: #f97316; display: flex; align-items: center; gap: 6px;">
               <i class="fa-solid fa-circle-notch fa-spin"></i>
               <span>${c.surveyStatus}</span>
             </div>
@@ -1908,7 +1934,7 @@ async function loadUserDashboard(targetUsername = null, isSilent = false) {
           <td>
             <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600;">
               <span style="color: var(--primary);">${c.learn_time.toFixed(1)} ph</span>
-              <span style="color: var(--text-muted);">${hasRequiredTime ? c.min_time_required + ' ph (' + percent.toFixed(0) + '%)' : 'Không rõ'}</span>
+              <span style="color: var(--text-muted);">${requiredTimeText}</span>
             </div>
             <div class="progress-bar-container">
               <div class="progress-bar-fill ${isCompleted ? 'finished' : ''}" style="width: ${percent}%"></div>
@@ -2005,6 +2031,101 @@ async function triggerSyncProgress(username) {
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
+  }
+}
+
+// Mở modal hiển thị danh sách các bài học con / các tập trong lớp học (Multi-Content Modal)
+async function openClassContentsModal(classId, username, classTitle) {
+  const modal = document.getElementById('class-contents-modal');
+  const titleEl = document.getElementById('class-contents-modal-title');
+  const bodyEl = document.getElementById('class-contents-modal-body');
+  if (!modal || !bodyEl) return;
+
+  if (titleEl) {
+    titleEl.innerHTML = `<i class="fa-solid fa-list-check" style="color: #38bdf8;"></i> Chi tiết: ${classTitle || 'Lớp học'}`;
+  }
+
+  modal.style.display = 'flex';
+  modal.classList.add('active');
+
+  bodyEl.innerHTML = `
+    <div style="text-align: center; padding: 30px; color: var(--text-muted);">
+      <i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải danh sách bài học và tiến độ thực tế...
+    </div>
+  `;
+
+  try {
+    const targetUser = username || (state.selectedUser ? state.selectedUser.username : state.username);
+    const res = await fetch(`/api/classes/${classId}/contents?username=${encodeURIComponent(targetUser)}`, {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Không thể tải nội dung');
+
+    const contents = data.contents || [];
+    if (contents.length === 0) {
+      bodyEl.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--text-muted);">Lớp học này không có bài con nào.</div>`;
+      return;
+    }
+
+    const listHtml = contents.map(item => {
+      let badgeBg = 'rgba(255, 255, 255, 0.05)';
+      let badgeColor = 'var(--text-muted)';
+      let badgeBorder = 'rgba(255, 255, 255, 0.1)';
+
+      if (item.isFinish === 1) {
+        badgeBg = 'rgba(16, 185, 129, 0.12)';
+        badgeColor = '#10b981';
+        badgeBorder = 'rgba(16, 185, 129, 0.25)';
+      } else if (item.isCurrent === 1) {
+        badgeBg = 'rgba(56, 189, 248, 0.15)';
+        badgeColor = '#38bdf8';
+        badgeBorder = 'rgba(56, 189, 248, 0.3)';
+      }
+
+      const icon = item.typeTitle.toLowerCase().includes('khảo sát') ? 'fa-square-poll-vertical' :
+                   (item.typeTitle.toLowerCase().includes('thi') || item.typeTitle.toLowerCase().includes('kiểm tra')) ? 'fa-pen-to-square' : 'fa-book-open';
+
+      return `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+            <span style="font-weight: 700; color: #38bdf8; font-size: 0.95rem; width: 22px;">${item.index}.</span>
+            <div>
+              <div style="font-weight: 600; color: var(--text); font-size: 0.9rem;">
+                <i class="fa-solid ${icon}" style="color: var(--text-muted); margin-right: 4px;"></i> ${item.title}
+              </div>
+              <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 3px;">
+                Loại: <span style="color: var(--primary);">${item.typeTitle}</span> ${item.learnTime > 0 ? `· Đã học: <strong style="color: var(--text);">${item.learnTime} phút</strong>` : ''}
+              </div>
+            </div>
+          </div>
+          <div>
+            <span style="display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder};">
+              ${item.statusText}
+            </span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    bodyEl.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; font-size: 0.85rem; color: var(--text);">
+        <span>Tổng thời gian học thực tế: <strong style="color: #38bdf8;">${data.totalTime} phút</strong></span>
+        <span style="color: ${data.isFinish === 1 ? '#10b981' : '#f59e0b'}; font-weight: 600;">
+          ${data.isFinish === 1 ? '✅ Đã hoàn thành toàn bộ lớp' : '⏳ Đang trong tiến trình học'}
+        </span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; max-height: 450px; overflow-y: auto; margin-top: 8px;">
+        ${listHtml}
+      </div>
+    `;
+
+  } catch (err) {
+    bodyEl.innerHTML = `
+      <div style="text-align: center; padding: 20px; color: var(--danger-color);">
+        <i class="fa-solid fa-triangle-exclamation"></i> Lỗi tải danh sách bài con: ${err.message}
+      </div>
+    `;
   }
 }
 

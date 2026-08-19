@@ -58,7 +58,7 @@ async function getDb() {
       learning_id TEXT,
       content_id TEXT,
       learn_time REAL DEFAULT 0,
-      min_time_required REAL DEFAULT 430,
+      min_time_required REAL DEFAULT 0,
       is_finish INTEGER DEFAULT 0,
       auto_learn INTEGER DEFAULT 0,
       class_exercise_id TEXT,
@@ -275,6 +275,10 @@ async function getDb() {
   } catch (e) {}
   try {
     await dbInstance.exec(`ALTER TABLE classes ADD COLUMN is_exercise_finished INTEGER DEFAULT 0;`);
+  } catch (e) {}
+  try {
+    // Xóa bỏ con số mặc định 430 phút ảo cho các lớp học
+    await dbInstance.exec(`UPDATE classes SET min_time_required = 0 WHERE min_time_required = 430;`);
   } catch (e) {}
 
   // Thêm các cột cho fms_schedules của database cũ

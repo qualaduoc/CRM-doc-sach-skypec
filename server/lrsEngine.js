@@ -5,8 +5,43 @@ const querystring = require('querystring');
 
 const activeConnections = new Map(); // key: classId, value: connection object
 const surveyStatuses = new Map();
+const learningStatuses = new Map(); // key: connectionKey, value: { stepText, activeTitle, activeIndex, totalItems, isFinish }
 const RECORD_SEPARATOR = '\u001e';
 const HOST = 'elearning.skypec.com.vn';
+
+function isReadingContent(item) {
+  if (!item) return false;
+  const typeTitle = (item.type && item.type.title) ? item.type.title.toLowerCase() : '';
+  const itemTitle = (item.title || '').toLowerCase();
+  const isSurvey = typeTitle.includes('khảo sát') || typeTitle.includes('survey') || itemTitle.includes('khảo sát');
+  const isTest = typeTitle.includes('test') || typeTitle.includes('thi') || typeTitle.includes('kiểm tra') || itemTitle.includes('kiểm tra') || itemTitle.includes('bài thi');
+  return !isSurvey && !isTest;
+}
+
+function fetchAllClassContents(token, classId) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: HOST, port: 443,
+      path: `/skypec2.lms.api/api/v1/LmsClassContent/frGetByClassId/${classId}`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}`, 'Accept-Encoding': 'identity' }
+    };
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            const json = JSON.parse(body);
+            resolve(json.data || []);
+          } catch (e) { resolve([]); }
+        } else resolve([]);
+      });
+    });
+    req.on('error', () => resolve([]));
+    req.end();
+  });
+}
 
 // Danh sách 10 mẫu review sách chất lượng cao bằng tiếng Việt, mỗi bài dài trên 550 từ
 const REVIEW_TEMPLATES = [
@@ -163,7 +198,7 @@ function fetchActualProgress(token, classId) {
   });
 }
 
-// Hàm khởi chạy một kết nối học tập chạy ngầm
+// Hàm khởi chạy một kết nối học tập chạy ngầm hỗ trợ Đa tập / Đa bài giảng (Multi-Content Auto-Advance)
 function startLearning(account, classItem) {
   const classId = classItem.id;
   const connectionKey = `${account.username}_${classId}`;
@@ -178,6 +213,7 @@ function startLearning(account, classItem) {
   let pingInterval = null;
   let videoInterval = null;
   let httpHeartbeatInterval = null;
+  let lrsPostInterval = null;
   let videoTimeSeconds = Math.round((classItem.learn_time || 0) * 60) + 10;
   let invocationId = 1;
   let reconnectTimeout = null;
@@ -190,6 +226,7 @@ function startLearning(account, classItem) {
       stopTimers();
       if (ws) ws.close(1000, 'Stopped by user');
       activeConnections.delete(connectionKey);
+      learningStatuses.delete(connectionKey);
       console.log(`[Engine] Đã dừng chạy ngầm lớp ${classId} của tài khoản ${account.username}`);
     }
   };
@@ -200,6 +237,7 @@ function startLearning(account, classItem) {
     if (pingInterval) clearInterval(pingInterval);
     if (videoInterval) clearInterval(videoInterval);
     if (httpHeartbeatInterval) clearInterval(httpHeartbeatInterval);
+    if (lrsPostInterval) clearInterval(lrsPostInterval);
   }
 
   async function connect() {
@@ -218,7 +256,7 @@ function startLearning(account, classItem) {
 
       const token = currentAcc.access_token;
       
-      // 1. Tự động kiểm tra và hoàn thành các khảo sát và bài tập review trước khi kết nối WebSocket
+      // 1. Tự động kiểm tra và hoàn thành các khảo sát và bài tập review trước
       let actualClassUserId = currentClass.class_user_id;
       let actualUserId = null;
       let actualDisplayName = currentAcc.display_name;
@@ -239,14 +277,14 @@ function startLearning(account, classItem) {
         console.error(`[Engine] Lỗi tự động tải tiến độ thực tế cho ${account.username} trước khi check review:`, err.message);
       }
 
-      // 0. Tự động kiểm tra và nộp bài review sách trước
+      // Tự động kiểm tra & nộp review sách
       try {
         await checkAndAutoSubmitReview(token, classId, actualClassUserId, account.username);
       } catch (revErr) {
         console.error(`[Engine] Lỗi tự động nộp review cho ${account.username}:`, revErr.message);
       }
 
-      // 1. Tự động kiểm tra và nộp khảo sát
+      // Tự động kiểm tra & nộp khảo sát
       try {
         if (actualClassUserId) {
           await checkAndAutoSubmitSurveys(
@@ -263,88 +301,88 @@ function startLearning(account, classItem) {
         console.error(`[Engine] Lỗi tự động nộp khảo sát cho ${account.username}:`, survErr.message);
       }
 
-      // Đọc lại thông tin class mới nhất để lấy learningId & contentId (vì syncUserClasses hoặc checkAndAutoSubmitReview có thể đã cập nhật lại)
-      let updatedClass = await db.get('SELECT * FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
-      let learningId = updatedClass ? updatedClass.learning_id : null;
-      let contentId = updatedClass ? updatedClass.content_id : null;
+      // 2. Tải toàn bộ danh sách bài học của lớp học để phân loại đa tập / đa bài giảng
+      const allContents = await fetchAllClassContents(token, classId);
+      const readingContents = allContents.filter(isReadingContent);
 
-      // NẾU CHƯA CÓ learning_id HOẶC content_id -> TỰ ĐỘNG KHỞI TẠO VỚI MÁY CHỦ SKYPEC
-      if (!learningId || !contentId) {
-        console.log(`[Engine] Lớp ${classId} của ${account.username} chưa có learningId/contentId. Đang tự động khởi tạo với máy chủ Skypec...`);
-        try {
-          // 1. Tìm contentId của bài học đầu tiên nếu chưa có
-          if (!contentId) {
-            const contentsList = await new Promise((resList) => {
-              const req = https.request({
-                hostname: HOST, port: 443,
-                path: `/skypec2.lms.api/api/v1/LmsClassContent/frGetByClassId/${classId}`,
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${token}`, 'Accept-Encoding': 'identity' }
-              }, (res) => {
-                let body = '';
-                res.on('data', chunk => body += chunk);
-                res.on('end', () => {
-                  if (res.statusCode === 200) {
-                    try {
-                      const json = JSON.parse(body);
-                      const items = json.data || [];
-                      const validItem = items.find(i => {
-                        const t = (i.type && i.type.title) ? i.type.title.toLowerCase() : '';
-                        const title = i.title ? i.title.toLowerCase() : '';
-                        return !t.includes('khảo sát') && !t.includes('thi') && !t.includes('kiểm tra') && !title.includes('khảo sát') && !title.includes('kiểm tra');
-                      }) || items[0];
-                      resList(validItem ? validItem.id : null);
-                    } catch (e) { resList(null); }
-                  } else resList(null);
-                });
-              });
-              req.on('error', () => resList(null));
-              req.end();
-            });
-            contentId = contentsList;
-          }
-
-          if (contentId && actualClassUserId) {
-            // 2. Gửi gói POST LmsClassUserLearning khởi tạo phiên học lên Skypec
-            const initPayload = {
-              id: "00000000-0000-0000-0000-000000000000",
-              classUserId: actualClassUserId,
-              classContentId: contentId,
-              isFinish: false,
-              isPassed: false,
-              learnTime: 0,
-              times: 1,
-              lastUpdatedDate: new Date().toISOString(),
-              lastUpdatedUserId: actualUserId || currentAcc.username,
-              classContent: { id: contentId, classId: classId }
-            };
-
-            await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', initPayload);
-
-            // 3. Tải lại tiến độ FrUserJoinClassNew để lấy mã learningId mới sinh từ Skypec
-            const newProgress = await fetchActualProgress(token, classId);
-            if (newProgress && newProgress.status && newProgress.data && newProgress.data.lmsClassUserLearning && newProgress.data.lmsClassUserLearning.length > 0) {
-              const matchedHist = newProgress.data.lmsClassUserLearning.find(l => l.classContentId === contentId) || newProgress.data.lmsClassUserLearning[0];
-              learningId = matchedHist ? matchedHist.id : null;
-            }
-          }
-
-          // 4. Cập nhật lại CSDL Local để các phiên sau không phải khởi tạo lại
-          if (learningId || contentId) {
-            await db.run('UPDATE classes SET learning_id = ?, content_id = ? WHERE id = ? AND account_username = ?', learningId, contentId, classId, account.username);
-            console.log(`[Engine] Đã tự động khởi tạo THÀNH CÔNG cho ${account.username} - Lớp ${classId}: learningId=${learningId}, contentId=${contentId}`);
-          }
-        } catch (initErr) {
-          console.error(`[Engine Error] Lỗi tự động khởi tạo learningId cho ${account.username}:`, initErr.message);
-        }
-      }
-
-      if (!learningId) {
-        console.log(`[Engine] Lớp ${classId} của ${account.username} không thể lấy learningId. Tự động thử lại sau.`);
+      if (readingContents.length === 0) {
+        console.log(`[Engine] Lớp ${classId} không có bài đọc nào cần hoàn thành. Chốt hoàn tất lớp.`);
+        await db.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, account.username);
+        learningStatuses.set(connectionKey, { stepText: 'Lớp học không có bài đọc hoặc đã hoàn tất!' });
         connectionObj.stop();
         return;
       }
 
+      // 3. Tìm bài đọc đầu tiên CHƯA hoàn thành
+      let activeItem = null;
+      let activeIndex = 0;
+      for (let i = 0; i < readingContents.length; i++) {
+        const item = readingContents[i];
+        const hist = (learningHistories || []).find(h => h.classContentId === item.id);
+        const isDone = hist && (hist.isFinish === true || hist.isFinish === 1);
+        if (!isDone) {
+          activeItem = item;
+          activeIndex = i;
+          break;
+        }
+      }
+
+      // Nếu tất cả các bài đọc đều đã hoàn thành
+      if (!activeItem) {
+        console.log(`[Engine] Tất cả ${readingContents.length} bài đọc của lớp ${classId} đều đã hoàn thành. Chốt hoàn tất!`);
+        await db.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, account.username);
+        learningStatuses.set(connectionKey, { stepText: 'Đã hoàn thành 100% tất cả các tập!' });
+        connectionObj.stop();
+        return;
+      }
+
+      let contentId = activeItem.id;
+      let contentTitle = activeItem.title || `Tập ${activeIndex + 1}`;
+      console.log(`[Engine] Chọn bài đọc: "${contentTitle}" (Tập ${activeIndex + 1}/${readingContents.length}) cho ${account.username}`);
+      
+      learningStatuses.set(connectionKey, {
+        stepText: `Đang đọc Tập ${activeIndex + 1}/${readingContents.length}: "${contentTitle}"`,
+        activeTitle: contentTitle,
+        activeIndex: activeIndex + 1,
+        totalItems: readingContents.length
+      });
+
+      // 4. Lấy hoặc khởi tạo learningId cho contentId hiện tại
+      let learningId = null;
+      const matchedHist = (learningHistories || []).find(l => l.classContentId === contentId);
+      if (matchedHist && matchedHist.id) {
+        learningId = matchedHist.id;
+      } else if (actualClassUserId) {
+        console.log(`[Engine] Đang khởi tạo learningId cho bài "${contentTitle}" (ID: ${contentId})...`);
+        const initPayload = {
+          id: "00000000-0000-0000-0000-000000000000",
+          classUserId: actualClassUserId,
+          classContentId: contentId,
+          isFinish: false,
+          isPassed: false,
+          learnTime: 0,
+          times: 1,
+          lastUpdatedDate: new Date().toISOString(),
+          lastUpdatedUserId: actualUserId || currentAcc.username,
+          classContent: { id: contentId, classId: classId }
+        };
+        await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', initPayload);
+        const newProgress = await fetchActualProgress(token, classId);
+        if (newProgress && newProgress.status && newProgress.data && newProgress.data.lmsClassUserLearning) {
+          const freshHist = newProgress.data.lmsClassUserLearning.find(l => l.classContentId === contentId);
+          learningId = freshHist ? freshHist.id : null;
+        }
+      }
+
+      if (!learningId) {
+        console.log(`[Engine] Lớp ${classId} (${contentTitle}) của ${account.username} chưa lấy được learningId. Thử lại sau 5s.`);
+        reconnectTimeout = setTimeout(connect, 5000);
+        return;
+      }
+
+      await db.run('UPDATE classes SET learning_id = ?, content_id = ? WHERE id = ? AND account_username = ?', learningId, contentId, classId, account.username);
+
+      // 5. Khởi tạo kết nối WebSocket với SignalR
       const wsUrl = `wss://${HOST}/skypec2.lms.api/socket/hubs/lrs?learningId=${learningId}&clientProtocol=1.5&access_token=${encodeURIComponent(token)}`;
       
       ws = new WebSocket(wsUrl, {
@@ -355,7 +393,7 @@ function startLearning(account, classItem) {
       });
 
       ws.on('open', () => {
-        console.log(`[Engine] WebSocket kết nối thành công cho ${account.username} - Lớp: ${currentClass.class_title}`);
+        console.log(`[Engine] WebSocket kết nối thành công cho ${account.username} - Đang đọc: "${contentTitle}"`);
         
         // Gửi gói tin bắt tay
         ws.send(JSON.stringify({ protocol: 'json', version: 1 }) + RECORD_SEPARATOR);
@@ -389,9 +427,7 @@ function startLearning(account, classItem) {
                 ws.send(message);
                 videoTimeSeconds += 10;
                 invocationId++;
-              } catch (err) {
-                console.error(`[Engine WS] Lỗi gửi nhịp tim WebSocket lớp ${classId}:`, err.message);
-              }
+              } catch (err) {}
             }
           }, 10000);
         }
@@ -401,101 +437,133 @@ function startLearning(account, classItem) {
           httpHeartbeatInterval = setInterval(async () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
               try {
-                const heartRes = await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsClassContent/frUserUpdateViewNew/${actualClassUserId}`);
-                console.log(`[Engine HTTP GET] [${account.username}] Lớp ${classId} - Status: ${heartRes.statusCode}`);
-              } catch (heartErr) {
-                console.error(`[Engine HTTP GET Error] [${account.username}] Lớp ${classId}:`, heartErr.message);
-              }
+                await callSkypecGet(token, `/skypec2.lms.api/api/v1/LmsClassContent/frUserUpdateViewNew/${actualClassUserId}`);
+              } catch (heartErr) {}
             }
           }, 60000);
         }
 
-        // KÊNH SÁCH/PDF KHOA HỌC: Gửi gói LmsClassUserLearning HTTP POST tích lũy phút học thực tế mỗi 125 giây (2 phút 5 giây - an toàn chống spam)
-        let lrsPostInterval = setInterval(async () => {
+        // KÊNH LRS POST TÍCH LŨY PHÚT HỌC (mỗi 125 giây) KÈM TỰ ĐỘNG CHUYỂN TIẾP (AUTO-ADVANCE)
+        lrsPostInterval = setInterval(async () => {
           if (ws && ws.readyState === WebSocket.OPEN && contentId && actualClassUserId) {
             try {
               const localDb = await getDb();
-              // Lấy tiến độ mới nhất từ Skypec server
               const progressRes = await fetchActualProgress(token, classId);
-              let currentActualTime = 0;
+              let currentItemTime = 0;
+              let classTotalTime = 0;
               let currentHistories = [];
+              let isClassOverallFinished = false;
+
               if (progressRes && progressRes.status && progressRes.data) {
-                currentActualTime = progressRes.data.totalTime || 0;
+                classTotalTime = progressRes.data.totalTime || 0;
+                isClassOverallFinished = (progressRes.data.isFinish === 1 || progressRes.data.isFinish === true);
                 currentHistories = progressRes.data.lmsClassUserLearning || [];
-                currentHistories.forEach(h => {
-                  if (h.learnTime && h.learnTime > currentActualTime) {
-                    currentActualTime = h.learnTime;
-                  }
-                });
+                const currentHist = currentHistories.find(h => h.classContentId === contentId);
+                if (currentHist && currentHist.learnTime) {
+                  currentItemTime = currentHist.learnTime;
+                }
               }
 
               // Tính phút cộng dồn mới (+2 phút cho mỗi chu kỳ 125s)
-              const nextLearnTime = +(currentActualTime + 2.0).toFixed(2);
+              const nextItemTime = +(currentItemTime + 2.0).toFixed(2);
               const oldLearning = currentHistories.find(l => l.classContentId === contentId) || {};
               
               const learningPayload = {
-                id: oldLearning.id || "00000000-0000-0000-0000-000000000000",
+                id: oldLearning.id || learningId || "00000000-0000-0000-0000-000000000000",
                 classUserId: actualClassUserId,
                 classContentId: contentId,
                 isFinish: false,
                 isPassed: false,
-                learnTime: nextLearnTime,
+                learnTime: nextItemTime,
                 times: (oldLearning.times || 1) + 1,
                 lastUpdatedDate: new Date().toISOString(),
                 lastUpdatedUserId: actualUserId || currentAcc.username,
-                classContent: {
-                  id: contentId,
-                  classId: classId
-                }
+                classContent: { id: contentId, classId: classId }
               };
 
-              const postRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', learningPayload);
-              console.log(`[Engine LRS POST] [${account.username}] Lớp ${classId} - Cập nhật ${nextLearnTime} phút - Status: ${postRes.statusCode}`);
+              await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', learningPayload);
+              console.log(`[Engine LRS POST] [${account.username}] Lớp ${classId} - Bài "${contentTitle}": ${nextItemTime} phút`);
 
               // Lấy lại tiến độ thực tế xác nhận từ Skypec sau khi POST
               const syncCheck = await fetchActualProgress(token, classId);
               if (syncCheck && syncCheck.status && syncCheck.data) {
-                let confirmedTime = syncCheck.data.totalTime || 0;
+                let confirmedClassTime = syncCheck.data.totalTime || 0;
                 const syncHistories = syncCheck.data.lmsClassUserLearning || [];
-                syncHistories.forEach(h => {
-                  if (h.learnTime && h.learnTime > confirmedTime) {
-                    confirmedTime = h.learnTime;
-                  }
-                });
-                const isFinish = (syncCheck.data.isFinish === 1 || syncCheck.data.isFinish === true) ? 1 : 0;
-                
-                // Cập nhật CSDL local ĐÚNG THEO XÁC NHẬN CỦA SKYPEC SERVER (100% THỰC TẾ)
-                await localDb.run('UPDATE classes SET learn_time = ?, is_finish = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND account_username = ?', confirmedTime, isFinish, classId, account.username);
+                const currentHistAfter = syncHistories.find(h => h.classContentId === contentId);
+                const isItemFinished = currentHistAfter && (currentHistAfter.isFinish === true || currentHistAfter.isFinish === 1);
+                const isClassFinished = (syncCheck.data.isFinish === 1 || syncCheck.data.isFinish === true);
 
-                // Kiểm tra xem đã đạt thời gian yêu cầu tối thiểu chưa
+                // Cập nhật CSDL local
+                await localDb.run('UPDATE classes SET learn_time = ?, is_finish = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND account_username = ?', confirmedClassTime, isClassFinished ? 1 : 0, classId, account.username);
+
+                // Lấy thông tin số phút yêu cầu
                 const currentClassInfo = await localDb.get('SELECT min_time_required, class_title FROM classes WHERE id = ? AND account_username = ?', classId, account.username);
-                if (currentClassInfo && currentClassInfo.min_time_required && confirmedTime >= currentClassInfo.min_time_required) {
-                  console.log(`[Engine] Lớp học "${currentClassInfo.class_title}" của ${account.username} đã đạt thời gian yêu cầu tối thiểu (${currentClassInfo.min_time_required} phút). Tự động dừng học ngầm.`);
+                const minTime = currentClassInfo ? (currentClassInfo.min_time_required || 0) : 0;
+
+                // Nếu cả lớp đã hoàn thành theo xác nhận Skypec hoặc đạt số phút yêu cầu
+                if (isClassFinished || (minTime > 0 && confirmedClassTime >= minTime)) {
+                  console.log(`[Engine] Lớp học "${currentClassInfo.class_title}" của ${account.username} đã đạt yêu cầu hoàn thành toàn diện!`);
                   await localDb.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, account.username);
+                  learningStatuses.set(connectionKey, { stepText: 'Đã hoàn thành 100% tất cả các tập!', isFinish: true });
                   connectionObj.stop();
+                  return;
+                }
+
+                // Nếu bài hiện tại đã xong -> TỰ ĐỘNG CHUYỂN TIẾP (AUTO-ADVANCE) sang bài tiếp theo
+                if (isItemFinished) {
+                  let nextUnfinishedItem = null;
+                  let nextIndex = -1;
+                  for (let j = 0; j < readingContents.length; j++) {
+                    const candidate = readingContents[j];
+                    const candHist = syncHistories.find(h => h.classContentId === candidate.id);
+                    if (!candHist || (candHist.isFinish !== true && candHist.isFinish !== 1)) {
+                      nextUnfinishedItem = candidate;
+                      nextIndex = j;
+                      break;
+                    }
+                  }
+
+                  if (nextUnfinishedItem) {
+                    console.log(`[Engine AUTO-ADVANCE] Đã đọc xong "${contentTitle}". Đang tự động chuyển sang Tập ${nextIndex + 1}/${readingContents.length}: "${nextUnfinishedItem.title}"!`);
+                    learningStatuses.set(connectionKey, {
+                      stepText: `Đã đọc xong "${contentTitle}"! Đang chuyển sang Tập ${nextIndex + 1}/${readingContents.length}: "${nextUnfinishedItem.title}"...`,
+                      activeTitle: nextUnfinishedItem.title,
+                      activeIndex: nextIndex + 1,
+                      totalItems: readingContents.length
+                    });
+
+                    // Khởi động lại luồng connect để học bài tiếp theo
+                    stopTimers();
+                    if (ws) ws.close(1000, 'Switching to next content');
+                    setTimeout(connect, 2000);
+                    return;
+                  } else {
+                    console.log(`[Engine] Đã hoàn thành tất cả các bài đọc trong lớp ${classId}!`);
+                    await localDb.run('UPDATE classes SET auto_learn = 0, is_finish = 1 WHERE id = ? AND account_username = ?', classId, account.username);
+                    learningStatuses.set(connectionKey, { stepText: 'Đã hoàn thành 100% tất cả các tập!', isFinish: true });
+                    connectionObj.stop();
+                    return;
+                  }
+                } else {
+                  // Cập nhật trạng thái phút hiện tại
+                  learningStatuses.set(connectionKey, {
+                    stepText: `Đang đọc Tập ${activeIndex + 1}/${readingContents.length}: "${contentTitle}" (${Math.round(confirmedClassTime)}${minTime > 0 ? '/' + minTime : ''} phút)...`,
+                    activeTitle: contentTitle,
+                    activeIndex: activeIndex + 1,
+                    totalItems: readingContents.length
+                  });
                 }
               }
             } catch (postErr) {
               console.error(`[Engine LRS POST Error] [${account.username}] Lớp ${classId}:`, postErr.message);
             }
           }
-        }, 125000); // 125 giây (2 phút 5 giây) - khoảng thời gian an toàn chống bị hệ thống coi là spam
-
-        // Cập nhật hàm stopTimers để dọn dẹp lrsPostInterval
-        const originalStop = stopTimers;
-        stopTimers = () => {
-          originalStop();
-          if (lrsPostInterval) clearInterval(lrsPostInterval);
-        };
+        }, 125000);
       });
 
       ws.on('message', (data) => {
         const msgStr = data.toString();
-        console.log(`[Engine WS Message] [${account.username}]`, msgStr);
-        
-        // Khi nhận được phản hồi bắt tay thành công từ SignalR ({})
         if (msgStr.includes('{}')) {
-          console.log(`[Engine] Bắt tay thành công cho ${account.username}. Gửi sự kiện START_VIEW cho lớp ${classId}...`);
           try {
             const startPayload = JSON.stringify({
               eventName: 'START_VIEW',
@@ -508,45 +576,34 @@ function startLearning(account, classItem) {
               target: 'Handshake',
               arguments: [startPayload]
             }) + RECORD_SEPARATOR;
-            
             ws.send(startMessage);
             invocationId++;
-          } catch (err) {
-            console.error(`[Engine] Lỗi gửi sự kiện START_VIEW cho ${account.username}:`, err.message);
-          }
+          } catch (err) {}
         }
       });
 
       ws.on('close', async (code, reason) => {
         stopTimers();
         if (isStoppedManually) return;
-
-        console.log(`[Engine] WebSocket đóng (Code: ${code}) cho ${account.username}. Thử lại sau 5 giây...`);
-        
-        // Tự động kiểm tra Token và đăng nhập lại nếu lỗi kết nối do hết hạn
         if (code === 4005 || code === 1008 || (reason && reason.toString().includes('Unauthorized'))) {
-          console.log(`[Engine] Phát hiện Token hết hạn cho ${account.username}. Đang đăng nhập lại...`);
           try {
             const loginResult = await refreshSkypecToken(account.username, account.password);
             if (loginResult && loginResult.access_token) {
               const localDb = await getDb();
               await localDb.run('UPDATE accounts SET access_token = ?, status = "active" WHERE username = ?', loginResult.access_token, account.username);
-              console.log(`[Engine] Đăng nhập lại thành công cho ${account.username}.`);
             }
           } catch (loginErr) {
-            console.error(`[Engine] Đăng nhập lại thất bại cho ${account.username}:`, loginErr.message);
             const localDb = await getDb();
             await localDb.run('UPDATE accounts SET status = "error" WHERE username = ?', account.username);
           }
         }
-
         reconnectTimeout = setTimeout(connect, 5000);
       });
 
       ws.on('error', (err) => {
-        console.error(`[Engine] WebSocket lỗi cho ${account.username}:`, err.message);
         ws.close();
       });
+
     } catch (dbErr) {
       console.error(`[Engine] Lỗi kết nối DB trong connect():`, dbErr.message);
       reconnectTimeout = setTimeout(connect, 5000);
@@ -982,5 +1039,7 @@ module.exports = {
   fetchActualProgress,
   checkAndAutoSubmitSurveys,
   checkAndAutoSubmitReview,
-  surveyStatuses
+  surveyStatuses,
+  learningStatuses,
+  fetchAllClassContents
 };
