@@ -1,7 +1,9 @@
 const xlsx = require('xlsx');
 const https = require('https');
+const WebSocket = require('ws');
 const { getDb } = require('./db');
 
+const RECORD_SEPARATOR = '\u001e';
 const TEST_HOSTS = ['elearning.skypec.com.vn', 'skypec.dttt.vn'];
 const TEST_API_BASE = '/skypec2.test.api/api/v1/TestClassUserTest';
 
@@ -318,94 +320,139 @@ async function autoTakeExam({ token, username, classId, classContentId, onProgre
   let questionsList = [];
   let answeredCount = 0;
 
-  // 5. Thử khởi tạo ca thi trên máy chủ Skypec (StartTest)
+  // 5. Thực hiện ca thi qua giao thức SignalR WebSocket chuẩn của Skypec LMS
   if (testFormId) {
     try {
-      const startPath = `${TEST_API_BASE}/StartTest?classId=${classId}&classContentId=${classContentId}&classUserId=${classUserId}&testFormId=${testFormId}&isExtraTest=false`;
-      const startRes = await callApi(token, startPath, 'GET');
+      await new Promise((resolve) => {
+        const wsUrl = `wss://elearning.skypec.com.vn/skypec2.test.api/socket/hubs/test?access_token=${encodeURIComponent(token)}`;
+        const ws = new WebSocket(wsUrl);
 
-      if (startRes && startRes.data && startRes.data.status && startRes.data.data) {
-        const testSession = startRes.data.data;
-        userTestId = testSession.id;
-        questionsList = testSession.dataTest || testSession.listQuestion || [];
+        let isResolved = false;
+        const done = () => {
+          if (!isResolved) {
+            isResolved = true;
+            try { ws.close(); } catch (e) {}
+            resolve();
+          }
+        };
 
-        if (userTestId && questionsList.length > 0) {
-          console.log(`[ExamEngine] Khởi tạo ca thi ${userTestId} thành công với ${questionsList.length} câu hỏi...`);
+        const timeout = setTimeout(() => {
+          console.warn('[ExamEngine] WebSocket timeout after 25s');
+          done();
+        }, 25000);
 
-          // Trả lời từng câu hỏi
-          for (let i = 0; i < questionsList.length; i++) {
-            const qObj = questionsList[i];
-            const q = qObj.question || qObj;
-            const qText = q.content || q.title || '';
-            const choices = q.testAnswer || q.answers || [];
+        let invocationId = 1;
 
-            let bestMatch = null;
-            let maxSim = 0;
-            for (const bq of bankQuestions) {
-              const sim = stringSimilarity(qText, bq.question_text);
-              if (sim > maxSim) {
-                maxSim = sim;
-                bestMatch = bq;
+        ws.on('open', () => {
+          ws.send(JSON.stringify({ protocol: 'json', version: 1 }) + RECORD_SEPARATOR);
+        });
+
+        ws.on('message', async (data) => {
+          const raw = data.toString();
+
+          if (raw.includes('{}')) {
+            try {
+              const startPath = `${TEST_API_BASE}/StartTest?classId=${classId}&classContentId=${classContentId}&classUserId=${classUserId}&testFormId=${testFormId}&isExtraTest=false`;
+              const startRes = await callApi(token, startPath, 'GET');
+
+              if (!startRes || !startRes.data || !startRes.data.status || !startRes.data.data) {
+                console.warn('[ExamEngine] StartTest không thể khởi tạo:', startRes ? startRes.data : 'no response');
+                clearTimeout(timeout);
+                return done();
               }
-            }
 
-            let selectedChoiceId = null;
-            let selectedChoiceText = '';
+              userTestId = startRes.data.data.id;
+              questionsList = startRes.data.data.dataTest || [];
+              console.log(`[ExamEngine] Khởi tạo ca thi ${userTestId} thành công với ${questionsList.length} câu hỏi...`);
 
-            if (bestMatch && maxSim >= 0.5) {
-              let bestChoiceMatch = null;
-              let maxChoiceSim = -1;
+              for (let i = 0; i < questionsList.length; i++) {
+                const item = questionsList[i];
+                const qObj = item.question || item;
+                const qText = qObj.content || qObj.title || '';
+                const choices = qObj.testAnswer || item.testAnswer || [];
 
-              for (const choice of choices) {
-                const cText = choice.content || choice.title || '';
-                // 1. So khớp chính xác văn bản tuyệt đối sau khi chuẩn hóa
-                if (normalizeText(cText) === normalizeText(bestMatch.correct_choice_text)) {
-                  bestChoiceMatch = choice;
-                  maxChoiceSim = 1.0;
-                  break;
+                let bestMatch = null;
+                let maxSim = 0;
+                for (const bq of bankQuestions) {
+                  const sim = stringSimilarity(qText, bq.question_text);
+                  if (sim > maxSim) {
+                    maxSim = sim;
+                    bestMatch = bq;
+                  }
                 }
-                // 2. So khớp mờ độ tương đồng cao nhất
-                const cSim = stringSimilarity(cText, bestMatch.correct_choice_text);
-                if (cSim > maxChoiceSim) {
-                  maxChoiceSim = cSim;
-                  bestChoiceMatch = choice;
+
+                let selectedChoice = null;
+                if (bestMatch && maxSim >= 0.5) {
+                  let maxChoiceSim = -1;
+                  for (const choice of choices) {
+                    const cText = choice.content || choice.title || '';
+                    if (normalizeText(cText) === normalizeText(bestMatch.correct_choice_text)) {
+                      selectedChoice = choice;
+                      maxChoiceSim = 1.0;
+                      break;
+                    }
+                    const cSim = stringSimilarity(cText, bestMatch.correct_choice_text);
+                    if (cSim > maxChoiceSim) {
+                      maxChoiceSim = cSim;
+                      selectedChoice = choice;
+                    }
+                  }
+                }
+
+                if (!selectedChoice && choices.length > 0) {
+                  selectedChoice = choices[0];
+                }
+
+                if (selectedChoice) {
+                  const answerPayload = JSON.stringify([selectedChoice.id]);
+                  const msg = JSON.stringify({
+                    type: 1,
+                    invocationId: String(invocationId++),
+                    target: 'UpdateAnswerClass',
+                    arguments: [userTestId, item.id, answerPayload]
+                  }) + RECORD_SEPARATOR;
+
+                  ws.send(msg);
+                  answeredCount++;
+
+                  onProgress({
+                    status: 'in_progress',
+                    stepText: `Đang trả lời câu ${i + 1}/${questionsList.length}...`,
+                    total: questionsList.length,
+                    current: i + 1
+                  });
+                  await new Promise(r => setTimeout(r, 150));
                 }
               }
 
-              if (bestChoiceMatch) {
-                selectedChoiceId = bestChoiceMatch.id;
-                selectedChoiceText = bestChoiceMatch.content || bestChoiceMatch.title || '';
-              }
+              // Gửi lệnh kết thúc ca thi qua SignalR WebSocket
+              const endMsg = JSON.stringify({
+                type: 1,
+                invocationId: String(invocationId++),
+                target: 'EndTestClass',
+                arguments: [userTestId]
+              }) + RECORD_SEPARATOR;
+              ws.send(endMsg);
+            } catch (err) {
+              console.error('[ExamEngine] Lỗi xử lý ca thi SignalR:', err.message);
+              clearTimeout(timeout);
+              done();
             }
-
-            if (!selectedChoiceId && choices.length > 0) {
-              selectedChoiceId = choices[0].id;
-              selectedChoiceText = choices[0].content || choices[0].title || '';
-            }
-
-            if (selectedChoiceId) {
-              const payload = {
-                dataAnswer: [selectedChoiceId],
-                questionId: qObj.questionId || q.id
-              };
-              await callApi(token, `${TEST_API_BASE}/UpdateAnswer/${userTestId}`, 'POST', payload);
-              answeredCount++;
-            }
-
-            onProgress({
-              status: 'in_progress',
-              stepText: `Đang trả lời câu ${i + 1}/${questionsList.length}...`,
-              total: questionsList.length,
-              current: i + 1
-            });
-
-            await new Promise(r => setTimeout(r, 150));
           }
 
-          // Kết thúc bài thi
-          await callApi(token, `${TEST_API_BASE}/EndTestNew?id=${userTestId}`, 'GET');
-        }
-      }
+          if (raw.includes('EndTestCompleted')) {
+            console.log('[ExamEngine] Hoàn thành ca thi thành công qua SignalR!');
+            clearTimeout(timeout);
+            setTimeout(done, 1200);
+          }
+        });
+
+        ws.on('error', (err) => {
+          console.warn('[ExamEngine] SignalR WebSocket lỗi:', err.message);
+          clearTimeout(timeout);
+          done();
+        });
+      });
     } catch (err) {
       console.warn(`[ExamEngine] StartTest warning:`, err.message);
     }
