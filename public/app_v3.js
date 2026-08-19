@@ -2091,7 +2091,20 @@ async function openClassContentsModal(classId, username, classTitle) {
       let badgeColor = 'var(--text-muted)';
       let badgeBorder = 'rgba(255, 255, 255, 0.1)';
 
-      if (item.isFinish === 1) {
+      const isExamPassed = item.isExam && (item.isPassed === 1 || (item.score !== null && item.score >= (item.mincore || 80)));
+      const isExamFailed = item.isExam && (item.score !== null && item.score < (item.mincore || 80));
+
+      if (item.isExam) {
+        if (isExamPassed) {
+          badgeBg = 'rgba(16, 185, 129, 0.12)';
+          badgeColor = '#10b981';
+          badgeBorder = 'rgba(16, 185, 129, 0.25)';
+        } else if (isExamFailed) {
+          badgeBg = 'rgba(239, 68, 68, 0.12)';
+          badgeColor = '#ef4444';
+          badgeBorder = 'rgba(239, 68, 68, 0.25)';
+        }
+      } else if (item.isFinish === 1) {
         badgeBg = 'rgba(16, 185, 129, 0.12)';
         badgeColor = '#10b981';
         badgeBorder = 'rgba(16, 185, 129, 0.25)';
@@ -2117,11 +2130,18 @@ async function openClassContentsModal(classId, username, classTitle) {
           </button>
         `;
 
-        const autoTestBtn = (item.hasAnswers && item.isFinish !== 1) ? `
+        const canTakeExam = item.hasAnswers && !isExamPassed;
+        const btnLabel = isExamFailed ? 'Thi lại (Tự động làm bài)' : 'Tự động làm bài';
+
+        const autoTestBtn = canTakeExam ? `
           <button onclick="openConfirmAutoTestModal('${classId}', '${item.id}', '${item.title.replace(/'/g, "\\'")}', '${targetUser}', '${(classTitle || '').replace(/'/g, "\\'")}')" style="background: linear-gradient(135deg, #eab308, #ca8a04); border: none; color: #0f172a; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 10px rgba(234, 179, 8, 0.3);">
-            <i class="fa-solid fa-bolt"></i> Tự động làm bài
+            <i class="fa-solid fa-bolt"></i> ${btnLabel}
           </button>
-        ` : '';
+        ` : (item.hasAnswers ? `
+          <button onclick="openConfirmAutoTestModal('${classId}', '${item.id}', '${item.title.replace(/'/g, "\\'")}', '${targetUser}', '${(classTitle || '').replace(/'/g, "\\'")}')" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: var(--text-muted); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Làm lại bài thi nếu muốn">
+            <i class="fa-solid fa-rotate-right"></i> Thi lại
+          </button>
+        ` : '');
 
         examControlsHtml = `
           <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap;">

@@ -1036,8 +1036,16 @@ app.get('/api/classes/:classId/contents', authenticateToken, async (req, res) =>
         statusText = isDone ? 'Đã đánh giá ✅' : 'Chưa làm ⚪';
       } else if (isExam) {
         const attemptsAllowed = item.attempts || 2;
-        if (isDone && hist && hist.score !== undefined && hist.score !== null) {
-          statusText = `Đạt ${hist.score}đ ✅`;
+        const minScore = item.mincore || 80;
+        const currentScore = (hist && hist.score !== undefined && hist.score !== null) ? hist.score : null;
+        const isExamPassed = (hist && (hist.isPassed === 1 || hist.isPassed === true)) || (currentScore !== null && currentScore >= minScore);
+
+        if (isExamPassed && currentScore !== null) {
+          statusText = `Đạt ${currentScore}đ ✅`;
+        } else if (currentScore !== null && currentScore > 0) {
+          statusText = `Chưa đạt ${currentScore}đ ❌`;
+        } else if (currentScore === 0) {
+          statusText = `Chưa đạt 0đ ❌`;
         } else if (isDone) {
           statusText = `Đã hoàn thành ✅`;
         } else {
