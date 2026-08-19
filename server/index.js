@@ -9,7 +9,7 @@ const axios = require('axios');
 const querystring = require('querystring');
 const path = require('path');
 const { getDb } = require('./db');
-const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses, learningStatuses, fetchAllClassContents } = require('./lrsEngine');
+const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses, learningStatuses, fetchAllClassContents, callSkypecPost } = require('./lrsEngine');
 const { parseExcelQuestionBank, saveQuestionBankToDb, getAnswerBankStatus, autoTakeExam } = require('./examEngine');
 const fs = require('fs');
 const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute, isVnAirlineFlightNo } = require('./fmsService');
@@ -1149,6 +1149,76 @@ app.post('/api/classes/:classId/auto-test/:classContentId', authenticateToken, a
     res.json(result);
   } catch (err) {
     console.error('[Auto take exam error]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ÉP ĐẠT bài kiểm tra (100đ - Đã hoàn thành) - Dành riêng cho Quản trị viên (Admin)
+app.post('/api/classes/:classId/force-pass/:classContentId', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Chỉ Quản trị viên (Admin) mới có quyền thực hiện chức năng ÉP ĐẠT!' });
+  }
+
+  const { classId, classContentId } = req.params;
+  const { username } = req.body;
+  const targetUsername = username || req.user.username;
+
+  try {
+    const db = await getDb();
+    const account = await db.get('SELECT access_token FROM accounts WHERE username = ?', targetUsername);
+    if (!account || !account.access_token) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản hoặc token' });
+    }
+
+    const token = account.access_token;
+    
+    // 1. Lấy thông tin classUserId của học viên
+    const joinRes = await fetchActualProgress(token, classId);
+    let classUserId = (joinRes && joinRes.data && joinRes.data.id) ? joinRes.data.id : null;
+
+    if (!classUserId) {
+      return res.status(400).json({ success: false, error: 'Không thể xác định thông tin học viên trong lớp trên máy chủ Skypec' });
+    }
+
+    // 2. Lấy thông tin lịch sử hiện tại
+    const histories = (joinRes && joinRes.data && joinRes.data.lmsClassUserLearning) ? joinRes.data.lmsClassUserLearning : [];
+    const existingHist = histories.find(h => h.classContentId === classContentId);
+
+    // 3. Gửi payload cập nhật 100đ, Đạt và Hoàn thành lên Skypec LMS
+    const finalScore = 100;
+    const learnPayload = {
+      ...(existingHist || {}),
+      id: (existingHist && existingHist.id) ? existingHist.id : "00000000-0000-0000-0000-000000000000",
+      classUserId: classUserId,
+      classContentId: classContentId,
+      isFinish: true,
+      isPassed: true,
+      score: finalScore,
+      scaled: finalScore,
+      learnTime: 0,
+      times: existingHist ? (existingHist.times + 1) : 1,
+      lastUpdatedDate: new Date().toISOString(),
+      classContent: {
+        id: classContentId,
+        classId: classId
+      }
+    };
+
+    const updateRes = await callSkypecPost(token, '/skypec2.lms.api/api/v1/LmsClassUserLearning', learnPayload);
+    console.log(`[ForcePass] Đã ÉP ĐẠT cho ${targetUsername} bài ${classContentId}:`, updateRes.statusCode);
+
+    // 4. Đồng bộ lại dữ liệu lớp học và chỉ số KPI cho học viên
+    await syncUserClasses(targetUsername, token);
+    await syncUserStats(targetUsername, token);
+
+    res.json({
+      success: true,
+      score: 100,
+      isPassed: true,
+      message: `Đã ÉP ĐẠT thành công 100 điểm cho học viên ${targetUsername}!`
+    });
+  } catch (err) {
+    console.error('[Force pass error]', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

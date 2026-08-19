@@ -1036,5 +1036,6 @@ module.exports = {
   surveyStatuses,
   learningStatuses,
   fetchAllClassContents,
-  flattenClassContents
+  flattenClassContents,
+  callSkypecPost
 };

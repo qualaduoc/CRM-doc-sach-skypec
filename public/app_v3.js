@@ -2145,11 +2145,19 @@ async function openClassContentsModal(classId, username, classTitle) {
           </button>
         ` : '');
 
+        // Nút ÉP ĐẠT (Cấp cứu KPI) - Dành riêng cho Quản trị viên khi học viên KHÔNG ĐẠT
+        const forcePassBtn = (isAdmin && (isExamFailed || !isExamPassed)) ? `
+          <button onclick="openConfirmForcePassModal('${classId}', '${item.id}', '${item.title.replace(/'/g, "\\'")}', '${targetUser}', '${(classTitle || '').replace(/'/g, "\\'")}')" style="background: linear-gradient(135deg, #ef4444, #b91c1c); border: none; color: #ffffff; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);" title="Ép ghi nhận 100 điểm Đạt vào sổ KPI học tập Skypec (Chỉ dành cho Admin)">
+            <i class="fa-solid fa-heart-pulse"></i> ÉP ĐẠT
+          </button>
+        ` : '';
+
         examControlsHtml = `
           <div style="display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
             ${answersBadge}
             ${uploadBtn}
             ${autoTestBtn}
+            ${forcePassBtn}
           </div>
         `;
       }
@@ -2305,7 +2313,72 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+  // Sự kiện cho Modal Xác nhận ÉP ĐẠT (Cấp cứu KPI)
+  const forcePassModal = document.getElementById('confirm-force-pass-modal');
+  const btnCancelForcePass = document.getElementById('btn-cancel-force-pass');
+  const btnConfirmForcePass = document.getElementById('btn-start-force-pass-confirmed');
+
+  if (btnCancelForcePass && forcePassModal) {
+    btnCancelForcePass.addEventListener('click', () => {
+      forcePassModal.style.display = 'none';
+      forcePassModal.classList.remove('active');
+      pendingForcePass = null;
+    });
+  }
+
+  if (btnConfirmForcePass && forcePassModal) {
+    btnConfirmForcePass.addEventListener('click', async () => {
+      if (!pendingForcePass) return;
+      const { classId, classContentId, contentTitle, targetUser, classTitle } = pendingForcePass;
+
+      forcePassModal.style.display = 'none';
+      forcePassModal.classList.remove('active');
+
+      showToast(`Đang thực hiện ÉP ĐẠT cho bài "${contentTitle}"...`, 'info', 'Đang xử lý');
+
+      try {
+        const res = await fetch(`/api/classes/${classId}/force-pass/${classContentId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.token}`
+          },
+          body: JSON.stringify({ username: targetUser })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          showToast(`🎉 ${data.message || 'Đã ÉP ĐẠT thành công 100 điểm!'}`, 'success', 'ÉP ĐẠT thành công!');
+          // Tải lại modal bài con và dashboard
+          openClassContentsModal(classId, targetUser, classTitle);
+          loadUserDashboard(targetUser);
+        } else {
+          showToast(data.error || 'Không thể ÉP ĐẠT bài kiểm tra', 'error', 'Lỗi ÉP ĐẠT');
+        }
+      } catch (err) {
+        showToast('Lỗi khi ÉP ĐẠT: ' + err.message, 'error', 'Lỗi');
+      } finally {
+        pendingForcePass = null;
+      }
+    });
+  }
 });
+
+let pendingForcePass = null;
+
+// Mở Modal Popup xác nhận ÉP ĐẠT (Cấp cứu KPI)
+function openConfirmForcePassModal(classId, classContentId, contentTitle, targetUser, classTitle) {
+  pendingForcePass = { classId, classContentId, contentTitle, targetUser, classTitle };
+  const modal = document.getElementById('confirm-force-pass-modal');
+  const titleEl = document.getElementById('confirm-force-pass-title');
+  const userEl = document.getElementById('confirm-force-pass-user');
+  if (titleEl) titleEl.textContent = contentTitle || 'Bài kiểm tra';
+  if (userEl) userEl.textContent = targetUser || 'Học viên';
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.classList.add('active');
+  }
+}
 
 // Mở Modal Popup xác nhận tự động làm bài kiểm tra
 function openConfirmAutoTestModal(classId, classContentId, contentTitle, targetUser, classTitle) {
