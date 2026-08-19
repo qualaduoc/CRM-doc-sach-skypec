@@ -6,3 +6,9 @@ database.db
 vps_test_decrypt.js
 vps_test_login.js
 vps_find_events.js
+scratch/
+*.log
+
+# Zalo specific folders to ignore
+Zalo-new/
+Za-go-main/
