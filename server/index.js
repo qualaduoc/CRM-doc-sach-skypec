@@ -1090,8 +1090,12 @@ app.get('/api/classes/:classId/contents', authenticateToken, async (req, res) =>
   }
 });
 
-// Upload file Excel ngân hàng đáp án cho bài thi
+// Upload file Excel ngân hàng đáp án cho bài thi (Chỉ dành cho Quản trị viên)
 app.post('/api/exam-answers/upload', authenticateToken, express.json({ limit: '15mb' }), async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Chỉ Quản trị viên (Admin) mới có quyền nạp file Excel đáp án!' });
+  }
+
   try {
     const { classContentId, examCode, examTitle, base64 } = req.body;
     const db = await getDb();

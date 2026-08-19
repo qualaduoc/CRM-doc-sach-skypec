@@ -2124,11 +2124,13 @@ async function openClassContentsModal(classId, username, classTitle) {
           ? `<span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; white-space: nowrap;"><i class="fa-solid fa-check"></i> Đã nạp ${item.answersCount} câu đáp án</span>`
           : `<span style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-muted); font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">Chưa có đáp án</span>`;
 
-        const uploadBtn = `
-          <button onclick="triggerUploadAnswer('${item.id}', '${item.title.replace(/'/g, "\\'")}', '${classId}', '${targetUser}', '${(classTitle || '').replace(/'/g, "\\'")}')" style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Nạp file Excel đáp án cho bài kiểm tra này">
+        const isAdmin = state.role === 'admin' || state.permissions?.perm_admin === 1;
+
+        const uploadBtn = isAdmin ? `
+          <button onclick="triggerUploadAnswer('${item.id}', '${item.title.replace(/'/g, "\\'")}', '${classId}', '${targetUser}', '${(classTitle || '').replace(/'/g, "\\'")}')" style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Nạp file Excel đáp án cho bài kiểm tra này (Chỉ Quản trị viên)">
             <i class="fa-solid fa-cloud-arrow-up"></i> Nạp Excel đáp án
           </button>
-        `;
+        ` : '';
 
         const canTakeExam = item.hasAnswers && !isExamPassed;
         const btnLabel = isExamFailed ? 'Thi lại (Tự động làm bài)' : 'Tự động làm bài';
