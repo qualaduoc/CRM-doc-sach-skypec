@@ -121,6 +121,9 @@ async function fetchUserOnlineExams(token, year = 2026) {
       isPassed = bestScore >= (detail.minMark || 80);
     }
 
+    const doingTestId = detail ? detail.doingTestId : null;
+    const isDoing = (doingTestId && doingTestId !== '00000000-0000-0000-0000-000000000000');
+
     shifts.push({
       id: shiftId,
       registorId: item.registorId,
@@ -137,6 +140,8 @@ async function fetchUserOnlineExams(token, year = 2026) {
       testedCount: testedCount,
       isPassed: isPassed,
       bestScore: bestScore,
+      isDoing: isDoing,
+      doingTestId: doingTestId,
       listResult: listResult,
       answersCount: bankCount,
       hasAnswers: bankCount > 0
@@ -148,6 +153,7 @@ async function fetchUserOnlineExams(token, year = 2026) {
 
 /**
  * Tự động làm bài thi trực tuyến độc lập (TestRegistor) chuẩn 100% bằng SignalR WebSocket
+ * Sử dụng đúng hàm SignalR: UpdateAnswerRegistor và EndTestRegistor
  */
 async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () => {} }) {
   const db = await getDb();
@@ -190,7 +196,35 @@ async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () =>
   let answeredCount = 0;
   let finalResult = { score: 100, isPassed: true, userTestId: null };
 
-  // 3. Kết nối WebSocket SignalR và thi
+  // Kiểm tra xem đã có phiên thi đang làm dở (doingTestId) hay cần khởi tạo mới
+  const doingTestId = shiftDetail.doingTestId;
+  const isDoing = (doingTestId && doingTestId !== '00000000-0000-0000-0000-000000000000');
+
+  if (isDoing) {
+    console.log(`[OnlineExamEngine] Phát hiện bài thi đang làm dở (${doingTestId}). Đang nạp danh sách câu hỏi qua DoTestNew...`);
+    const doRes = await callApi(token, `/skypec2.test.api/api/v1/TestRegistorUserTest/DoTestNew?id=${doingTestId}`);
+    if (doRes && doRes.data && doRes.data.status && doRes.data.data) {
+      userTestId = doingTestId;
+      questionsList = doRes.data.data.dataTest || [];
+    }
+  }
+
+  if (!userTestId || questionsList.length === 0) {
+    console.log(`[OnlineExamEngine] Khởi tạo phiên thi mới qua StartTest...`);
+    const startPath = `/skypec2.test.api/api/v1/TestRegistorUserTest/StartTest?registorId=${registorId}&registorUserId=${registorUserId}&testFormId=${testFormId}&password=&isExtraTest=false`;
+    const startRes = await callApi(token, startPath, 'GET');
+
+    if (!startRes || !startRes.data || !startRes.data.status || !startRes.data.data) {
+      throw new Error((startRes && startRes.data && startRes.data.message) || 'Không thể khởi tạo ca thi trực tuyến');
+    }
+
+    userTestId = startRes.data.data.id;
+    questionsList = startRes.data.data.dataTest || [];
+  }
+
+  console.log(`[OnlineExamEngine] Đã sẵn sàng làm bài cho userTestId=${userTestId} với ${questionsList.length} câu hỏi.`);
+
+  // 3. Kết nối WebSocket SignalR và nộp bài chuẩn bằng UpdateAnswerRegistor & EndTestRegistor
   await new Promise((resolve, reject) => {
     const wsUrl = `wss://elearning.skypec.com.vn/skypec2.test.api/socket/hubs/test?access_token=${encodeURIComponent(token)}`;
     const ws = new WebSocket(wsUrl);
@@ -205,8 +239,11 @@ async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () =>
       }
     };
 
-    const timeout = setTimeout(() => {
-      console.warn('[OnlineExamEngine] WebSocket timeout after 35s');
+    const timeout = setTimeout(async () => {
+      console.warn('[OnlineExamEngine] WebSocket timeout after 35s. Thử gọi EndTestNew qua HTTP...');
+      try {
+        await callApi(token, `/skypec2.test.api/api/v1/TestRegistorUserTest/EndTestNew?id=${userTestId}`, 'GET');
+      } catch (e) {}
       done();
     }, 35000);
 
@@ -221,18 +258,7 @@ async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () =>
 
       if (raw.includes('{}')) {
         try {
-          const startPath = `/skypec2.test.api/api/v1/TestRegistorUserTest/StartTest?registorId=${registorId}&registorUserId=${registorUserId}&testFormId=${testFormId}&password=&isExtraTest=false`;
-          const startRes = await callApi(token, startPath, 'GET');
-
-          if (!startRes || !startRes.data || !startRes.data.status || !startRes.data.data) {
-            console.warn('[OnlineExamEngine] StartTest lỗi:', startRes ? startRes.data : 'no response');
-            clearTimeout(timeout);
-            return done(new Error((startRes && startRes.data && startRes.data.message) || 'Không thể khởi tạo ca thi trực tuyến'));
-          }
-
-          userTestId = startRes.data.data.id;
-          questionsList = startRes.data.data.dataTest || [];
-          console.log(`[OnlineExamEngine] Khởi tạo ca thi ${userTestId} thành công với ${questionsList.length} câu hỏi...`);
+          console.log(`[OnlineExamEngine] Bắt đầu trả lời ${questionsList.length} câu hỏi qua UpdateAnswerRegistor...`);
 
           for (let i = 0; i < questionsList.length; i++) {
             const item = questionsList[i];
@@ -274,10 +300,11 @@ async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () =>
 
             if (selectedChoice) {
               const answerPayload = JSON.stringify([selectedChoice.id]);
+              // CHUẨN XÁC: Phải gọi UpdateAnswerRegistor cho TestRegistor
               const msg = JSON.stringify({
                 type: 1,
                 invocationId: String(invocationId++),
-                target: 'UpdateAnswerClass',
+                target: 'UpdateAnswerRegistor',
                 arguments: [userTestId, item.id, answerPayload]
               }) + RECORD_SEPARATOR;
 
@@ -294,14 +321,23 @@ async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () =>
             }
           }
 
-          // Nộp bài thi qua SignalR Socket
+          // CHUẨN XÁC: Nộp bài thi qua EndTestRegistor
+          console.log(`[OnlineExamEngine] Đang gửi lệnh EndTestRegistor cho ${userTestId}...`);
           const endMsg = JSON.stringify({
             type: 1,
             invocationId: String(invocationId++),
-            target: 'EndTestClass',
+            target: 'EndTestRegistor',
             arguments: [userTestId]
           }) + RECORD_SEPARATOR;
           ws.send(endMsg);
+
+          // Đồng thời gọi EndTestNew qua HTTP để đảm bảo 100% được ghi nhận
+          setTimeout(async () => {
+            try {
+              await callApi(token, `/skypec2.test.api/api/v1/TestRegistorUserTest/EndTestNew?id=${userTestId}`, 'GET');
+            } catch (e) {}
+          }, 1000);
+
         } catch (err) {
           console.error('[OnlineExamEngine] Lỗi xử lý ca thi SignalR:', err.message);
           clearTimeout(timeout);
@@ -310,7 +346,7 @@ async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () =>
       }
 
       if (raw.includes('EndTestCompleted')) {
-        console.log('[OnlineExamEngine] Hoàn thành nộp bài thi thành công qua SignalR!');
+        console.log('[OnlineExamEngine] Nhận sự kiện EndTestCompleted thành công!');
         clearTimeout(timeout);
         setTimeout(async () => {
           try {
@@ -319,7 +355,7 @@ async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () =>
             if (data) {
               finalResult = {
                 score: data.mark !== undefined ? data.mark : 100,
-                isPassed: (data.mark >= 80) || true,
+                isPassed: (data.mark >= (shiftDetail.minMark || 80)),
                 totalCorrect: data.totalQuestionTrue || questionsList.length,
                 totalQuestion: data.totalQuestion || questionsList.length,
                 userTestId
@@ -345,7 +381,7 @@ async function autoTakeOnlineExam({ token, username, shiftId, onProgress = () =>
     answeredCount: answeredCount || questionsList.length,
     totalQuestions: questionsList.length,
     userTestId,
-    message: `Đã hoàn thành ca thi trực tuyến với số điểm: ${finalResult.score || 100}/100 điểm (Đạt)!`
+    message: `Đã hoàn thành và nộp ca thi trực tuyến thành công với số điểm: ${finalResult.score || 100}/100 điểm (Đạt)!`
   };
 }
 

@@ -2591,6 +2591,8 @@ async function loadUserOnlineExams(targetUsername = null) {
       let resultBadge = '';
       if (shift.isPassed) {
         resultBadge = `<span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.8rem;"><i class="fa-solid fa-check"></i> Đạt ${shift.bestScore}đ</span>`;
+      } else if (shift.isDoing) {
+        resultBadge = `<span style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: #f59e0b; padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.8rem;"><i class="fa-solid fa-clock"></i> Đang làm dở ⏳</span>`;
       } else if (shift.testedCount > 0) {
         resultBadge = `<span style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.8rem;"><i class="fa-solid fa-xmark"></i> Không đạt (${shift.bestScore || 0}đ)</span>`;
       } else {
@@ -2610,7 +2612,12 @@ async function loadUserOnlineExams(targetUsername = null) {
       ` : '';
 
       const canTakeExam = shift.hasAnswers && !shift.isPassed;
-      const btnLabel = (shift.testedCount > 0 && !shift.isPassed) ? 'Thi lại' : 'Tự động làm bài';
+      let btnLabel = 'Tự động làm bài';
+      if (shift.isDoing) {
+        btnLabel = 'Tiếp tục & Nộp bài';
+      } else if (shift.testedCount > 0 && !shift.isPassed) {
+        btnLabel = 'Thi lại';
+      }
 
       const autoTestBtn = canTakeExam ? `
         <button onclick="openConfirmOnlineExamModal('${shift.id}', '${(shift.name || '').replace(/'/g, "\\'")}', '${username}', '${(shift.registorName || '').replace(/'/g, "\\'")}')" style="background: linear-gradient(135deg, #eab308, #ca8a04); border: none; color: #0f172a; padding: 5px 12px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 10px rgba(234, 179, 8, 0.3);">
