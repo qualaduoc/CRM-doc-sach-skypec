@@ -11,6 +11,7 @@ const path = require('path');
 const { getDb } = require('./db');
 const { startLearning, stopLearning, initEngine, activeConnections, fetchActualProgress, checkAndAutoSubmitSurveys, surveyStatuses, learningStatuses, fetchAllClassContents, callSkypecPost } = require('./lrsEngine');
 const { parseExcelQuestionBank, saveQuestionBankToDb, getAnswerBankStatus, autoTakeExam } = require('./examEngine');
+const { fetchUserOnlineExams, autoTakeOnlineExam } = require('./onlineExamEngine');
 const fs = require('fs');
 const { syncFMSData, syncFmsSkypecLive, startFmsWorker, getVietnamDbDateStr, getVietnamDateTimeStr, isDomesticRoute, isDepartingIntlRoute, isVnAirlineFlightNo } = require('./fmsService');
 const { evaluateAirlineMismatch, listAirlineMappings } = require('./airlineCodes');
@@ -1219,6 +1220,89 @@ app.post('/api/classes/:classId/force-pass/:classContentId', authenticateToken, 
     });
   } catch (err) {
     console.error('[Force pass error]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Lấy danh sách các kỳ thi / ca thi trực tuyến độc lập (TestRegistor)
+app.get('/api/online-exams', authenticateToken, async (req, res) => {
+  const { username, year } = req.query;
+  const targetUsername = (req.user.role === 'admin' && username) ? username : req.user.username;
+
+  try {
+    const db = await getDb();
+    const account = await db.get('SELECT access_token FROM accounts WHERE username = ?', targetUsername);
+    if (!account || !account.access_token) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản hoặc token' });
+    }
+
+    const shifts = await fetchUserOnlineExams(account.access_token, parseInt(year) || 2026);
+    res.json({ success: true, data: shifts });
+  } catch (err) {
+    console.error('[API online-exams error]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Tự động làm bài thi trực tuyến độc lập (TestRegistor)
+app.post('/api/online-exams/:shiftId/auto-test', authenticateToken, async (req, res) => {
+  const { shiftId } = req.params;
+  const { username } = req.body;
+  const targetUsername = (req.user.role === 'admin' && username) ? username : req.user.username;
+
+  try {
+    const db = await getDb();
+    const account = await db.get('SELECT access_token FROM accounts WHERE username = ?', targetUsername);
+    if (!account || !account.access_token) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy tài khoản hoặc token' });
+    }
+
+    const result = await autoTakeOnlineExam({
+      token: account.access_token,
+      username: targetUsername,
+      shiftId
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('[API online-exams auto-test error]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Nạp file Excel đáp án cho Ca thi trực tuyến độc lập (Chỉ dành cho Admin)
+app.post('/api/online-exams/:shiftId/upload-answers', authenticateToken, express.json({ limit: '15mb' }), async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.perm_admin !== 1) {
+    return res.status(403).json({ success: false, error: 'Chỉ Quản trị viên (Admin) mới có quyền nạp file Excel đáp án!' });
+  }
+
+  const { shiftId } = req.params;
+  const { examCode, examTitle, base64 } = req.body;
+
+  try {
+    const db = await getDb();
+    if (!base64) {
+      return res.status(400).json({ success: false, error: 'Không nhận được dữ liệu base64 của file Excel!' });
+    }
+
+    const fileBuffer = Buffer.from(base64, 'base64');
+    const parsed = parseExcelQuestionBank(fileBuffer, examCode || 'BB026');
+
+    await saveQuestionBankToDb(db, {
+      shiftId: shiftId || null,
+      examCode: examCode || parsed.examCode || 'BB026',
+      examTitle: examTitle || 'Ngân hàng đáp án ca thi',
+      questions: parsed.questions
+    });
+
+    res.json({
+      success: true,
+      message: `Đã nạp thành công ${parsed.totalQuestions} câu hỏi vào ngân hàng đáp án ca thi!`,
+      totalQuestions: parsed.totalQuestions,
+      examCode: examCode || parsed.examCode
+    });
+  } catch (err) {
+    console.error('[API online-exams upload-answers error]', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

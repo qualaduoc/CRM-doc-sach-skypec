@@ -1082,6 +1082,9 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
         <button id="user-tab-btn-elearning" class="user-tab-btn" data-user-tab="tab-user-elearning" style="background: none; border: none; color: var(--text-muted); font-size: 0.95rem; font-weight: bold; cursor: pointer; padding: 8px 16px; border-bottom: 2px solid transparent; transition: all 0.3s; display: flex; align-items: center; gap: 8px; outline: none;">
           <i class="fa-solid fa-graduation-cap"></i> Học E-learning
         </button>
+        <button id="user-tab-btn-online-exams" class="user-tab-btn" data-user-tab="tab-user-online-exams" style="background: none; border: none; color: var(--text-muted); font-size: 0.95rem; font-weight: bold; cursor: pointer; padding: 8px 16px; border-bottom: 2px solid transparent; transition: all 0.3s; display: flex; align-items: center; gap: 8px; outline: none;">
+          <i class="fa-solid fa-pen-to-square"></i> Ca thi trực tuyến <span id="badge-user-online-exams-count" style="display: none; background: #eab308; color: #0f172a; font-size: 0.72rem; padding: 1px 7px; border-radius: 10px; font-weight: 800; margin-left: 4px;">0</span>
+        </button>
       </div>
 
       <!-- Group các nội dung liên quan tới E-learning (Học tập) để dễ quản lý ẩn/hiện -->
@@ -1132,6 +1135,48 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
             </thead>
             <tbody id="classes-table-body">
               <!-- Render động từ JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section Kỳ thi trực tuyến / Ca thi độc lập (TestRegistor) -->
+      <div id="user-online-exams-section" style="display: none; flex-direction: column; gap: 20px;">
+        <div class="section-title">
+          <div>
+            <h3 style="margin: 0; color: #facc15; display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-pen-to-square"></i> Danh Sách Ca Thi Trực Tuyến
+            </h3>
+            <p style="margin: 4px 0 0; font-size: 0.82rem; color: var(--text-muted);">
+              Các kỳ thi, đợt thi độc lập trên phân hệ Thi Trực Tuyến Skypec
+            </p>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button id="btn-sync-online-exams" class="btn-secondary">
+              <i class="fa-solid fa-rotate"></i> Làm mới danh sách ca thi
+            </button>
+          </div>
+        </div>
+
+        <div class="glass-panel table-container">
+          <table class="crm-table" id="table-online-exams">
+            <thead>
+              <tr>
+                <th style="width: 50px; text-align: center;">STT</th>
+                <th>Tên Đợt thi / Ca thi</th>
+                <th style="text-align: center; width: 190px;">Thời gian mở</th>
+                <th style="text-align: center; width: 140px;">Thông số thi</th>
+                <th style="text-align: center; width: 160px;">Đáp án chuẩn</th>
+                <th style="text-align: center; width: 130px;">Kết quả</th>
+                <th style="text-align: center; width: 230px;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="user-online-exams-tbody">
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                  <i class="fa-solid fa-spinner fa-spin" style="margin-right: 8px;"></i> Đang tải danh sách ca thi trực tuyến...
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -1718,6 +1763,6 @@ Yêu cầu Điều hành & thống kê kiểm tra ngay lập tức!
     </div>
   </div>
 
-  <script src="app_v3.js?v=3.2.15"></script>
+  <script src="app_v3.js?v=3.2.16"></script>
 </body>
 </html>

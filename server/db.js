@@ -161,6 +161,8 @@ async function getDb() {
     CREATE TABLE IF NOT EXISTS exam_question_banks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       class_content_id TEXT,
+      shift_id TEXT,
+      registor_id TEXT,
       exam_code TEXT,
       exam_title TEXT,
       question_text TEXT NOT NULL,
@@ -334,6 +336,11 @@ async function getDb() {
   try {
     await dbInstance.exec(`INSERT OR IGNORE INTO settings (key, value) VALUES ('fms_schedule_from_flights', 'true');`);
   } catch(e) {}
+
+  // Thêm các cột cho exam_question_banks của database cũ
+  try { await dbInstance.exec(`ALTER TABLE exam_question_banks ADD COLUMN shift_id TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`ALTER TABLE exam_question_banks ADD COLUMN registor_id TEXT;`); } catch(e) {}
+  try { await dbInstance.exec(`CREATE INDEX IF NOT EXISTS idx_exam_qb_shift ON exam_question_banks(shift_id);`); } catch(e) {}
 
   // Thêm các cột cho fms_temp_import_exports của database cũ
   try { await dbInstance.exec(`ALTER TABLE fms_temp_import_exports ADD COLUMN monitor_type TEXT DEFAULT 'DOMESTIC_TO_INTL';`); } catch(e) {}

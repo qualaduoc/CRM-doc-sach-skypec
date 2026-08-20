@@ -415,15 +415,18 @@ function applyUserPermissionsUI() {
   const tabNavbar = document.getElementById('user-tab-navbar');
   const elearningSec = document.getElementById('user-elearning-section');
   const fmsSec = document.getElementById('user-fms-section');
+  const onlineExamsSec = document.getElementById('user-online-exams-section');
   
   const fmsTabBtn = document.querySelector('[data-user-tab="tab-user-fms"]');
   const elearningTabBtn = document.getElementById('user-tab-btn-elearning');
+  const onlineExamsTabBtn = document.getElementById('user-tab-btn-online-exams');
 
   // Nếu là Admin/Điều hành đang xem hộ (impersonate), hoặc là Nhân viên C1
   if (state.selectedUser || userRole === 'nv_c1') {
     // Hiện Navbar chuyển đổi tab
     if (tabNavbar) tabNavbar.style.setProperty('display', 'flex', 'important');
     if (elearningTabBtn) elearningTabBtn.style.setProperty('display', 'flex', 'important');
+    if (onlineExamsTabBtn) onlineExamsTabBtn.style.setProperty('display', 'flex', 'important');
 
     // Chỉ reset tab FMS mặc định nếu không phải Admin đang xem hộ
     if (!state.selectedUser) {
@@ -437,14 +440,22 @@ function applyUserPermissionsUI() {
         elearningTabBtn.style.color = 'var(--text-muted)';
         elearningTabBtn.style.borderBottom = '2px solid transparent';
       }
+      if (onlineExamsTabBtn) {
+        onlineExamsTabBtn.classList.remove('active');
+        onlineExamsTabBtn.style.color = 'var(--text-muted)';
+        onlineExamsTabBtn.style.borderBottom = '2px solid transparent';
+      }
       if (fmsSec) fmsSec.style.setProperty('display', 'flex', 'important');
       if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
+      if (onlineExamsSec) onlineExamsSec.style.setProperty('display', 'none', 'important');
     }
+    loadUserOnlineExams(state.selectedUser?.username || state.username);
   } else {
     // Nhân viên C2: Ẩn hoàn toàn Navbar và phần Elearning, chỉ hiển thị FMS
     if (tabNavbar) tabNavbar.style.setProperty('display', 'none', 'important');
     if (fmsSec) fmsSec.style.setProperty('display', 'flex', 'important');
     if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
+    if (onlineExamsSec) onlineExamsSec.style.setProperty('display', 'none', 'important');
   }
   
   // Luôn load dữ liệu FMS cho User
@@ -737,19 +748,25 @@ function setupEventListeners() {
       const targetBtn = e.currentTarget;
       targetBtn.classList.add('active');
       targetBtn.style.color = 'var(--primary)';
-      targetBtn.style.borderBottom = '2px solid var(--primary)';
-      
       const tabId = targetBtn.getAttribute('data-user-tab');
       const elearningSec = document.getElementById('user-elearning-section');
       const fmsSec = document.getElementById('user-fms-section');
+      const onlineExamsSec = document.getElementById('user-online-exams-section');
       
       if (tabId === 'tab-user-fms') {
         if (fmsSec) fmsSec.style.setProperty('display', 'flex', 'important');
         if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
+        if (onlineExamsSec) onlineExamsSec.style.setProperty('display', 'none', 'important');
         loadUserFmsSchedules();
+      } else if (tabId === 'tab-user-online-exams') {
+        if (fmsSec) fmsSec.style.setProperty('display', 'none', 'important');
+        if (elearningSec) elearningSec.style.setProperty('display', 'none', 'important');
+        if (onlineExamsSec) onlineExamsSec.style.setProperty('display', 'flex', 'important');
+        loadUserOnlineExams(state.selectedUser?.username || state.username);
       } else {
         if (fmsSec) fmsSec.style.setProperty('display', 'none', 'important');
         if (elearningSec) elearningSec.style.setProperty('display', 'flex', 'important');
+        if (onlineExamsSec) onlineExamsSec.style.setProperty('display', 'none', 'important');
         loadUserDashboard(state.selectedUser?.username);
       }
     });
@@ -1757,11 +1774,14 @@ function viewStaffDetails(username, displayName, department) {
 
     const elearningSec = document.getElementById('user-elearning-section');
     const fmsSec = document.getElementById('user-fms-section');
+    const onlineExamsSec = document.getElementById('user-online-exams-section');
     if (fmsSec) fmsSec.style.setProperty('display', 'none', 'important');
+    if (onlineExamsSec) onlineExamsSec.style.setProperty('display', 'none', 'important');
     if (elearningSec) elearningSec.style.setProperty('display', 'flex', 'important');
   }
 
   loadUserDashboard(username);
+  loadUserOnlineExams(username);
 }
 
 // Quay lại màn hình Admin Dashboard
@@ -2037,6 +2057,7 @@ async function triggerSyncProgress(username) {
 // Biến tạm lưu ca thi đang chờ xác nhận
 let pendingAutoTest = null;
 let pendingUploadContent = null;
+let pendingOnlineExamUpload = null;
 
 // Mở modal hiển thị danh sách các bài học con / các tập trong lớp học (Multi-Content Modal)
 async function openClassContentsModal(classId, username, classTitle) {
@@ -2210,9 +2231,10 @@ async function openClassContentsModal(classId, username, classTitle) {
   }
 }
 
-// Kích hoạt hộp thoại chọn file Excel đáp án
-function triggerUploadAnswer(contentId, contentTitle, classId, targetUser, classTitle) {
-  pendingUploadContent = { contentId, contentTitle, classId, targetUser, classTitle };
+// Kích hoạt hộp thoại chọn file Excel đáp án cho Ca thi trực tuyến độc lập
+function triggerUploadOnlineExamAnswer(shiftId, shiftName, username) {
+  pendingOnlineExamUpload = { shiftId, shiftName, username };
+  pendingUploadContent = null;
   const fileInput = document.getElementById('excel-answer-file-input');
   if (fileInput) {
     fileInput.value = '';
@@ -2226,45 +2248,85 @@ document.addEventListener('DOMContentLoaded', () => {
   if (fileInput) {
     fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
-      if (!file || !pendingUploadContent) return;
+      if (!file) return;
 
-      const { contentId, contentTitle, classId, targetUser, classTitle } = pendingUploadContent;
-      showToast(`Đang phân tích và nạp đáp án từ "${file.name}"...`, 'info', 'Đang xử lý');
+      if (pendingOnlineExamUpload) {
+        const { shiftId, shiftName, username } = pendingOnlineExamUpload;
+        showToast(`Đang phân tích và nạp đáp án cho ca thi "${shiftName}"...`, 'info', 'Đang xử lý');
+        try {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64 = reader.result.split(',')[1];
+            const res = await fetch(`/api/online-exams/${shiftId}/upload-answers`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.token}`
+              },
+              body: JSON.stringify({
+                examTitle: shiftName,
+                base64: base64
+              })
+            });
 
-      try {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const base64 = reader.result.split(',')[1];
-          const res = await fetch('/api/exam-answers/upload', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${state.token}`
-            },
-            body: JSON.stringify({
-              classContentId: contentId,
-              examTitle: contentTitle,
-              base64: base64
-            })
-          });
+            const data = await res.json();
+            if (data.success) {
+              showToast(data.message || `Đã nạp thành công ${data.totalQuestions} câu hỏi đáp án!`, 'success', 'Nạp đáp án thành công');
+              loadUserOnlineExams(username);
+            } else {
+              showToast(data.error || 'Nạp đáp án thất bại', 'error', 'Lỗi');
+            }
+          };
+          reader.readAsDataURL(file);
+        } catch (err) {
+          showToast('Lỗi đọc file: ' + err.message, 'error', 'Lỗi');
+        } finally {
+          pendingOnlineExamUpload = null;
+        }
+        return;
+      }
 
-          const data = await res.json();
-          if (data.success) {
-            showToast(data.message || `Đã nạp thành công ${data.totalQuestions} câu hỏi đáp án!`, 'success', 'Nạp đáp án thành công');
-            // Tải lại nội dung modal bài con
-            openClassContentsModal(classId, targetUser, classTitle);
-          } else {
-            showToast(data.error || 'Nạp đáp án thất bại', 'error', 'Lỗi');
-          }
-        };
-        reader.readAsDataURL(file);
-      } catch (err) {
-        showToast('Lỗi đọc file: ' + err.message, 'error', 'Lỗi');
+      if (pendingUploadContent) {
+        const { contentId, contentTitle, classId, targetUser, classTitle } = pendingUploadContent;
+        showToast(`Đang phân tích và nạp đáp án từ "${file.name}"...`, 'info', 'Đang xử lý');
+
+        try {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64 = reader.result.split(',')[1];
+            const res = await fetch('/api/exam-answers/upload', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.token}`
+              },
+              body: JSON.stringify({
+                classContentId: contentId,
+                examTitle: contentTitle,
+                base64: base64
+              })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              showToast(data.message || `Đã nạp thành công ${data.totalQuestions} câu hỏi đáp án!`, 'success', 'Nạp đáp án thành công');
+              // Tải lại nội dung modal bài con
+              openClassContentsModal(classId, targetUser, classTitle);
+            } else {
+              showToast(data.error || 'Nạp đáp án thất bại', 'error', 'Lỗi');
+            }
+          };
+          reader.readAsDataURL(file);
+        } catch (err) {
+          showToast('Lỗi đọc file: ' + err.message, 'error', 'Lỗi');
+        } finally {
+          pendingUploadContent = null;
+        }
       }
     });
   }
 
-  // Sự kiện cho Modal Xác nhận tự động làm bài thi
+  // Sự kiện cho Modal Xác nhận tự động làm bài thi (hỗ trợ cả bài thi lớp học và ca thi trực tuyến)
   const confirmModal = document.getElementById('confirm-auto-test-modal');
   const btnCancelTest = document.getElementById('btn-cancel-auto-test');
   const btnConfirmTest = document.getElementById('btn-start-auto-test-confirmed');
@@ -2280,6 +2342,39 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnConfirmTest && confirmModal) {
     btnConfirmTest.addEventListener('click', async () => {
       if (!pendingAutoTest) return;
+
+      if (pendingAutoTest.isOnlineExam) {
+        const { shiftId, contentTitle, targetUser } = pendingAutoTest;
+        confirmModal.style.display = 'none';
+        confirmModal.classList.remove('active');
+
+        showToast(`SkyEyes đang tự động làm ca thi "${contentTitle}"...`, 'info', 'Đang làm bài thi');
+
+        try {
+          const res = await fetch(`/api/online-exams/${shiftId}/auto-test`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({ username: targetUser })
+          });
+
+          const data = await res.json();
+          if (data.success) {
+            showToast(`🎉 ${data.message || `Hoàn thành ca thi! Điểm số: ${data.score}/100 điểm`}`, 'success', 'Thi thành công!');
+            loadUserOnlineExams(targetUser);
+          } else {
+            showToast(data.error || 'Không thể tự động hoàn thành ca thi', 'error', 'Lỗi ca thi');
+          }
+        } catch (err) {
+          showToast('Lỗi khi làm ca thi: ' + err.message, 'error', 'Lỗi');
+        } finally {
+          pendingAutoTest = null;
+        }
+        return;
+      }
+
       const { classId, classContentId, contentTitle, targetUser, classTitle } = pendingAutoTest;
 
       confirmModal.style.display = 'none';
@@ -2313,6 +2408,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Nút làm mới ca thi trực tuyến
+  const btnSyncOnlineExams = document.getElementById('btn-sync-online-exams');
+  if (btnSyncOnlineExams) {
+    btnSyncOnlineExams.addEventListener('click', () => {
+      loadUserOnlineExams(state.selectedUser?.username || state.username);
+    });
+  }
+
   // Sự kiện cho Modal Xác nhận ÉP ĐẠT (Cấp cứu KPI)
   const forcePassModal = document.getElementById('confirm-force-pass-modal');
   const btnCancelForcePass = document.getElementById('btn-cancel-force-pass');
@@ -2389,6 +2493,175 @@ function openConfirmAutoTestModal(classId, classContentId, contentTitle, targetU
   if (modal) {
     modal.style.display = 'flex';
     modal.classList.add('active');
+  }
+}
+
+// Mở Modal Popup xác nhận tự động làm ca thi trực tuyến độc lập
+function openConfirmOnlineExamModal(shiftId, shiftName, targetUser, registorName) {
+  pendingAutoTest = {
+    isOnlineExam: true,
+    shiftId,
+    contentTitle: shiftName || registorName,
+    targetUser
+  };
+  const modal = document.getElementById('confirm-auto-test-modal');
+  const titleEl = document.getElementById('confirm-test-title');
+  if (titleEl) titleEl.textContent = `[Ca thi trực tuyến] ${shiftName || registorName}`;
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.classList.add('active');
+  }
+}
+
+// --- KỲ THI TRỰC TUYẾN / CA THI ĐỘC LẬP (TestRegistor) ---
+let cachedOnlineExams = [];
+
+async function loadUserOnlineExams(targetUsername = null) {
+  const username = targetUsername || (state.selectedUser ? state.selectedUser.username : state.username);
+  const tbody = document.getElementById('user-online-exams-tbody');
+  const badgeCount = document.getElementById('badge-user-online-exams-count');
+
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);">
+          <i class="fa-solid fa-spinner fa-spin" style="margin-right: 8px;"></i> Đang tải danh sách ca thi trực tuyến từ Skypec...
+        </td>
+      </tr>
+    `;
+  }
+
+  try {
+    const res = await fetch(`/api/online-exams?username=${encodeURIComponent(username || '')}`, {
+      headers: { 'Authorization': `Bearer ${state.token}` }
+    });
+    const data = await res.json();
+
+    if (!data.success || !data.data) {
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align: center; padding: 30px; color: var(--danger);">
+              <i class="fa-solid fa-circle-exclamation"></i> ${data.error || 'Không thể tải danh sách ca thi trực tuyến'}
+            </td>
+          </tr>
+        `;
+      }
+      return;
+    }
+
+    cachedOnlineExams = data.data || [];
+
+    if (badgeCount) {
+      const activeCount = cachedOnlineExams.filter(s => !s.isPassed).length;
+      if (activeCount > 0) {
+        badgeCount.textContent = activeCount;
+        badgeCount.style.display = 'inline-block';
+      } else {
+        badgeCount.style.display = 'none';
+      }
+    }
+
+    if (cachedOnlineExams.length === 0) {
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align: center; padding: 40px; color: var(--text-muted);">
+              <i class="fa-solid fa-folder-open" style="font-size: 2rem; display: block; margin-bottom: 10px; color: var(--primary);"></i>
+              Không có ca thi trực tuyến nào đang mở cho nhân viên này.
+            </td>
+          </tr>
+        `;
+      }
+      return;
+    }
+
+    const isAdmin = state.role === 'admin' || state.permissions?.perm_admin === 1;
+
+    let html = '';
+    cachedOnlineExams.forEach((shift, idx) => {
+      // 1. Format thời gian
+      const formatTimeStr = (t) => {
+        if (!t) return '--';
+        const d = new Date(t);
+        return d.toLocaleDateString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+      };
+
+      // 2. Format trạng thái
+      let resultBadge = '';
+      if (shift.isPassed) {
+        resultBadge = `<span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.8rem;"><i class="fa-solid fa-check"></i> Đạt ${shift.bestScore}đ</span>`;
+      } else if (shift.testedCount > 0) {
+        resultBadge = `<span style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.8rem;"><i class="fa-solid fa-xmark"></i> Không đạt (${shift.bestScore || 0}đ)</span>`;
+      } else {
+        resultBadge = `<span style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-muted); padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.8rem;">Chưa thi ⚪</span>`;
+      }
+
+      // 3. Badge đáp án
+      const answersBadge = shift.hasAnswers
+        ? `<span style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; white-space: nowrap;"><i class="fa-solid fa-check"></i> Đã nạp ${shift.answersCount} câu</span>`
+        : `<span style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-muted); font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">Chưa có đáp án</span>`;
+
+      // 4. Nút thao tác
+      const uploadBtn = isAdmin ? `
+        <button onclick="triggerUploadOnlineExamAnswer('${shift.id}', '${(shift.name || '').replace(/'/g, "\\'")}', '${username}')" style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Nạp file Excel đáp án cho ca thi này">
+          <i class="fa-solid fa-cloud-arrow-up"></i> Nạp Excel
+        </button>
+      ` : '';
+
+      const canTakeExam = shift.hasAnswers && !shift.isPassed;
+      const btnLabel = (shift.testedCount > 0 && !shift.isPassed) ? 'Thi lại' : 'Tự động làm bài';
+
+      const autoTestBtn = canTakeExam ? `
+        <button onclick="openConfirmOnlineExamModal('${shift.id}', '${(shift.name || '').replace(/'/g, "\\'")}', '${username}', '${(shift.registorName || '').replace(/'/g, "\\'")}')" style="background: linear-gradient(135deg, #eab308, #ca8a04); border: none; color: #0f172a; padding: 5px 12px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 10px rgba(234, 179, 8, 0.3);">
+          <i class="fa-solid fa-bolt"></i> ${btnLabel}
+        </button>
+      ` : (shift.hasAnswers ? `
+        <button onclick="openConfirmOnlineExamModal('${shift.id}', '${(shift.name || '').replace(/'/g, "\\'")}', '${username}', '${(shift.registorName || '').replace(/'/g, "\\'")}')" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: var(--text-muted); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+          <i class="fa-solid fa-rotate-right"></i> Thi lại
+        </button>
+      ` : '');
+
+      html += `
+        <tr>
+          <td style="text-align: center; font-weight: 700; color: #38bdf8;">${idx + 1}</td>
+          <td>
+            <div style="font-weight: 700; color: var(--text); font-size: 0.92rem; line-height: 1.35;">${shift.registorName || shift.name}</div>
+            <div style="font-size: 0.78rem; color: #38bdf8; margin-top: 4px; display: flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-file-signature"></i> ${shift.name}
+            </div>
+          </td>
+          <td style="text-align: center; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+            <div>Từ: <strong style="color: var(--text);">${formatTimeStr(shift.startTime)}</strong></div>
+            <div>Đến: <strong style="color: #f59e0b;">${formatTimeStr(shift.endTime)}</strong></div>
+          </td>
+          <td style="text-align: center; font-size: 0.8rem; line-height: 1.4;">
+            <div>Số câu: <strong style="color: #38bdf8;">${shift.questionNum} câu</strong></div>
+            <div>Thời gian: <strong style="color: var(--text);">${shift.timeTest}p</strong> · Max: <strong style="color: #facc15;">${shift.testCount} lần</strong></div>
+          </td>
+          <td style="text-align: center;">${answersBadge}</td>
+          <td style="text-align: center;">${resultBadge}</td>
+          <td style="text-align: center;">
+            <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center;">
+              ${uploadBtn}
+              ${autoTestBtn}
+            </div>
+          </td>
+        </tr>
+      `;
+    });
+
+    if (tbody) tbody.innerHTML = html;
+  } catch (err) {
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" style="text-align: center; padding: 30px; color: var(--danger);">
+            <i class="fa-solid fa-triangle-exclamation"></i> Lỗi: ${err.message}
+          </td>
+        </tr>
+      `;
+    }
   }
 }
 
